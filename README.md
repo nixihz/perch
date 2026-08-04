@@ -13,12 +13,10 @@ npx skill skills/mitmproxy-cli
 npx skill skills/organize-ios-home-screen
 ```
 
-> `skill` 默认从 `vercel-labs/agent-skills` 拉取。本仓库的源不是那里，**必须通过 `SKILL_BASE_URL` 把远端指到这里**（覆盖为可访问的 raw 基础 URL，例如本仓库的 `main` 分支 raw 路径，或推送到 GitHub 后的 `https://github.com/<org>/skill-set/tree/main`）。
-
-示例：
+> `skill` 默认从 `vercel-labs/agent-skills` 拉取，本仓库镜像在 `https://github.com/iamx/skill-set`，需通过 `SKILL_BASE_URL` 把远端指过去：
 
 ```bash
-SKILL_BASE_URL=https://github.com/<org>/skill-set/tree/main \
+SKILL_BASE_URL=https://github.com/iamx/skill-set/tree/main \
   npx skill skills/likec4-dsl
 ```
 
