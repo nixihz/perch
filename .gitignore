@@ -1,5 +1,5 @@
 __pycache__/
 *.pyc
 dist/
-
 skills/tokenhubctl/assets/
+.SKILL.md.swp
