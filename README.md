@@ -10,8 +10,6 @@ CLI 不做 HTTP 认证头，私有仓库走**系统 git 的认证**。两条路�
 
   ```bash
   npx skills add ssh://git@git.xiezhi.xin:2222/iamx/skill-set.git
-  # 或短形式
-  npx skills add git@git.xiezhi.xin:iamx/skill-set.git
   ```
 
   可先用 `ssh -T git@git.xiezhi.xin` 验证连通性。
@@ -22,6 +20,7 @@ CLI 不做 HTTP 认证头，私有仓库走**系统 git 的认证**。两条路�
 
 | Skill | 一句话用途 |
 | --- | --- |
+| `skills/humanizer-zh` | 去除文本中的 AI 生成痕迹（夸大的象征意义、宣传性语言、三段式法则、AI 词汇、公式化收尾等），使其更自然、更像人类书写。 |
 | `skills/kindle-pw2-eink` | 将越狱 Kindle Paperwhite 2 作为可恢复的全屏墨水屏：渲染灰度画面、通过 USB SSH 推送内容，并用 KUAL / FBInk 控制显示。 |
 | `skills/likec4-dsl` | 把软件架构建模为 LikeC4 DSL：`.c4`/`.likec4` 模型、视图、部署、CLI 与 MCP。 |
 | `skills/mitmproxy-cli` | 用 mitmproxy/mitmdump 做 Map Local、按 URL 规则返回本地文件、抓包与诊断。 |
