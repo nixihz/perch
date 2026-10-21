@@ -1,5 +1,36 @@
+# Python 本地缓存与测试产物
 __pycache__/
-*.pyc
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+
+# Node 本地依赖与测试产物
+node_modules/
+npm-debug.log*
+playwright-report/
+test-results/
+.playwright-mcp/
+
+# SwiftPM、Xcode 与打包产物
+.build/
+.swiftpm/
+DerivedData/
+xcuserdata/
+*.xcresult/
+*.xcarchive/
+*.dSYM/
 dist/
-skills/tokenhubctl/assets/
+artifacts/
+
+# 本机运行状态与编辑器临时文件
+.skillset-local/
+.scratch/
+.DS_Store
 .SKILL.md.swp
+
+# 技能仓库里按需下载的大体积二进制
+skills/tokenhubctl/assets/
