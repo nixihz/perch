@@ -17,8 +17,11 @@ function checkStc(stc, errors) {
       if (!existsSync(resolve(dirname(file), target))) errors.push(`本地引用失效：${file} → ${target}`);
     }
   }
+  const cases = join(stc, 'evaluations', 'cases.json');
+  // STC 已简化为文稿约定；只有保留行为用例的版本才检查用例结构。
+  if (!existsSync(cases)) return;
   try {
-    const data = JSON.parse(read(join(stc, 'evaluations', 'cases.json')));
+    const data = JSON.parse(read(cases));
     if (data.version !== 1 || !Array.isArray(data.cases) || !data.cases.length) throw new Error('需要 version: 1 和非空 cases 数组');
     const ids = new Set();
     for (const item of data.cases) {

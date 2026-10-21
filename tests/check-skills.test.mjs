@@ -46,6 +46,14 @@ test('重复用例 ID 不会被当作额外覆盖', t => {
   assert.ok(checkSkills(root).errors.some(message => message.includes('用例 ID 重复')));
 });
 
+test('简化版 STC 不再要求历史用例，但仍检查现存引用', t => {
+  const { root, write } = fixture(t);
+  rmSync(join(root, 'skills/stc/evaluations'), { recursive: true });
+  assert.deepEqual(checkSkills(root).errors, []);
+  write('skills/stc/SKILL.md', '---\nname: stc\ndescription: 文稿约定\n---\n[已删除](gone.md)\n');
+  assert.ok(checkSkills(root).errors.some(message => message.includes('gone.md')));
+});
+
 test('缺少发现链接警告，指错目录报错', t => {
   const { root } = fixture(t);
   const link = join(root, '.agents/skills/stc');

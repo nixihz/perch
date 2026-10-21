@@ -27,9 +27,25 @@ jobs:
         run: node scripts/check-skills.mjs
       - name: Test structure checker
         run: node --test tests/check-skills.test.mjs
-      - name: Test STC checker
-        run: python skills/stc/scripts/stc-lint.py --selftest
+      - name: Verify catalog snapshots
+        run: python scripts/catalog.py verify
+      - name: Test catalog and UI localization
+        run: python -m unittest tests.test_catalog tests.test_ui_localization -v
       - name: Test kubeconfig manager
         run: |
           command -v kubectl
           python -m unittest discover -s skills/kubeconfig-manager/tests -v
+
+  macos:
+    name: Native macOS app
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build SkillSet.app target
+        run: swift build --product SkillSetDesktop
+      - name: Run Swift core tests
+        run: swift test
+      - name: Build CLI and MCP server
+        run: swift build --product skillset
+      - name: Run CLI and MCP integration tests
+        run: python -m unittest tests.test_cli_integration -v
