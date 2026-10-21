@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "research-first",
+  "name": "研究与决策",
+  "description": "先核对原始资料，再记录依据与待定项。",
+  "revision": 1,
+  "skills": ["workspace/stc", "workspace/project-guide", "local-brian/research", "local-brian/prd"],
+  "instructionFragments": ["base-zh"],
+  "mergePolicy": "explicit-selection",
+  "status": "draft"
+}

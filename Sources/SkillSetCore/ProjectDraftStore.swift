@@ -1,0 +1,126 @@
+import Foundation
+
+public enum ProjectDraftStoreError: Error, LocalizedError, Equatable, Sendable {
+    case corruptDocument(String)
+
+    public var code: String { "PROJECT_DRAFT_CORRUPT" }
+
+    public var errorDescription: String? {
+        switch self {
+        case let .corruptDocument(path):
+            return "项目草稿文件无法读取：\(path)"
+        }
+    }
+}
+
+public struct ProjectDraft: Codable, Identifiable, Hashable, Sendable {
+    public let projectID: UUID
+    public var skillIDs: [String]
+    public var instructionIDs: [String]
+    public var agents: [String]
+    public var updatedAt: Date
+
+    public var id: UUID { projectID }
+
+    public init(
+        projectID: UUID,
+        skillIDs: [String],
+        instructionIDs: [String] = [],
+        agents: [String] = ["codex"],
+        updatedAt: Date
+    ) {
+        self.projectID = projectID
+        self.skillIDs = skillIDs
+        self.instructionIDs = instructionIDs
+        self.agents = agents
+        self.updatedAt = updatedAt
+    }
+}
+
+private struct ProjectDraftDocument: Codable {
+    let schemaVersion: Int
+    var drafts: [ProjectDraft]
+}
+
+/// 草稿只属于本机编辑状态，不代表项目已经写入或启用。
+public struct ProjectDraftStore {
+    public let rootURL: URL
+
+    private let fileManager: FileManager
+    private let clock: () -> Date
+
+    public init(
+        rootURL: URL = ProjectStore.defaultRootURL,
+        fileManager: FileManager = .default,
+        clock: @escaping () -> Date = Date.init
+    ) {
+        self.rootURL = rootURL
+        self.fileManager = fileManager
+        self.clock = clock
+    }
+
+    public var documentURL: URL {
+        rootURL.appendingPathComponent("project-drafts.json")
+    }
+
+    public func load(projectID: UUID) throws -> ProjectDraft? {
+        try loadDocument().drafts.first { $0.projectID == projectID }
+    }
+
+    @discardableResult
+    public func save(
+        projectID: UUID,
+        skillIDs: some Sequence<String>,
+        instructionIDs: some Sequence<String>,
+        agents: some Sequence<String>
+    ) throws -> ProjectDraft {
+        var document = try loadDocument()
+        let draft = ProjectDraft(
+            projectID: projectID,
+            skillIDs: normalized(skillIDs),
+            instructionIDs: normalized(instructionIDs),
+            agents: normalized(agents),
+            updatedAt: clock()
+        )
+        document.drafts.removeAll { $0.projectID == projectID }
+        document.drafts.append(draft)
+        document.drafts.sort { $0.projectID.uuidString < $1.projectID.uuidString }
+        try write(document)
+        return draft
+    }
+
+    public func remove(projectID: UUID) throws {
+        var document = try loadDocument()
+        let previousCount = document.drafts.count
+        document.drafts.removeAll { $0.projectID == projectID }
+        guard document.drafts.count != previousCount else { return }
+        try write(document)
+    }
+
+    private func loadDocument() throws -> ProjectDraftDocument {
+        guard fileManager.fileExists(atPath: documentURL.path) else {
+            return ProjectDraftDocument(schemaVersion: 1, drafts: [])
+        }
+        do {
+            let data = try Data(contentsOf: documentURL)
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            return try decoder.decode(ProjectDraftDocument.self, from: data)
+        } catch {
+            throw ProjectDraftStoreError.corruptDocument(documentURL.path)
+        }
+    }
+
+    private func write(_ document: ProjectDraftDocument) throws {
+        try fileManager.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        try encoder.encode(document).write(to: documentURL, options: .atomic)
+    }
+
+    private func normalized(_ values: some Sequence<String>) -> [String] {
+        Array(Set(values.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }))
+            .sorted()
+    }
+}

@@ -1,0 +1,53 @@
+version: '3'
+
+tasks:
+  app:
+    desc: 构建并启动原生 macOS 应用
+    cmds:
+      - ./script/build_and_run.sh
+
+  run:
+    desc: 构建并启动原生 macOS 应用（app 的别名）
+    cmds:
+      - ./script/build_and_run.sh
+
+  verify-app:
+    desc: 构建、启动并确认 SkillSet.app 进程存在
+    cmds:
+      - ./script/build_and_run.sh --verify
+
+  swift-build:
+    desc: 构建 Swift core、CLI 与原生 macOS 应用
+    cmds:
+      - swift build --product SkillSetDesktop
+      - swift build --product skillset
+
+  swift-test:
+    desc: 运行 Swift core 行为测试与原生布局回归测试
+    cmds:
+      - swift test
+
+  bdd:
+    desc: 运行标记为 @bdd 的 Gherkin 场景（同时执行现有 Swift 测试）
+    cmds:
+      - CUCUMBER_TAGS=bdd CUCUMBER_VERBOSE=1 swift test
+
+  check:
+    desc: 检查 skill、目录指纹并构建原生应用
+    cmds:
+      - node scripts/check-skills.mjs
+      - python3 scripts/catalog.py verify
+      - swift build --product SkillSetDesktop
+
+  test:
+    desc: 运行离线单元测试，不连接设备、集群、宿主配置或在线服务
+    cmds:
+      - node --test tests/*.test.mjs
+      - swift build --product skillset
+      - python3 -m unittest discover -s tests -p 'test_*.py' -v
+      - swift test
+
+  inventory:
+    desc: 只盘点外部技能，不复制、不安装
+    cmds:
+      - python3 scripts/catalog.py inventory --allow-linked-root /Users/brian/.config/magpie/library/skills

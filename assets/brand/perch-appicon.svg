@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">栖集 Perch App Icon</title>
+  <desc id="desc">纸白圆角底上的陶土红猫头鹰与三层技能档案夹。</desc>
+  <rect x="32" y="32" width="960" height="960" rx="216" fill="#F2EBDD"/>
+  <rect x="40" y="40" width="944" height="944" rx="208" fill="none" stroke="#C86446" stroke-opacity="0.35" stroke-width="6"/>
+  <image href="perch-appicon-art.png" x="226" y="62" width="572" height="900" preserveAspectRatio="xMidYMid meet"/>
+</svg>

@@ -1,0 +1,150 @@
+{
+  "url": "https://github.com/mattpocock/skills",
+  "commit": "5beb35b040e3de97e54fa9e386d7e42d15c295c2",
+  "version": "1.3.1",
+  "license": "MIT",
+  "capturedOn": "2026-10-21",
+  "network": false,
+  "candidates": [
+    {
+      "name": "ask-matt",
+      "category": "engineering",
+      "path": "skills/engineering/ask-matt"
+    },
+    {
+      "name": "diagnosing-bugs",
+      "category": "engineering",
+      "path": "skills/engineering/diagnosing-bugs"
+    },
+    {
+      "name": "grill-with-docs",
+      "category": "engineering",
+      "path": "skills/engineering/grill-with-docs"
+    },
+    {
+      "name": "triage",
+      "category": "engineering",
+      "path": "skills/engineering/triage"
+    },
+    {
+      "name": "improve-codebase-architecture",
+      "category": "engineering",
+      "path": "skills/engineering/improve-codebase-architecture"
+    },
+    {
+      "name": "setup-matt-pocock-skills",
+      "category": "engineering",
+      "path": "skills/engineering/setup-matt-pocock-skills"
+    },
+    {
+      "name": "tdd",
+      "category": "engineering",
+      "path": "skills/engineering/tdd"
+    },
+    {
+      "name": "to-spec",
+      "category": "engineering",
+      "path": "skills/engineering/to-spec"
+    },
+    {
+      "name": "to-tickets",
+      "category": "engineering",
+      "path": "skills/engineering/to-tickets"
+    },
+    {
+      "name": "wayfinder",
+      "category": "engineering",
+      "path": "skills/engineering/wayfinder"
+    },
+    {
+      "name": "implement",
+      "category": "engineering",
+      "path": "skills/engineering/implement"
+    },
+    {
+      "name": "implement-spec",
+      "category": "engineering",
+      "path": "skills/engineering/implement-spec"
+    },
+    {
+      "name": "prototype",
+      "category": "engineering",
+      "path": "skills/engineering/prototype"
+    },
+    {
+      "name": "research",
+      "category": "engineering",
+      "path": "skills/engineering/research"
+    },
+    {
+      "name": "domain-modeling",
+      "category": "engineering",
+      "path": "skills/engineering/domain-modeling"
+    },
+    {
+      "name": "codebase-design",
+      "category": "engineering",
+      "path": "skills/engineering/codebase-design"
+    },
+    {
+      "name": "code-review",
+      "category": "engineering",
+      "path": "skills/engineering/code-review"
+    },
+    {
+      "name": "pr",
+      "category": "engineering",
+      "path": "skills/engineering/pr"
+    },
+    {
+      "name": "retro",
+      "category": "engineering",
+      "path": "skills/engineering/retro"
+    },
+    {
+      "name": "wizard",
+      "category": "engineering",
+      "path": "skills/engineering/wizard"
+    },
+    {
+      "name": "grill-me",
+      "category": "productivity",
+      "path": "skills/productivity/grill-me"
+    },
+    {
+      "name": "grilling",
+      "category": "productivity",
+      "path": "skills/productivity/grilling"
+    },
+    {
+      "name": "handoff",
+      "category": "productivity",
+      "path": "skills/productivity/handoff"
+    },
+    {
+      "name": "teach",
+      "category": "productivity",
+      "path": "skills/productivity/teach"
+    },
+    {
+      "name": "to-questionnaire",
+      "category": "productivity",
+      "path": "skills/productivity/to-questionnaire"
+    },
+    {
+      "name": "wait-what",
+      "category": "productivity",
+      "path": "skills/productivity/wait-what"
+    },
+    {
+      "name": "writing-for-agents",
+      "category": "productivity",
+      "path": "skills/productivity/writing-for-agents"
+    }
+  ],
+  "excluded": {
+    "misc": 4,
+    "in-progress": 7,
+    "deprecated": 0
+  }
+}

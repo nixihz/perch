@@ -1,0 +1,15 @@
+{
+  "images" : [
+    { "filename" : "perch-16.png", "idiom" : "mac", "scale" : "1x", "size" : "16x16" },
+    { "filename" : "perch-32.png", "idiom" : "mac", "scale" : "2x", "size" : "16x16" },
+    { "filename" : "perch-32-1x.png", "idiom" : "mac", "scale" : "1x", "size" : "32x32" },
+    { "filename" : "perch-64.png", "idiom" : "mac", "scale" : "2x", "size" : "32x32" },
+    { "filename" : "perch-128.png", "idiom" : "mac", "scale" : "1x", "size" : "128x128" },
+    { "filename" : "perch-256.png", "idiom" : "mac", "scale" : "2x", "size" : "128x128" },
+    { "filename" : "perch-256-1x.png", "idiom" : "mac", "scale" : "1x", "size" : "256x256" },
+    { "filename" : "perch-512.png", "idiom" : "mac", "scale" : "2x", "size" : "256x256" },
+    { "filename" : "perch-512-1x.png", "idiom" : "mac", "scale" : "1x", "size" : "512x512" },
+    { "filename" : "perch-1024.png", "idiom" : "mac", "scale" : "2x", "size" : "512x512" }
+  ],
+  "info" : { "author" : "xcode", "version" : 1 }
+}
