@@ -1,0 +1,4 @@
+interface:
+  display_name: "项目导览"
+  short_description: "从仓库事实出发，讲清架构、入口、流转和怎么跑"
+  default_prompt: "使用 $project-guide 说明这个仓库是干什么的、怎么组织、入口在哪、怎么跑起来。"

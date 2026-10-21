@@ -1,0 +1,62 @@
+---
+name: project-guide
+description: "Onboard to an unfamiliar software repository by extracting current facts, then mapping architecture, entry points, runtime flow, config, data, APIs, tests, and how to run it. Use when the user wants to understand, explain, map, or navigate a project; asks 这个项目是干什么的, 架构, 怎么跑, 入口在哪, 熟悉一下仓库; or how a request, command, job, or UI action flows through the code."
+---
+
+# Project Guide
+
+Build an accurate mental model of an unfamiliar repository from current source, not from file-name guesses or stale docs. Answer in Chinese unless the user asks otherwise.
+
+This skill is for onboarding and explanation. For module-interface design use `codebase-design`. For finding refactors use `improve-codebase-architecture`. For a failing behavior use `diagnosing-bugs`.
+
+## Snapshot
+
+Run the bundled inventory against the **target repo**, not this skills repo.
+
+```bash
+node <skill-dir>/scripts/project_snapshot.mjs --root <target-repo>
+```
+
+`<skill-dir>` is the directory of this `SKILL.md` (already known from loading the skill). `<target-repo>` is the repository being explained. If the current working directory already is that repo, `--root` can be omitted.
+
+The snapshot is evidence: languages, manifests, scripts, likely entrypoints, key dirs, tests, docs, CI. It is not the architecture. After it prints, open only the files needed for the user's question.
+
+If snapshot output and source disagree, trust source and say the docs or inventory look stale.
+
+## Read
+
+Unless the user named a specific area, read in this order and stop when you can answer:
+
+1. Product surface — `README.md`, docs, examples, CLI help.
+2. Runtime shape — manifests and task runners from the snapshot.
+3. Entrypoints — binaries, server boot, app roots, workers.
+4. Domain modules and boundaries — routes, commands, queues, stores, external APIs.
+5. Config and state — env samples, config, migrations. Do not print secrets.
+6. Tests that confirm the flows you will explain.
+
+For a large repo, list top-level dirs and manifests first, then open a narrow set. Prefer source over generated trees (`node_modules`, `dist`, `build`, `target`, `.next`, `.venv`).
+
+## Explain
+
+Pick the shape that matches the repo, then replace every node with real modules and files from this repo:
+
+- **Web/API** — Client → routes → domain → store / external APIs; middleware, workers on the side.
+- **CLI/tool** — command → parse/config → handler → core library → files/network.
+- **Frontend** — routes/pages → components → state → API client.
+- **Mixed** — one diagram per runtime (web, worker, CLI), not a single junk drawer.
+
+When the question is "how does X happen?", use a sequence diagram of the real call chain.
+
+Onboarding answers use this shape. If the user asked about one area, keep the same discipline but drop unrelated sections:
+
+1. One-sentence product model.
+2. Mermaid architecture grounded in actual files.
+3. Module table: path, responsibility, why it matters.
+4. One to three flows, with diagrams.
+5. Run/test/build commands copied from manifests or task runners.
+6. Uncertainty: stale docs, missing tests, unclear runtime deps.
+7. Next files to read for the user's goal.
+
+Label inferences. Do not present guesses as facts. Report the actual URL/port/command when you start a server; use the project's documented port override if the default is taken.
+
+Treat runtime data (databases, caches, local data dirs, generated artifacts) as distinct from source. Do not delete runtime data, migrations, lockfiles, or deploy artifacts unless the user explicitly asks and the consequence is clear.

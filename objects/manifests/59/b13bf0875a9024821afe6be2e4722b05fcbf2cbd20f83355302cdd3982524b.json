@@ -1,0 +1,17 @@
+{
+  "contentHash" : "59b13bf0875a9024821afe6be2e4722b05fcbf2cbd20f83355302cdd3982524b",
+  "files" : [
+    {
+      "bytes" : 10476,
+      "executable" : false,
+      "path" : "SKILL.md",
+      "sha256" : "09001714413958eca783fc1e6795263556118776fa1d17cda51fe4dfa0c421cf"
+    },
+    {
+      "bytes" : 1623,
+      "executable" : false,
+      "path" : "references/k8s-large-capture-download.md",
+      "sha256" : "f0fdf6fd48802f46bb65bd1d60096c9137973b8cd26962ae7163c0cef4368d5e"
+    }
+  ]
+}

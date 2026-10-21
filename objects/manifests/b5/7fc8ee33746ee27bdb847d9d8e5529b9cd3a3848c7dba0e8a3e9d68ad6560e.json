@@ -1,0 +1,23 @@
+{
+  "contentHash" : "b57fc8ee33746ee27bdb847d9d8e5529b9cd3a3848c7dba0e8a3e9d68ad6560e",
+  "files" : [
+    {
+      "bytes" : 3679,
+      "executable" : false,
+      "path" : "SKILL.md",
+      "sha256" : "ec115cc33f30f41df34d499da0eeff85062c7cd816d47ac0791061e67110d077"
+    },
+    {
+      "bytes" : 259,
+      "executable" : false,
+      "path" : "agents/openai.yaml",
+      "sha256" : "1386028e970d1083d273d6e15d5ef292200e9c8450a28b91b221df229e4ea169"
+    },
+    {
+      "bytes" : 11071,
+      "executable" : true,
+      "path" : "scripts/project_snapshot.mjs",
+      "sha256" : "4ce63f598ecc225749b291bc9b155eccc042b132517525c2dce707ea8ec09ced"
+    }
+  ]
+}

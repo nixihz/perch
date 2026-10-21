@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "personal-base",
+  "name": "日常工程",
+  "description": "理解项目、清楚沟通，再做小步验证。",
+  "revision": 1,
+  "skills": ["workspace/brian-working-style", "workspace/project-guide", "workspace/stc"],
+  "instructionFragments": ["base-zh", "engineering"],
+  "mergePolicy": "explicit-selection",
+  "status": "draft"
+}

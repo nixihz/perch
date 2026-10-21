@@ -1,0 +1,64 @@
+# Kubernetes 生产抓包：大文件下载稳妥做法
+
+适用场景：
+- 在 Pod 内用 `tcpdump` 抓包
+- 需要把数百 MB 以上的 pcap 拉回本地
+- `kubectl cp` 或 `kubectl exec ... cat` 直传过程中出现 `unexpected EOF`
+
+## 建议流程
+
+1. 在 Pod 内抓包时使用时间戳命名：
+
+```bash
+tcpdump -i any -nn -s 0 -w /tmp/capture-$(date +%Y%m%d%H%M%S).pcap
+```
+
+2. 下载前先在 Pod 内压缩：
+
+```bash
+tar -cvzf /tmp/capture-<ts>.tar.gz -C /tmp capture-<ts>.pcap
+```
+
+3. 先尝试 `kubectl cp`。
+4. 如果 `kubectl cp` 因大文件报 `unexpected EOF`，在 Pod 内分片，再逐片拉取并本地重组。
+
+## 分片回传范式
+
+Pod 内：
+
+```bash
+cd /tmp
+split -b 10m capture-<ts>.tar.gz capture-<ts>.tar.gz.s10-
+```
+
+本地：
+
+```bash
+mkdir -p ~/Downloads/capture-<ts>.parts
+# 逐片拉取；若某片大小不一致则重试
+cat ~/Downloads/capture-<ts>.parts/capture-<ts>.tar.gz.s10-* > ~/Downloads/capture-<ts>.tar.gz
+```
+
+## 校验
+
+重组后必须校验本地与 Pod 内文件大小一致：
+
+```bash
+# Pod 内
+wc -c < /tmp/capture-<ts>.tar.gz
+
+# 本地
+wc -c < ~/Downloads/capture-<ts>.tar.gz
+```
+
+还可以再校验 tar 内容是否可列出：
+
+```bash
+tar -tzf ~/Downloads/capture-<ts>.tar.gz | head
+```
+
+## 经验点
+
+- 生产抓包文件容易非常大，先压缩再下载通常更稳。
+- 直传失败时，记住沉淀的是“分片 + 重试 + 大小校验”的套路，而不是把某次 `unexpected EOF` 当成永久限制。
+- 对生产操作，若用户已经指定了顺序（如“下载前先压缩”），应按该顺序执行，不要自作主张优化流程。

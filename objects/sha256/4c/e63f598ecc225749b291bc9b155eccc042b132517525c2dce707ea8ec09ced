@@ -1,0 +1,444 @@
+#!/usr/bin/env node
+import fs from 'node:fs';
+import path from 'node:path';
+
+const skipDirs = new Set([
+  '.git',
+  '.hg',
+  '.svn',
+  'CVS',
+  'node_modules',
+  'vendor',
+  '.venv',
+  'venv',
+  '__pycache__',
+  '.pytest_cache',
+  '.mypy_cache',
+  '.ruff_cache',
+  '.tox',
+  'dist',
+  'build',
+  'target',
+  'out',
+  'obj',
+  'coverage',
+  '.nyc_output',
+  '.next',
+  '.nuxt',
+  '.output',
+  '.svelte-kit',
+  '.turbo',
+  '.cache',
+  '.parcel-cache',
+  '.vite',
+  '.astro',
+  '.expo',
+  '.idea',
+  '.vscode',
+  '.history',
+  '.tmp',
+  '.temp',
+  '.DS_Store',
+]);
+
+const codeExt = {
+  '.ts': 'TypeScript',
+  '.tsx': 'TypeScript',
+  '.js': 'JavaScript',
+  '.jsx': 'JavaScript',
+  '.mjs': 'JavaScript',
+  '.cjs': 'JavaScript',
+  '.py': 'Python',
+  '.go': 'Go',
+  '.rs': 'Rust',
+  '.java': 'Java',
+  '.kt': 'Kotlin',
+  '.kts': 'Kotlin',
+  '.rb': 'Ruby',
+  '.php': 'PHP',
+  '.cs': 'C#',
+  '.swift': 'Swift',
+  '.vue': 'Vue',
+  '.svelte': 'Svelte',
+  '.cpp': 'C++',
+  '.cc': 'C++',
+  '.cxx': 'C++',
+  '.c': 'C',
+};
+
+const nodeFrameworks = [
+  ['next', 'Next.js'],
+  ['nuxt', 'Nuxt'],
+  ['@nestjs/core', 'NestJS'],
+  ['express', 'Express'],
+  ['fastify', 'Fastify'],
+  ['koa', 'Koa'],
+  ['hono', 'Hono'],
+  ['@hono/node-server', 'Hono'],
+  ['react', 'React'],
+  ['vue', 'Vue'],
+  ['svelte', 'Svelte'],
+  ['@angular/core', 'Angular'],
+  ['electron', 'Electron'],
+  ['vite', 'Vite'],
+  ['astro', 'Astro'],
+];
+
+const goFrameworks = [
+  ['github.com/gin-gonic/gin', 'Gin'],
+  ['github.com/gofiber/fiber', 'Fiber'],
+  ['github.com/labstack/echo', 'Echo'],
+  ['github.com/go-chi/chi', 'Chi'],
+  ['github.com/gorilla/mux', 'Gorilla mux'],
+  ['google.golang.org/grpc', 'gRPC'],
+];
+
+const pyFrameworks = [
+  ['fastapi', 'FastAPI'],
+  ['django', 'Django'],
+  ['flask', 'Flask'],
+  ['celery', 'Celery'],
+  ['starlette', 'Starlette'],
+];
+
+const manifestNames = [
+  'package.json',
+  'pnpm-workspace.yaml',
+  'pnpm-lock.yaml',
+  'yarn.lock',
+  'package-lock.json',
+  'bun.lock',
+  'bun.lockb',
+  'pyproject.toml',
+  'setup.py',
+  'setup.cfg',
+  'requirements.txt',
+  'requirements-dev.txt',
+  'Pipfile',
+  'poetry.lock',
+  'uv.lock',
+  'go.mod',
+  'go.sum',
+  'go.work',
+  'Cargo.toml',
+  'Cargo.lock',
+  'pom.xml',
+  'build.gradle',
+  'build.gradle.kts',
+  'settings.gradle',
+  'composer.json',
+  'Gemfile',
+  'Taskfile.yml',
+  'Taskfile.yaml',
+  'Taskfile.dist.yml',
+  'Makefile',
+  'justfile',
+  'Dockerfile',
+  'docker-compose.yml',
+  'docker-compose.yaml',
+  'turbo.json',
+  'nx.json',
+  'lerna.json',
+  'renovate.json',
+  '.tool-versions',
+  '.env.example',
+  '.gitlab-ci.yml',
+];
+
+const interestingDirNames = new Set([
+  'src',
+  'app',
+  'apps',
+  'packages',
+  'plugins',
+  'skills',
+  'lib',
+  'libs',
+  'internal',
+  'pkg',
+  'server',
+  'client',
+  'cmd',
+  'cli',
+  'commands',
+  'tools',
+  'scripts',
+  'frontend',
+  'backend',
+  'api',
+  'apis',
+  'routes',
+  'controllers',
+  'components',
+  'pages',
+  'views',
+  'config',
+  'configs',
+  'test',
+  'tests',
+  '__tests__',
+  'spec',
+  'e2e',
+  'docs',
+  'doc',
+  'examples',
+  'assets',
+  'public',
+  'static',
+  'deploy',
+  'k8s',
+  'kubernetes',
+  'migrations',
+  'db',
+  'database',
+  'schema',
+  'schemas',
+  'proto',
+  'models',
+  'domain',
+  'services',
+  'handlers',
+  'middleware',
+]);
+
+const entryCandidates = [
+  'main.go',
+  'main.py',
+  'main.ts',
+  'main.js',
+  'index.ts',
+  'index.js',
+  'app.ts',
+  'app.js',
+  'app.py',
+  'server.ts',
+  'server.js',
+  'src/main.ts',
+  'src/main.js',
+  'src/index.ts',
+  'src/index.js',
+  'src/index.tsx',
+  'src/main.go',
+  'src/app.ts',
+  'src/server.ts',
+  'app/main.py',
+  'manage.py',
+  'cmd/main.go',
+];
+
+const testRe = /(^|\/)(test|tests|__tests__|spec)(\/|$)|(\.|-)(test|spec)\.[^.]+$/i;
+const docExt = new Set(['.md', '.mdx', '.rst', '.adoc']);
+const MAX_FILES = 12000;
+const MAX_DEPTH = 12;
+
+function parseArgs(argv) {
+  let root = process.cwd();
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg === '--root' && argv[i + 1]) {
+      root = argv[i + 1];
+      i += 1;
+    } else if (!arg.startsWith('-')) {
+      root = arg;
+    }
+  }
+  return path.resolve(root);
+}
+
+function readText(file) {
+  try {
+    return fs.readFileSync(file, 'utf8');
+  } catch {
+    return '';
+  }
+}
+
+function readJson(file) {
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function tomlString(text, table, key) {
+  const block = text.match(new RegExp(`\\[${table}\\]([\\s\\S]*?)(?:\\n\\[|$)`));
+  if (!block) return null;
+  const hit = block[1].match(new RegExp(`^${key}\\s*=\\s*["']([^"']+)["']`, 'm'));
+  return hit ? hit[1] : null;
+}
+
+const root = parseArgs(process.argv.slice(2));
+if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) {
+  console.error(`project_snapshot: not a directory: ${root}`);
+  process.exit(1);
+}
+
+const rel = (p) => {
+  const value = path.relative(root, p);
+  return value || '.';
+};
+
+const files = [];
+function walk(dir, depth) {
+  if (depth > MAX_DEPTH || files.length >= MAX_FILES) return;
+  let entries;
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (files.length >= MAX_FILES) return;
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (skipDirs.has(entry.name)) continue;
+      if (entry.name.startsWith('.') && entry.name !== '.github') continue;
+      walk(full, depth + 1);
+    } else if (entry.isFile()) {
+      files.push(rel(full));
+    }
+  }
+}
+
+walk(root, 0);
+files.sort();
+const fileSet = new Set(files);
+const has = (name) => fileSet.has(name);
+
+const languages = {};
+const dirCounts = new Map();
+for (const file of files) {
+  const ext = path.extname(file);
+  const lang = codeExt[ext];
+  if (lang) {
+    languages[lang] = languages[lang] || { files: 0 };
+    languages[lang].files += 1;
+  }
+  const top = file.split(/[\\/]/)[0];
+  if (top && top !== file) dirCounts.set(top, (dirCounts.get(top) || 0) + 1);
+}
+
+const pkg = has('package.json') ? readJson(path.join(root, 'package.json')) || {} : {};
+const goModText = has('go.mod') ? readText(path.join(root, 'go.mod')) : '';
+const pyprojectText = has('pyproject.toml') ? readText(path.join(root, 'pyproject.toml')) : '';
+const cargoText = has('Cargo.toml') ? readText(path.join(root, 'Cargo.toml')) : '';
+const goModule = (goModText.match(/^module\s+(\S+)/m) || [])[1] || null;
+const pyName = tomlString(pyprojectText, 'project', 'name');
+const rustName = tomlString(cargoText, 'package', 'name');
+
+const skillCount = files.filter((file) => /(^|\/)SKILL\.md$/.test(file)).length;
+
+function detectKind() {
+  const parts = [];
+  if (pkg.name) parts.push(`Node.js (${pkg.name}${pkg.version ? `@${pkg.version}` : ''})`);
+  else if (has('package.json')) parts.push('Node.js');
+  if (goModule) parts.push(`Go (${goModule})`);
+  else if (has('go.mod')) parts.push('Go');
+  if (pyName) parts.push(`Python (${pyName})`);
+  else if (has('pyproject.toml') || has('requirements.txt')) parts.push('Python');
+  if (rustName) parts.push(`Rust (${rustName})`);
+  else if (has('Cargo.toml')) parts.push('Rust');
+  if (has('pom.xml') || has('build.gradle') || has('build.gradle.kts')) parts.push('Java');
+  if (has('composer.json')) parts.push('PHP');
+  if (has('Gemfile')) parts.push('Ruby');
+  if (parts.length) return parts.join(' + ');
+  if (skillCount >= 3) return `Agent skills collection (${skillCount} SKILL.md)`;
+  return 'Unknown';
+}
+
+const depNames = new Set(
+  Object.keys({
+    ...(pkg.dependencies || {}),
+    ...(pkg.devDependencies || {}),
+    ...(pkg.peerDependencies || {}),
+  }),
+);
+const frameworks = [];
+for (const [dep, label] of nodeFrameworks) {
+  if (depNames.has(dep) && !frameworks.includes(label)) frameworks.push(label);
+}
+for (const [mod, label] of goFrameworks) {
+  if (goModText.includes(mod) && !frameworks.includes(label)) frameworks.push(label);
+}
+const pyBlob = `${pyprojectText}\n${readText(path.join(root, 'requirements.txt'))}`;
+for (const [dep, label] of pyFrameworks) {
+  if (pyBlob.includes(dep) && !frameworks.includes(label)) frameworks.push(label);
+}
+
+const manifests = manifestNames.filter(has);
+const byCount = (a, b) => (dirCounts.get(b) || 0) - (dirCounts.get(a) || 0);
+const interesting = [...dirCounts.keys()].filter((dir) => interestingDirNames.has(dir)).sort(byCount);
+const otherDirs = [...dirCounts.keys()].filter((dir) => !interestingDirNames.has(dir)).sort(byCount);
+const keyDirs = [...interesting, ...otherDirs].slice(0, 24);
+
+const cmdEntries = files.filter((file) => /^cmd\/[^/]+\/(main\.go|.*\.go)$/.test(file)).slice(0, 30);
+const entrypoints = [
+  ...entryCandidates.filter(has),
+  ...cmdEntries,
+  ...files.filter((file) => /^(bin|scripts)\/[^/]+$/.test(file)).slice(0, 20),
+].filter((file, i, arr) => arr.indexOf(file) === i);
+
+const tests = files.filter((file) => testRe.test(file) && codeExt[path.extname(file)]).slice(0, 40);
+const docs = files
+  .filter((file) => {
+    if (!docExt.has(path.extname(file))) return false;
+    const base = path.basename(file);
+    if (/^(README|CHANGELOG|CONTRIBUTING|AGENTS|CLAUDE)(\.|$)/i.test(base)) return true;
+    return /^(docs?|documentation)\//.test(file);
+  })
+  .slice(0, 40);
+const ci = files.filter((file) => /^\.github\/workflows\/.+\.ya?ml$/.test(file) || file === '.gitlab-ci.yml');
+
+function section(title, items, empty = '(none)') {
+  const lines = [`## ${title}`, ''];
+  if (!items.length) lines.push(empty, '');
+  else {
+    for (const item of items) lines.push(`- ${item}`);
+    lines.push('');
+  }
+  return lines;
+}
+
+const out = [];
+out.push(`# ${path.basename(root)}`);
+out.push('');
+out.push(`- root: \`${root}\``);
+out.push(`- kind: ${detectKind()}`);
+if (pkg.description) out.push(`- description: ${pkg.description}`);
+if (frameworks.length) out.push(`- frameworks: ${frameworks.join(', ')}`);
+if (files.length >= MAX_FILES) out.push(`- note: truncated after ${MAX_FILES} files`);
+out.push('');
+
+const langKeys = Object.keys(languages).sort((a, b) => languages[b].files - languages[a].files);
+if (langKeys.length) {
+  out.push('## Languages', '');
+  out.push('| language | files |');
+  out.push('|----------|------:|');
+  for (const lang of langKeys) out.push(`| ${lang} | ${languages[lang].files} |`);
+  out.push('');
+}
+
+out.push(...section('Manifests', manifests.map((file) => `\`${file}\``)));
+
+const scripts = pkg.scripts ? Object.entries(pkg.scripts) : [];
+if (scripts.length) {
+  out.push('## package.json scripts', '');
+  for (const [name, cmd] of scripts) out.push(`- \`${name}\`: ${cmd}`);
+  out.push('');
+}
+
+out.push(
+  ...section(
+    'Key directories',
+    keyDirs.slice(0, 24).map((dir) => `\`${dir}/\` (${dirCounts.get(dir)} files)`),
+  ),
+);
+out.push(...section('Likely entrypoints', entrypoints.map((file) => `\`${file}\``)));
+const testItems = tests.map((file) => `\`${file}\``);
+if (tests.length === 40) testItems.push('... truncated');
+out.push(...section('Tests', testItems));
+out.push(...section('Docs', docs.map((file) => `\`${file}\``)));
+out.push(...section('CI', ci.map((file) => `\`${file}\``)));
+
+process.stdout.write(`${out.join('\n')}\n`);
