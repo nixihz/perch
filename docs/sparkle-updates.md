@@ -1,13 +1,13 @@
 # 栖集在线更新
 
-已接入 Sparkle 2.10.0，参考 `/opt/case/iamx/tod/apple/Sources/MacUpdates.swift` 的单更新器与设置交互。[官网](https://perch.keli.tech/)已发布 `0.0.1 (3)` 安装包及更新清单。客户端已内置独立地址与公钥，完成 Developer ID 签名、Apple 公证、票据装订；build 2 已完成真实应用内线上检查，build 2 → build 3 的安装升级仍待验收。
+已接入 Sparkle 2.10.0，参考 `/opt/case/iamx/tod/apple/Sources/MacUpdates.swift` 的单更新器与设置交互。从迁移版 `0.0.1 (4)` 起，[官网](https://app.u1.fan/x/perch/)、下载包和更新清单均迁至 `app.u1.fan`，不再更新 keli.tech。旧版内置旧清单地址，须从新官网手动安装一次迁移版；之后使用新清单检查更新。下方 build 2 / 3 的 keli.tech 验收记录保留为历史，不作为后续发布入口。
 
 首次启用的配置：
 
-- 清单：`https://perch.keli.tech/updates/macos/appcast.xml`。
+- 当前清单：`https://app.u1.fan/x/perch/updates/macos/appcast.xml`。
 - 公钥：`3EB2chk/1iPXBBWYoCpL1IMTXf09D0IsFnH9oceg5oI=`；私钥保存在发布机登录钥匙串的 `com.xiezhixin.perch` account。
 - 已发布的 `0.0.1 (1)` 未包含 `SUFeedURL`、`SUPublicEDKey`，须手动安装一次启用版。旧下载地址继续保留，不覆盖原包。
-- ZIP 使用 `.download` 后缀托管，见[网站部署说明](../website/perch/README.md)。Sparkle 清单直接引用唯一命名的 DMG，无需依赖 ZIP 后缀映射。
+- 新平台单次发布包上限为 25 MiB，官网与 Sparkle 统一使用 DMG；ZIP 仅保留为本地离线分发产物。见[网站部署说明](../website/perch/README.md)。清单引用同一应用挂载路径下唯一命名的 DMG。
 - 不能仅凭 HTTP 200 判定 appcast 可用，必须核对 RSS XML 内容、enclosure、签名和实际下载字节；缺失静态路径可能回退到 HTML 首页。
 
 ## 客户端行为
@@ -20,7 +20,7 @@
 
 ## 配置与构建
 
-公开配置放在 `config/updates.json`。当前构建与线上已发布版本均为 `0.0.1 (3)`；每次正式发包都递增 `build`，同一个构建号不能重发不同内容。此版本是桌面整包版本，与 skill revision、项目锁版本无关。
+公开配置放在 `config/updates.json`。当前迁移构建为 `0.0.1 (4)`，保留原 Bundle ID 与 Sparkle 公钥，使用新平台清单地址重新签名、公证；每次正式发包都递增 `build`，同一个构建号不能重发不同内容。此版本是桌面整包版本，与 skill revision、项目锁版本无关。
 
 可直接修改该 JSON，或通过以下环境变量覆盖：
 
@@ -100,3 +100,12 @@ python3 -m unittest tests.test_update_packaging tests.test_ui_localization -v
 - 下载包验证完成后替换清单与官网首页。公网清单字节与本地签名清单一致，build 为 3，返回 `Cache-Control: no-cache`；首页已指向 build 3 的 DMG 和 ZIP。清单报告：`dist/release-v0.0.1-3/public-appcast-verification.json`。
 - 旧清单与首页备份在发布服务器 `perch-release-backups/build-3-20261022T055058Z/`；既有安装包逐一复核 SHA-256，全部保持原样。未修改平台上传上限或访问权限。
 - 待完成：build 2 → build 3 的应用内下载、安装、重启与数据保留验收；本次上传校验不等同于完成安装升级。
+
+2026-10-22 构建 `0.0.1 (4)` 新平台迁移准备：
+
+- 目标平台为 `https://app.u1.fan`，应用 `perch`，公开路由 `/x/perch/`；清单、enclosure 和官网链接均使用该挂载路径。`script/prepare_sparkle_update.py` 从清单地址计算官网路径，不再硬编码 keli.tech。
+- 保留原 Bundle ID 与 Sparkle 公钥。应用及内置 CLI 均为 arm64 / x86_64，Developer ID、hardened runtime、严格递归验签、Apple 公证、装订和 Gatekeeper 检查通过。应用公证 ID：`045232b1-a0e9-4cd4-91e7-92bed53de886`；DMG 公证 ID：`c4a09e27-df3c-4155-821e-01c996b33b96`。
+- DMG：`Perch-0.0.1-4-universal.dmg`，25,210,037 字节，SHA-256：`e4b2f26e190f8ee89173f17e4a90a67e2e809607dfc9a64d89185506a30843e0`。签名清单 SHA-256：`8a066165f4bdbed3bc3ed149be09be664a53a7c63dd7e868872546f5ecea6ea3`，`sign_update --verify` 通过。ZIP 保留为本地离线产物，不进入新站发布包。
+- Python 31 项、Swift 更新与设置 7 项通过；包内及独立 CLI 均完成仓库外 MCP 验证（17 个工具）。`app-platform package` 的完整文件清单和逐文件字节一致；真实隔离预览的首页、图片、DMG、appcast 共 4 个文件 HTTP 与 SHA-256 核验通过，预览退出后临时数据已清理。预览 Range 返回完整文件（200）。
+- 平台发布目录：`dist/perch-app-platform-v0.0.1-4/`；上传 ZIP 为 `dist/perch-app-platform-v0.0.1-4.zip`，23,325,935 字节，低于平台 25 MiB 上限。CLI 会排除 `.zip` 文件，改为 `.download` 后 DMG 与 ZIP 合包仍超限，因此官网统一使用 DMG。
+- 当前尚未发布到新平台，等待用户完成浏览器 CLI 登录授权；旧 keli.tech 站点未修改。目标平台公网下载、匿名访问与跨版本安装须在发布后另行验收。完整本地报告：`dist/release-v0.0.1-4/release-verification.json`。

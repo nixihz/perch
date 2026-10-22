@@ -41,7 +41,7 @@ task app
 
 ## 本机 CLI 与 MCP
 
-桌面应用已接入 Sparkle 2.10.0，菜单和设置页提供检查更新。[官网](https://perch.keli.tech/)已提供已公证的 v0.0.1 DMG / ZIP 下载；Sparkle 配置中的清单地址和公钥仍为空，在线更新尚未启用。配置、版本号、Release 打包与后续签名发布步骤见[在线更新说明](docs/sparkle-updates.md)。
+桌面应用已接入 Sparkle 2.10.0，菜单和设置页提供检查更新。Perch 迁移到 [app.u1.fan 官网](https://app.u1.fan/x/perch/)，从 build 4 起使用新平台的下载包和 Sparkle 清单；旧版需手动安装一次迁移版，之后可在应用内检查更新。配置、版本号、Release 打包与后续签名发布步骤见[在线更新说明](docs/sparkle-updates.md)。
 
 ```bash
 swift build --product skillset

@@ -8,7 +8,7 @@ import plistlib
 import shutil
 import subprocess
 import tempfile
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit
 import xml.etree.ElementTree as ET
 
 from configure_updates import load_configuration
@@ -102,7 +102,7 @@ def prepare(dmg, output, config, sparkle_bin):
         shutil.copy2(dmg, archive)
         run(sparkle_bin / "generate_appcast", "--account", BUNDLE_ID,
             "--download-url-prefix", config["feedURL"].rsplit("/", 1)[0] + "/",
-            "--link", "https://perch.keli.tech/",
+            "--link", urljoin(config["feedURL"], "../../"),
             "--maximum-deltas", "0", release)
         signature = validate_appcast(release / "appcast.xml", config, archive)
         run(sparkle_bin / "sign_update", "--account", BUNDLE_ID, "--verify", archive, signature)

@@ -22,11 +22,11 @@ class SparkleAppcastTests(unittest.TestCase):
         self.archive.write_bytes(b"fixture DMG bytes")
         self.path = self.root / "appcast.xml"
         self.config = {"version": "0.0.1", "build": "2",
-                       "feedURL": "https://perch.keli.tech/updates/macos/appcast.xml", "publicEDKey": "fixture-key"}
+                       "feedURL": "https://app.u1.fan/x/perch/updates/macos/appcast.xml", "publicEDKey": "fixture-key"}
         self.xml = '''<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"><channel><item>
           <sparkle:version>2</sparkle:version><sparkle:shortVersionString>0.0.1</sparkle:shortVersionString>
           <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-          <enclosure url="https://perch.keli.tech/updates/macos/Perch-0.0.1-2-universal.dmg"
+          <enclosure url="https://app.u1.fan/x/perch/updates/macos/Perch-0.0.1-2-universal.dmg"
           length="17" sparkle:edSignature="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="/>
         </item></channel></rss>'''
 
@@ -43,7 +43,7 @@ class SparkleAppcastTests(unittest.TestCase):
 
     def test_wrong_release_url_version_system_or_signature_is_rejected(self):
         mutations = [
-            ("https://perch.keli.tech/updates/macos/Perch", "https://other.example/Perch"),
+            ("https://app.u1.fan/x/perch/updates/macos/Perch", "https://other.example/Perch"),
             ("length=\"17\"", "length=\"999\""),
             ("<sparkle:version>2<", "<sparkle:version>1<"),
             ("<sparkle:shortVersionString>0.0.1<", "<sparkle:shortVersionString>0.0.2<"),
