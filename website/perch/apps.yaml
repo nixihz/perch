@@ -1,0 +1,15 @@
+name: perch
+title: 栖集 / Perch
+title_i18n:
+  zh: 栖集
+  en: Perch
+type: frontend
+version: 0.0.1
+route: /x/perch
+access: public
+entry: dist
+logo: dist/assets/perch.png
+description: 原生 macOS AI 开发配置工作台，整理技能、规则与工具连接。
+description_i18n:
+  zh: 原生 macOS AI 开发配置工作台，整理技能、规则与工具连接。
+  en: A native macOS workspace for AI skills, project rules, and tool connections.
