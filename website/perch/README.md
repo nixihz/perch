@@ -4,7 +4,7 @@
 
 部署标识为 `perch`，路由 `/x/perch`，访问模式 `public`。从桌面 build 4 起，官网、下载包与 Sparkle 清单均使用新平台；不再向 keli.tech 发布更新。旧客户端内置旧清单地址，须从新官网手动安装一次迁移版，后续在应用内检查更新。
 
-页面位于 `dist/index.html`，品牌图片与已公证安装包随静态应用包发布；不包含技能库存、凭据或本机数据。设计约定见 `DESIGN.md`。静态资源和下载链接使用相对路径，支持 `/x/perch/` 挂载。
+页面源码位于受版本管理的 `index.html`；发布时复制为 `dist/index.html`，品牌图片与已公证安装包随静态应用包发布；不包含技能库存、凭据或本机数据。设计约定见 `DESIGN.md`。静态资源和下载链接使用相对路径，支持 `/x/perch/` 挂载。
 
 Sparkle 清单为 `https://app.u1.fan/x/perch/updates/macos/appcast.xml`，唯一命名的 DMG 位于同一目录；新平台单次发布包上限为 25 MiB，因此官网与 Sparkle 共用同一 DMG；ZIP 仅作为本地离线产物保留，不在新站提供 ZIP 下载。使用 `script/prepare_sparkle_update.py` 生成并验证签名清单，下载 URL 与客户端内置地址必须一致。客户端公钥与发布机 Keychain account 见[在线更新说明](../../docs/sparkle-updates.md)。更换托管地址保留原公钥和 Bundle ID，递增桌面构建号并重新签名、公证。
 
@@ -36,3 +36,5 @@ CLI 的 `--data` 默认为当前目录下的 `data`；不同工作目录会读�
 平台通用托管、CLI 登录目录与桌面附件分发问题见[平台交接](../../docs/app-platform-handoff.md)。
 
 2026-10-22 再次更新至 `0.0.1 (5)`，release ID 为 `4b4ee2af-fd9c-4ced-8cf0-78f6ff30fbbe`；唯一命名 DMG、官网与签名清单同批发布，匿名公网字节及 Sparkle 验签通过。最新发布目录为 `dist/perch-app-platform-v0.0.1-5/`，本地验收报告见 `dist/release-v0.0.1-5/`。
+
+后续发布从版本管理中的 `index.html` 复制页面、从 `assets/brand/perch-primary.png` 复制品牌图到全新发布目录，再加入本次 Sparkle 输出的 DMG 和 appcast。不要直接打包开发用 `website/perch/dist`：其中可能保留旧下载文件，导致体积超限或混入过期入口。
