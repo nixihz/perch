@@ -101,11 +101,15 @@ python3 -m unittest tests.test_update_packaging tests.test_ui_localization -v
 - 旧清单与首页备份在发布服务器 `perch-release-backups/build-3-20261022T055058Z/`；既有安装包逐一复核 SHA-256，全部保持原样。未修改平台上传上限或访问权限。
 - 待完成：build 2 → build 3 的应用内下载、安装、重启与数据保留验收；本次上传校验不等同于完成安装升级。
 
-2026-10-22 构建 `0.0.1 (4)` 新平台迁移准备：
+2026-10-22 构建 `0.0.1 (4)` 新平台迁移与发布验证：
 
-- 目标平台为 `https://app.u1.fan`，应用 `perch`，公开路由 `/x/perch/`；清单、enclosure 和官网链接均使用该挂载路径。`script/prepare_sparkle_update.py` 从清单地址计算官网路径，不再硬编码 keli.tech。
+- 目标平台为 `https://app.u1.fan`，应用 `perch`，内部挂载路由 `/x/perch/`；清单、enclosure 和官网链接均使用该挂载路径。`script/prepare_sparkle_update.py` 从清单地址计算官网路径，不再硬编码 keli.tech。
 - 保留原 Bundle ID 与 Sparkle 公钥。应用及内置 CLI 均为 arm64 / x86_64，Developer ID、hardened runtime、严格递归验签、Apple 公证、装订和 Gatekeeper 检查通过。应用公证 ID：`045232b1-a0e9-4cd4-91e7-92bed53de886`；DMG 公证 ID：`c4a09e27-df3c-4155-821e-01c996b33b96`。
 - DMG：`Perch-0.0.1-4-universal.dmg`，25,210,037 字节，SHA-256：`e4b2f26e190f8ee89173f17e4a90a67e2e809607dfc9a64d89185506a30843e0`。签名清单 SHA-256：`8a066165f4bdbed3bc3ed149be09be664a53a7c63dd7e868872546f5ecea6ea3`，`sign_update --verify` 通过。ZIP 保留为本地离线产物，不进入新站发布包。
 - Python 31 项、Swift 更新与设置 7 项通过；包内及独立 CLI 均完成仓库外 MCP 验证（17 个工具）。`app-platform package` 的完整文件清单和逐文件字节一致；真实隔离预览的首页、图片、DMG、appcast 共 4 个文件 HTTP 与 SHA-256 核验通过，预览退出后临时数据已清理。预览 Range 返回完整文件（200）。
 - 平台发布目录：`dist/perch-app-platform-v0.0.1-4/`；上传 ZIP 为 `dist/perch-app-platform-v0.0.1-4.zip`，23,325,935 字节，低于平台 25 MiB 上限。CLI 会排除 `.zip` 文件，改为 `.download` 后 DMG 与 ZIP 合包仍超限，因此官网统一使用 DMG。
-- 当前尚未发布到新平台，等待用户完成浏览器 CLI 登录授权；旧 keli.tech 站点未修改。目标平台公网下载、匿名访问与跨版本安装须在发布后另行验收。完整本地报告：`dist/release-v0.0.1-4/release-verification.json`。
+- 已通过现有管理员 CLI 登录发布，新平台 release ID 为 `407bf84e-1cfc-4d5e-b5da-83b46d84de57`。登录数据位于本机 `~/data`；CLI 默认按当前工作目录查找 `data`，发布时须显式复用有效目录。旧 keli.tech 站点未修改。完整报告：`dist/release-v0.0.1-4/release-verification.json`。
+- 平台设置了独立应用根域，`https://app.u1.fan/x/perch/` 及其资源会以 308 跳转到 `https://perch.u1.fan/`。发布后补齐了 Perch 专用 Nginx 入口，复用已有有效通配证书；未修改平台应用根域、证书或其他应用配置。配置见 `website/perch/perch.u1.fan.nginx.conf`，服务器维护记录：`/root/deploy-backups/perch-hosting-build4-20261022T0655Z/`。
+- 匿名 HTTPS 验证首页、图片、appcast 和完整 DMG，最终地址均为 Perch 子域；4 个文件长度与 SHA-256 均与发布目录一致。公网 DMG 的 `sign_update --verify` 通过；清单保持新平台 enclosure、build 4、macOS 14 与原公钥，返回 `Cache-Control: no-cache`。HEAD 返回 200 和长度 25,210,037；Range 返回完整文件（200），不支持分段续传。报告：`dist/release-v0.0.1-4/public-platform-verification.json`。
+- Nginx 配置检查及 reload 通过，既有平台与 Capslock Bye 配置逐字节保持原样；平台、Capslock Bye 及同机两个站点的公网首页摘要在变更前后一致。HTTP 到 HTTPS 跳转保留路径与查询参数。浏览器自动化工具超时，未完成本轮浏览器视觉复核；已通过真实公网匿名 HTTP 与文件校验。
+- 待完成：手动安装迁移版后，两个正式版本之间的应用内下载、安装、重启与数据保留验收。旧版内置旧 feed，不会自行发现新平台，本次不修改旧清单。通配证书沿用平台现有手工 DNS-01 续期安排，到期时间为 2027-01-20；本次未更改续期策略。
