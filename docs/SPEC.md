@@ -47,6 +47,8 @@ Skill Set 是一个**本地 macOS 桌面应用**和 Git 大仓，不是 Web 软�
 
 ### 已实现（Alpha）
 
+- 全局配置：Codex / Claude Code 用户作用域独立草稿、技能与规则部署、已有内容显式接管、原始备份、三种还原计划、操作历史和项目继承提示；不将 HOME 登记为项目，不写用户主目录项目锁。
+
 - 技能库新增、搜索、完整 `SKILL.md` 阅读、本地编辑和移除；附属文件通过列表按需只读预览，支持 UTF-8 文本，二进制和超过 2 MiB 的文件提供 Finder 定位入口。来源与内容指纹默认折叠，不增加常驻文件树。外部来源“复制并编辑”、隐藏及恢复。内容写入本机 `personal` 库，版本包保留，保存后可在项目草稿中选择并通过既有计划审批部署。
 
 - SwiftPM + SwiftUI 原生 macOS 应用，SwiftPM 产品名为 `SkillSetDesktop`，入口为 `script/build_and_run.sh` 生成并启动 `dist/SkillSet.app`。
@@ -54,20 +56,22 @@ Skill Set 是一个**本地 macOS 桌面应用**和 Git 大仓，不是 Web 软�
 - 载入真实 150 条 catalog、3 个预设、3 个 AGENTS 片段和 Matt 固定调研快照；搜索、详情、阻塞态、同名 namespace 可见。
 - 项目 canonical path 登记、草稿持久化、preset 载入、项目观察、plan → 本机审批 → apply → journal → rollback；可同时写 Codex `.agents/skills` + `AGENTS.md` 与 Claude Code `.claude/skills` + `CLAUDE.md`。
 - 项目接入第一阶段：同时盘点两个宿主的项目技能，展示已有/受管归属；同内容不自动接管，不同内容同路径冲突与受管漂移阻塞。取消技能或宿主时只移除有本机记录且未漂移的受管技能与规则块；删除可撤销，规则块外编辑保留，空文件还原与恢复预检有行为覆盖。
-- 项目 `skillset.json` / `skillset.lock.json`、manifest digest、逐文件清单和内容寻址离线对象；源目录缺失时可以从锁与对象核验、恢复。
+- 本机项目安装选择、版本记录、manifest digest、逐文件清单和内容寻址离线对象；源目录缺失时可以从锁与对象核验、恢复。
 - 计划绑定项目 realpath、旧/新 hash、digest 和 10 分钟有效期；未审批、过期、漂移、重放、软链置换和 rollback 冲突会拒绝。
 - GitHub 仓库根隔离预览，支持 branch/tag/commit ref，拒绝 URL 凭据和非 allowlist host，限制 12,000 文件 / 512 MiB；保存固定 commit、候选分类、内容指纹和许可迹象。
 - Codex TOML、Claude 项目 `.mcp.json` 与用户 `~/.claude.json` 的真实 MCP 扫描和受管写入计划；保留未知键和其他 server，环境变量只写 `${NAME}` 引用。
 - Claude Code / Codex 插件缓存与 manifest、Claude 安装索引、Codex plugin 配置的真实盘点；展示 marketplace、安装状态、revision、组件和 hooks 风险。
 - Plugin 生命周期计划：操作本机已发现的插件；Claude install/update/enable/disable/uninstall，Codex install/uninstall。计划绑定 host、plugin id、scope、manifest digest、CLI realpath 和固定 argv；多缓存版本必须精确选择，执行前复核状态，执行后回读并记录 operation。
 - `skillset` CLI：doctor、projects、skills、sources、objects、plugins（list/plan）、inspect、plan、plans、approve、apply、operations、rollback、mcp。
-- stdio MCP legacy `2025-11-25`：项目、Skill、来源、对象、MCP 配置、Plugin 盘点与生命周期计划，pending plans、apply 和 operation。MCP 不能批准计划，也不能为高风险安装/更新作风险确认。
+- `perch` stdio MCP legacy `2025-11-25`：17 个工具，支持预设列表、技能搜索、按已登记项目路径或 ID 追加安装技能与预设的技能和规则，以及来源、对象、MCP 配置、Plugin 盘点与生命周期计划，pending plans、apply 和 operation。MCP 不能批准计划，也不能为高风险安装/更新作风险确认。
 - Swift core 行为测试、CLI/MCP 集成测试、真实 GitHub 预览和原生 bundle 构建验证。
 
 ### 下一阶段 P0
 
-- 项目接入与退出管理后续：明确接管已有内容、接入基线、恢复接入前状态、停止管理和操作历史界面；第一阶段的归属、冲突、取消选择清理与恢复预检已实现。完整边界见 [项目接入、配置落地与退出管理](specs/project-integration.md)。默认实体复制不变，软链接需单独验收。
-- 来源预览已可逐项导入独立的本机技能库版本并参与项目部署；后续补充共享仓 Source / Revision 发布与来源更新管理，仍不直接改 catalog/vendor。
+- 全局配置后续：用户作用域技能与规则、显式接管、原始基线、撤销操作、恢复接管前状态、停止管理与项目继承提示已实现；跨进程锁、完整故障注入与真实宿主加载仍待验收。详见 [全局配置与还原](specs/global-configuration.md)。
+
+- 项目接入与退出管理后续：明确接管已有内容、接入基线、恢复接入前状态、停止管理和操作历史界面；第一阶段的归属、冲突、取消选择清理与恢复预检已实现。完整边界见 [项目接入、配置落地与退出管理](specs/project-integration.md)。支持栖集固定版本软链接与实体复制，宿主加载仍需单独验证。
+- 用户配置的 Git/本地来源同步后直接进入 ~/.perch 技能库搜索，不再提供内置技能来源。完整包与固定安装版本独立于下载缓存，来源更新不自动切换已安装版本，仍不直接改 catalog/vendor。
 - Plugin marketplace 搜索、依赖图求解、command-source 逐项确认，以及真实宿主 reload / 当前会话加载验证。
 - 祖先规则、`AGENTS.override.md`、Claude 规则加载链和有效规则遮蔽提示。
 - apply 后真实宿主重载与能力验证；当前只验证落盘、hash、受管块和 MCP 配置回读。
@@ -141,7 +145,7 @@ Sources/SkillSetCLI/             CLI 与 stdio MCP
   previews/                      隔离来源 checkout 与预览记录
 ```
 
-项目 `skillset.json` 表达期望，`skillset.lock.json` 锁定具体 object、目标宿主和逐文件 hash；本机 `.skillset-local/` 只记录观察和恢复信息。迁移凭证中的私有绝对路径仅限本仓私有使用，公开导出必须剥离。
+项目安装选择与版本记录保存在 `~/.perch/project-state/<canonical-path-sha256>/`，分别表达期望和锁定具体 object、目标宿主及逐文件 hash；观察、归属和恢复信息同样只保存在应用数据目录。用户项目只写所选宿主实际需要的技能、规则与配置，不添加 `skillset.json`、`skillset.lock.json` 或 `.skillset-local/`。迁移凭证中的私有绝对路径仅限本仓私有使用，公开导出必须剥离。
 
 ## 9. 当前交互边界
 

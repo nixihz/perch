@@ -16,6 +16,9 @@
 | 工具 | 关键输入 | 行为 | readOnly / destructive / openWorld |
 | --- | --- | --- | --- |
 | `projects_list` | 无 | 列出注册项目、desired、observed 和问题 | true / false / false |
+| `presets_list` | `query?` | 列出或搜索内置与本机预设，返回完整组件和 revision | true / false / false |
+| `skills_install` | `projectId` 或 `projectPath`、`skillIds`、`agents?` | 为已登记项目追加技能，返回待批准安装计划；批准后用 `deployment_apply` 写入 | false / false / false |
+| `presets_install` | `projectId` 或 `projectPath`、`presetId`、`agents?` | 展开预设的技能与规则并追加到项目，返回待批准计划；混合预设转本机完整审阅 | false / false / false |
 | `skills_search` | `query`、`sourceId?`、`limit?` | 搜索本机 catalog，返回 namespace、hash、许可和阻塞态 | true / false / false |
 | `sources_list` | 无 | 列出已保存来源预览、固定 commit 和候选数量 | true / false / false |
 | `sources_preview` | `url`、`ref?` | 隔离 clone 受信任 GitHub 仓库根，保存预览；不收录、不启用 | false / false / true |
@@ -33,17 +36,21 @@
 工具数量与名称由 `tools/list` 决定，文档不替代运行时 schema。`sources_preview` 的幂等提示为 false，因为远端 ref 可能移动；保存的记录仍固定 resolved commit。
 
 项目摘要新增 `skillObservations`，逐项记录宿主、项目相对路径、可确定的技能 ID、`managed` / `existing` 归属及内容状态。观察不代表宿主已加载；旧锁缺少本机归属记录时按已有内容处理。`deployment_plan` 会生成取消选择后的受管移除步骤，未受管同路径冲突与受管漂移会阻塞；`SKILL_TARGET_CONFLICT`、`SKILL_MANAGED_DRIFT`、`RULE_TARGET_CONFLICT`、`RULE_MANAGED_DRIFT` 在 CLI 返回退出码 3。升级前缺少归属及读取依赖的待执行技能部署计划须重新生成。
-当前共 14 个工具。`plugin_lifecycle_plan` 不提供“风险确认”参数；安装或更新可能由宿主解析新包，因此 MCP 调用会返回 `PLUGIN_RISK_APPROVAL_REQUIRED`，必须转由本机 UI/CLI 生成计划。
+当前共 17 个工具，服务握手名称与新接入配置名称均为 `perch`；CLI 可执行文件仍为 `skillset`。`plugin_lifecycle_plan` 不提供“风险确认”参数；安装或更新可能由宿主解析新包，因此 MCP 调用会返回 `PLUGIN_RISK_APPROVAL_REQUIRED`，必须转由本机 UI/CLI 生成计划。
 
 同一 `pluginId` 和 scope 有多个缓存版本时，AI 应先调用 `plugins_list`，再把目标记录的 `manifestDigest` 传给计划工具。缺失摘要返回 `PLUGIN_VERSION_AMBIGUOUS`，不会按目录顺序猜测。
 
 ## 3. 计划与人工授权
 
+项目安装工作流：`presets_list` / `skills_search` → `presets_install` / `skills_install` → 本机批准 → `deployment_apply`。安装参数必须提供已登记项目的 `projectId` 或绝对路径 `projectPath`，二选一；路径匹配 canonical realpath，不使用 MCP 服务工作目录推断当前项目。未登记返回 `PROJECT_NOT_REGISTERED` 并给出 App / CLI 登记入口，MCP 不自行添加写入根。两个安装工具将选定组件追加到应用数据目录内已落盘的项目安装选择，保留原有技能、规则、ruleBlockID 和宿主，不载入未部署草稿。结果包含 `status: awaiting-approval`、完整 digest 和 `nextTool` / `nextArguments`，不得据此报告已经安装。
+
+服务 `initialize.serverInfo.name` 和 AI 接入向导的新配置键均为 `perch`。已有旧名称配置保留，避免擅自覆盖外部配置；使用向导前应在 MCP 服务页审阅旧连接并通过计划移除，然后生成 `perch` 接入计划。宿主重新加载后才可确认发现 17 个工具。
+
 AGENTS 片段的新建、编辑和删除只开放在本机 UI，保存到本机 `templates.json`；内置片段按同标识覆盖，删除记录在重启后继续生效。App、CLI 和 MCP 的部署计划共用合并后的片段库，长运行的 stdio 服务需重启以读取片段变更。片段删除不修改项目文件，也不静默移除草稿或预设引用；下次计划遇到失效引用会拒绝并要求重新选择。已经生成的计划保留生成时的内容和 digest，库编辑不改写既有计划；写项目仍需逐份预览和批准。不新增 MCP 片段写入工具。
 
-原生预设的新建与编辑只开放在本机 UI，保存本机组合并载入项目草稿，不新增 MCP 写入工具。插件与 MCP 组件仍分别通过既有计划工具和本机审批处理。
+原生预设的新建与编辑只开放在本机 UI。MCP 的 `presets_list` 每次合并内置与本机预设，按标识使用本机覆盖；`presets_install` 为技能与规则生成追加安装计划。包含插件或 MCP 的混合预设返回 `PRESET_REQUIRES_LOCAL_PLAN`，不生成部分计划，转本机完整载入并分别审阅组件计划。插件与 MCP 组件仍分别通过既有计划工具和本机审批处理。
 
-原生技能库的新增、编辑与移除只开放在本机 UI，不新增 MCP 写入工具。`skills_search` 与部署计划在服务初始化时合并本机 `personal` 技能和隐藏条目；长运行的 stdio 服务需重启以载入新索引。技能保存不授予项目写入权限，部署仍须经过下述审批流程。
+原生技能库的新增、编辑与移除只开放在本机 UI，不新增 MCP 技能库写入工具。`skills_search`、`skills_install` 与 `presets_install` 每次读取最新本机技能索引；不要求重启服务才能查询和安装新技能。其他原有部署工具仍使用初始化快照。技能保存不授予项目写入权限，部署仍须经过下述审批流程。
 
 ```text
 AI 调用 deployment_plan / mcp_config_plan / plugin_lifecycle_plan
@@ -129,12 +136,12 @@ App 内的 CLI 位于 `Contents/Helpers/skillset`，同目录包含 `SkillSet_Sk
 `mcp plan` 只生成 pending plan。用户在本机 App 或 CLI 批准后，apply 才会写宿主配置；Codex TOML 保留受管块外文本，Claude JSON 保留未知键和其他 server，`env` 只写 `${NAME}` 引用。管理器不会启动 MCP 进程或读取 token。Codex：
 
 ```toml
-[mcp_servers.skillset]
+[mcp_servers.perch]
 command = "/absolute/path/to/skillset"
 args = ["mcp", "serve", "--transport", "stdio"]
 ```
 
-Claude 项目 `.mcp.json` 使用等价的 `mcpServers.skillset.command/args` 结构。示例中的 executable 最好使用绝对路径；`skillset` 默认从可执行文件位置、`SKILLSET_REPOSITORY_ROOT` 或当前目录向上查找 `registry/catalog.json`。
+Claude 项目 `.mcp.json` 使用等价的 `mcpServers.perch.command/args` 结构。示例中的 executable 最好使用绝对路径；`skillset` 默认从可执行文件位置、`SKILLSET_REPOSITORY_ROOT` 或当前目录向上查找 `registry/catalog.json`。
 
 同名 server 若不属于本管理器，会返回 `MCP_CONFIG_CONFLICT`，不会覆盖已有配置。凭据只保留变量名或 Keychain 引用，不回显 token。
 
@@ -144,7 +151,7 @@ Claude 项目 `.mcp.json` 使用等价的 `mcpServers.skillset.command/args` 结
 
 - `initialize`、`notifications/initialized`、`tools/list`、`sources_list` 的 stdout 全部是合法 JSON-RPC。
 - 未审批 apply 返回退出码 4 和 `APPROVAL_REQUIRED`。
-- 审批后 apply 只写预期 Skill、规则文件与项目锁，并可通过同一 plan digest 完成。
+- 审批后 apply 只在项目写预期 Skill 和规则文件，安装选择与项目锁写入应用数据目录，并可通过同一 plan digest 完成。
 - `objects verify` 能从内容寻址对象核验项目锁；MCP Codex/Claude 配置 round-trip 与 ownership 有行为测试。
 - `plugins list` 能合并 Claude 安装索引与 Codex 配置，不跟随缓存软链；stdio `tools/list` 的 JSON-RPC 输出有集成测试。
 - `plugins plan` 在未审批时零宿主调用；批准后通过隔离假 CLI 验证固定参数、operation 回读和 `applied-verification-pending` 状态。状态漂移与风险组件分别有拒绝路径测试。

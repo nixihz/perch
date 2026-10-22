@@ -14,7 +14,7 @@ flowchart LR
   CLI[skillset CLI] --> CORE
   MCP[stdio MCP] --> CORE
   CORE --> GIT[Git 仓 · catalog/presets/templates/objects]
-  CORE --> USER[Application Support · 本机状态/审批/journal]
+  CORE --> USER[~/.perch · 本机状态/审批/journal]
   CORE --> HOST[Codex / Claude 配置适配器]
   CORE --> FS[项目受管文件]
   APP --> HEALTH[MCP 子进程健康探测]
@@ -53,13 +53,13 @@ Sources/SkillSetCLI/
 Tests/SkillSetCoreTests/        Swift Testing 行为测试
 ```
 
-应用优先从仓库读取 JSON/Markdown，SwiftPM resources 只作回退；150 条 catalog 保持只读。项目草稿、计划、staging、operation 和来源预览写入 Application Support。所有部署写入经过 `SkillSetService`，UI、CLI 和 MCP 不各自实现安装逻辑。
+应用的模板与预设可读取仓库 JSON/Markdown，SwiftPM resources 作回退；技能库只读取用户配置来源与本机索引，不自动加载仓库 catalog。项目草稿、计划、staging、operation 和来源缓存写入 ~/.perch。所有部署写入经过 `SkillSetService`，UI、CLI 和 MCP 不各自实现安装逻辑。
 
-技能库编辑通过 `SkillLibraryStore` 保存到 Application Support `skill-library/`：`index.json` 记录 `personal/<slug>` 条目与外部隐藏条目，`packages/<uuid>/` 保存完整版本。每次编辑先复制旧包、替换 `SKILL.md`、计算部署同算法指纹，再原子切换索引；失败不修改旧索引或旧版本。删除只移除索引引用，历史包保留，外部条目可恢复隐藏。当前不提供跨进程编辑锁、历史版本恢复 UI 或缓存清理。
+技能库编辑通过 `SkillLibraryStore` 保存到 `~/.perch/skills/`：`index.json` 记录 `personal/<slug>` 条目与外部隐藏条目，`packages/<uuid>/` 保存完整版本。每次编辑先复制旧包、替换 `SKILL.md`、计算部署同算法指纹，再原子切换索引；失败不修改旧索引或旧版本。删除只移除索引引用，历史包保留，外部条目可恢复隐藏。当前不提供跨进程编辑锁、历史版本恢复 UI 或缓存清理。
 
 `SkillSetService` 初始化时合并仓库 catalog 和本机索引；部署计划从索引解析本地包路径，仍由原计划审批、对象存储和文件事务落地。编辑不写 `registry/catalog.json`、`vendor/`、全局技能或项目配置。`SKILL.md` 编辑只提取 name、description 和 version 供展示，保留原文与未知字段，不宣称完成完整 YAML schema 校验。
 
-原生技能来源页通过列表标题的「＋」打开表单。编辑隔离预览时重新下载并固定版本，新记录保存成功后才移除旧记录；失败清理新隔离区并保留旧记录。删除仅按预览 UUID 移除 Application Support 内的对应目录，不使用记录中的 `workspacePath` 作为删除目标，不改内置来源或 catalog。`requestedRef` 可选字段保存用户填写的分支、标签或提交，兼容不含该字段的旧记录。
+原生技能来源页通过列表标题的「＋」打开表单。编辑隔离预览时重新下载并固定版本，新记录保存成功后才移除旧记录；失败清理新隔离区并保留旧记录。删除按来源 UUID 移除 ~/.perch 内的对应缓存与搜索条目，不使用记录中的 `workspacePath` 作为删除目标，不改仓库 catalog。`requestedRef` 可选字段保存用户填写的分支、标签或提交，兼容不含该字段的旧记录。
 
 来源导入经 `SkillSetService.sourceSkillImportDraft` / `importSourceSkill` 进入本机技能库。目录只从预览 UUID 和已扫描的相对路径推导，不信任 `workspacePath`；拒绝越界、目录软链替换及有完整性问题的候选。审阅和提交分别核对预览指纹与仓库根许可文件摘要，复制后再次验证原始包指纹。包中的 Git 数据不导入；仓库根 LICENSE / LICENCE / COPYING / NOTICE 文件保存在独立的 `_source_licenses` 目录（重名时追加下划线）。索引原子发布前失败会清理新包，既有同标识技能不可覆盖。
 
@@ -67,12 +67,16 @@ Tests/SkillSetCoreTests/        Swift Testing 行为测试
 
 ## 3. 共享仓与本机状态
 
+项目状态按 canonical realpath 的 SHA-256 保存在 `~/.perch/project-state/`。旧项目记录仅在有本机已完成 operation 收据且清单与锁一致时只读导入，下次部署写入本机状态；旧项目文件不再更新，也不自动删除。同名但无归属证据的用户文件不作为安装记录。旧待执行计划须重新生成。
+
+全局技能与规则使用独立的 `GlobalConfigurationManager`，不复用项目登记或项目锁。宿主草稿、逐路径管理状态、首次接管基线与历史备份保存在本机状态目录，部署及三种还原操作复用 `SkillSetService` 与文件事务。共同祖先事务根不等于写入授权，执行前按所选宿主的技能路径、规则文件和本机状态文件精确校验。详细数据与恢复边界见 [全局配置、原始数据与还原](global-configuration.md)。
+
 | 数据 | 权威位置 | 是否进入 Git |
 | --- | --- | --- |
 | Skill/Plugin/MCP 来源和不可变 revision | `registry/`、`vendor/`、对象 store | 是 |
 | 预设和规则片段 | `presets/`、`templates/agents/` | 是 |
-| 项目期望/锁 | 项目 `skillset.json`、`skillset.lock.json` | 是 |
-| 项目 canonical realpath、旧 hash、备份、审批 | `~/Library/Application Support/Skill Set/` | 否 |
+| 项目期望/锁 | `~/.perch/project-state/<canonical-path-sha256>/` | 否 |
+| 项目 canonical realpath、旧 hash、备份、审批 | `~/.perch/` | 否 |
 | 凭据 | macOS Keychain；仓库只存引用名和状态 | 否 |
 | 外部 plugin/MCP 进程日志 | 本机操作目录，脱敏 | 否 |
 
@@ -130,7 +134,7 @@ applied → rollback-planned → approved → rolled-back / conflict
 1. 按 canonical project root 获取跨 UI/CLI/MCP 共用的锁（目标；当前尚未实现跨进程锁）。
 2. 复核 plan digest、approval、目标 allowlist、父目录 realpath 和所有 expected old hash（已实现同进程服务校验）。
 3. 在同一文件系统准备 staging，校验 new hash，持久化 journal 和 backup（已实现）。
-4. 对受管路径逐一原子 rename，记录完成步骤，并在 staging 中生成 `skillset.json` / `skillset.lock.json`（已实现）。
+4. 对受管路径逐一原子 rename，记录完成步骤；安装选择与版本记录由同一事务写入应用数据目录，用户项目只写宿主文件（已实现）。
 5. 回读实际内容和权限，更新 operation（已实现）。
 
 多文件、多目录不宣称原子。中断后的下一次启动先处理 journal；rollback 只恢复仍等于管理器上次写入值的文件，发现用户新编辑立即停止。
@@ -162,7 +166,7 @@ observed → planned → approved → applying
 
 无标记时 plan 提议追加；一对完整标记只替换块；重复、交叉、缺尾或软链目标阻塞。块外 bytes 保留。当前实现可同时部署 Codex `.agents/skills` / `AGENTS.md` 与 Claude `.claude/skills` / `CLAUDE.md`，项目锁记录两个目标。祖先规则、`AGENTS.override.md`、Claude 加载链和会话重载仍是适配器设计。
 
-默认部署为实体 copy；link 只能指向管理器不可变 store。外部来源、项目目标和宿主配置不允许通过任意 symlink 越界。
+默认部署为软链接，也可选择实体 copy；link 只能指向 ~/.perch/versions/<contentHash> 的固定版本包。链接指纹同时绑定目标绝对路径与内容指纹，生成计划、执行和回滚均复核；父目录和任意外部软链接继续拒绝。外部来源、项目目标和宿主配置不允许通过任意 symlink 越界。
 
 归属依据是本机已完成 operation 的 `ownershipReceipt`，包含对应锁指纹、逐路径技能指纹和逐规则块正文指纹。锁的可选 `managementRevision` 给每次实际部署分配独立身份，避免同内容的不同部署历史误配收据；无变更时沿用原身份。项目锁和相同内容均不能单独证明归属，旧锁无本机收据时不自动接管或删除。项目计划记录 manifest、锁、所选/待移除路径与规则文件的读取依赖，执行前一起复核；旧版缺失收据与读取依赖的部署计划必须重新生成。
 
@@ -172,7 +176,7 @@ observed → planned → approved → applying
 
 - 来源只在隔离目录读取；不 checkout/执行 hooks、filters、LFS、子模块、postinstall 或 skill scripts。
 - URL 拒绝 credentials、未知 scheme、路径穿越、SSRF/DNS rebinding；分支含 `/` 时通过 refs 消歧。
-- 目标路径必须在用户注册项目根；不通过 chmod、管理员权限或关闭保护绕过。
+- 宿主目标路径必须在用户注册项目根；管理记录仅允许写本机对应项目状态目录下两个固定文件；不通过 chmod、管理员权限或关闭保护绕过。
 - AI、MCP caller、插件 manifest 不能添加新的写入根，不能把 `confirmed=true` 当批准。
 - 日志脱敏：不记录 token、认证 URL、源码秘密、完整 approval handle 或全量 `.env`。
 - 删除只触碰管理器拥有且未漂移的路径；未知插件/MCP 不静默停用或卸载。
@@ -183,3 +187,11 @@ observed → planned → approved → applying
 UI、CLI 和 MCP 共用稳定错误码，包括 `PLAN_STALE`、`APPROVAL_REQUIRED`、`PLAN_DIGEST_MISMATCH`、`RECOVERY_REQUIRED`、`SOURCE_*`、`PATH_OUTSIDE_ROOT`、`MCP_CONFIG_CONFLICT`、`OFFLINE_OBJECT_MISSING`、`OFFLINE_OBJECT_CORRUPT`、`PLUGIN_RISK_APPROVAL_REQUIRED`、`PLUGIN_STATE_STALE`、`PLUGIN_VERSION_AMBIGUOUS`、`PLUGIN_VERSION_NOT_FOUND`、`PLUGIN_COMMAND_FAILED` 和 `PLUGIN_EXECUTION_UNCERTAIN`。本机 operation 记录计划 digest、结果和恢复路径，不保存秘密。
 
 应用将“文件已写入并回读”与“宿主会话已验证”分开显示；当前只完成前者。
+
+## 来源驱动的本机技能库（2026-10-22）
+
+运行时不再合并仓库 catalog 或内置来源，初次技能库为空；自建技能与用户配置来源的索引保存在 `~/.perch/skills/index.json`，完整包保存于其 `packages/<UUID>`。来源配置与固定提交 checkout 保存在 `~/.perch/cache/sources/<UUID>`，兼容原 preview JSON 格式。Git 来源沿用禁用 hooks 的隔离下载；本地目录先复制再扫描，支持把已有 harness 目录的一级技能链接实体化。任何来源脚本均不执行。
+
+同步按 canonical 来源地址和技能相对路径建立稳定标识，完整复制有效候选及根许可文件，核对原始内容后原子发布索引。失败保留原索引；编辑失败保留旧来源。来源更新不改变已经物化的版本目录；来源删除移除索引与 checkout，历史完整包和版本目录继续保留，不自动清理。手动创建、编辑副本和旧版个人技能记录兼容保留。
+
+新默认状态目录为 `~/.perch`，首次打开将旧 `~/Library/Application Support/Skill Set` 复制到临时目录，成功后发布，原目录保留。旧 `skill-library` 映射为 `skills`，`previews` 映射为 `cache/sources`，旧计划因 staging 绝对路径变化作废；不读取或改写真实 harness 目录进行自动迁移。运行时不再复制 bundled 技能快照，对象存储写入栖集状态根，与源码仓库无关。

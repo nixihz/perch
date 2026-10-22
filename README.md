@@ -18,10 +18,12 @@ task app
 
 首次使用从「项目」开始：添加项目目录，选择 AI 工具，再选择技能和规则，或点「使用预设…」载入常用组合。点击「预览变更」核对目标文件，批准后才会写入。也可以先用空态中的「浏览技能库」「查看预设」了解现有内容。
 
-侧栏按「项目配置」「技能与规则」「AI 工具」分组，菜单栏「前往」提供相同入口与快捷键。详细信息的箭头、标题和整行空白均可展开、收起。
+侧栏按「配置」「技能与规则」「AI 工具」分组，菜单栏「前往」提供相同入口与快捷键。详细信息的箭头、标题和整行空白均可展开、收起。
 
-- **项目**：登记本机目录，选择 Skills、agent 和规则片段，生成计划；审阅 digest 后写入 Codex `.agents/skills` / `AGENTS.md` 或 Claude Code `.claude/skills` / `CLAUDE.md`，并生成 `skillset.json` 与 `skillset.lock.json`。
-- **Skills**：搜索和阅读来源化技能，新增、编辑或移除本地技能；外部快照可“复制并编辑”及隐藏后恢复。本地技能保存在 Application Support 的 `skill-library/`，不会自动启用；选择到项目草稿后仍需生成并批准计划。
+- **全局配置**：选择 Codex 或 Claude Code，为当前用户的全部项目配置技能和规则；已有内容默认保留，显式接管时保存原始备份。支持撤销操作、恢复接管前状态和停止管理但保留文件，均需预览并批准。详见 [全局配置与还原](docs/specs/global-configuration.md)。
+
+- **项目**：登记本机目录，选择 Skills、agent 和规则片段，生成计划；审阅 digest 后写入 Codex `.agents/skills` / `AGENTS.md` 或 Claude Code `.claude/skills` / `CLAUDE.md`。安装选择、版本记录和恢复信息保存在应用数据目录 `~/.perch/`，不在用户项目目录添加管理器专用文件。
+- **Skills**：搜索和阅读来源化技能，新增、编辑或移除本地技能；外部快照可“复制并编辑”及隐藏后恢复。本地技能保存在 `~/.perch/skills/`，不会自动启用；选择到项目草稿后仍需生成并批准计划。
 - **MCP Servers**：读取 Codex TOML、Claude 项目与用户 JSON 中的真实连接；生成新增或受管配置计划，人工批准后写入并不启动 MCP 进程。
 - **Plugins**：读取本机 Claude Code / Codex 缓存、Claude 安装索引、Codex 配置和 manifest，展示安装状态、marketplace、revision、组件与 hooks 风险；为本机已发现插件生成 install / update / enable / disable / uninstall 计划。计划批准后才调用固定宿主 CLI，执行前复核状态、执行后回读并记录 operation。
 - **来源 / 预设 / 规则片段**：GitHub 仓库根可联网预览并保存固定 commit，在技能旁点击“加入技能库…”可审阅正文与文件、修改本机标识并保存完整独立副本；保留附带文件和仓库许可，删除来源预览不影响已导入技能。导入后点击“前往项目”，选择技能、预览变更并批准写入。项目页可直接使用预设，预设页可选择项目或添加本机目录，载入前展示草稿中技能与规则的新增、保留、移除项；预设只生成项目草稿，真实写入仍需预览与批准；规则片段分别写入目标宿主的 `AGENTS.md` / `CLAUDE.md` 受管块。
@@ -32,14 +34,14 @@ task app
 
 项目接入现在区分“项目已有”和“栖集管理”：相同内容保留原归属，同路径不同内容与受管内容漂移会阻塞。取消技能或宿主选择会规划移除未漂移的受管技能与规则块，并保存可撤销的备份；块外新增规则保留。旧锁没有本机管理记录时不自动接管，旧版待执行部署计划须重新生成。接入基线、恢复接入前状态和完整退出管理仍待实现，详见[项目接入设计](docs/specs/project-integration.md)。
 
-- 库存来自本仓真实 JSON：11 个自维护 + 139 个外部条目，共 150 条来源化记录。
+- 技能库默认无内置来源。配置 Git 仓库或本地目录并同步后，即可搜索其中的技能；本仓 JSON 快照仅保留为仓库资料。
 - `local-brian/ponytail-review` 的 5 条断链保留为 `blocked`，不猜测修复。
 - Matt 链接实测固定到 `5beb35b040e3de97e54fa9e386d7e42d15c295c2`，识别 27 个 promoted、7 个 in-progress、4 个 misc；远端可主动触发只读预览，但不会自动收录或增加库存。
-- 收录不等于启用；预览结果保存在本机 Application Support，不改变旧发现目录或项目。
+- 来源缓存保存在 `~/.perch/cache/sources/`，技能完整包和安装版本分别保存在 `skills/`、`versions/`。同步不等于启用；启用时可选择软链接（默认）或复制，经计划批准后写入项目或用户级 harness 目录。
 
 ## 本机 CLI 与 MCP
 
-桌面应用已接入 Sparkle 2.10.0，菜单和设置页提供检查更新。当前发布地址和公钥留空，在线更新尚未启用；配置、版本号、Release 打包与后续签名发布步骤见[在线更新说明](docs/sparkle-updates.md)。
+桌面应用已接入 Sparkle 2.10.0，菜单和设置页提供检查更新。[官网](https://perch.keli.tech/)已提供已公证的 v0.0.1 DMG / ZIP 下载；Sparkle 配置中的清单地址和公钥仍为空，在线更新尚未启用。配置、版本号、Release 打包与后续签名发布步骤见[在线更新说明](docs/sparkle-updates.md)。
 
 ```bash
 swift build --product skillset
@@ -61,7 +63,7 @@ stdio MCP 使用同一服务边界：
 .build/debug/skillset mcp serve --transport stdio
 ```
 
-首版协议为 legacy `2025-11-25`，提供 14 个工具：项目、Skills、来源预览、计划、审批状态、apply、operation、离线对象、MCP 配置、Plugin 盘点和 Plugin 生命周期计划。`deployment_apply` 只执行已由 UI/CLI 批准且 digest 完全一致的计划。MCP 不能批准计划，也不能替用户确认安装/更新包风险。
+MCP 服务名为 `perch`，首版协议为 legacy `2025-11-25`，提供 17 个工具：预设列表、技能搜索、项目技能与预设安装，以及项目、来源预览、计划、审批状态、apply、operation、离线对象、MCP 配置、Plugin 盘点和 Plugin 生命周期计划。`skills_install` / `presets_install` 接收已登记项目的绝对路径或 ID，追加技能与规则并返回待批准计划；含插件或 MCP 的混合预设转本机完整审阅。`deployment_apply` 只执行已由 UI/CLI 批准且 digest 完全一致的计划。MCP 不能批准计划，也不能替用户确认安装/更新包风险。
 
 ## 设计与规范
 
@@ -164,3 +166,5 @@ npx skills add ssh://git@git.xiezhi.xin:2222/iamx/skill-set.git
 ```
 
 这会按该 CLI 自己的发现和安装策略操作，**不等于安装本仓 150 条完整库存**，也不经过本管理器的计划/审批。需要可审计写入时使用 `skillset`；完整版本锁、来源收录和宿主适配边界见 SPEC。
+
+技能库的「扫描已安装技能…」可扫描当前 Codex、Claude Code 技能目录及手动追加的目录。勾选后将完整技能包复制到 `~/.perch/sources/local-imports/`，作为独立本地来源参与搜索；同内容去重，原始路径及扫描时间保留，原安装不变。后续可通过「启用到 AI 工具…」预览并批准接管、软链或复制安装，操作历史支持撤销。

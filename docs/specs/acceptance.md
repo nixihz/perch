@@ -87,7 +87,7 @@
 | CLI 和 MCP 查询、预览、生成计划、审批后 apply | MCP 能自行批准、modern 协议兼容或跨进程锁已具备 |
 | MCP 配置真实扫描与受管写入计划；Plugin 缓存、安装索引、组件与风险盘点；在本机已发现问题插件上生成生命周期计划 | MCP 进程已健康运行；marketplace 已浏览/收录，或当前宿主会话已加载 Plugin |
 
-推荐演示：启动 `./script/build_and_run.sh --verify` → 在一个临时目录登记项目 → 载入“个人基线” → 打开 plan sheet → 核对 digest 与路径 → 二次确认写入 → 检查 `.agents/skills`、`.claude/skills`、`AGENTS.md`、`CLAUDE.md` 和项目锁。随后到来源页粘贴 Matt 链接并固定 ref，确认候选未进入项目；在 Skills 检查 `ponytail-review` 阻塞；在 MCP 页面用临时 scope 生成配置计划；在 Plugins 页面核对真实缓存、安装索引与 hooks 风险，并为本机已发现插件生成生命周期计划，核对命令与风险后取消。真实宿主命令只在明确授权的单独验收中执行。
+推荐演示：启动 `./script/build_and_run.sh --verify` → 在一个临时目录登记项目 → 载入“个人基线” → 打开 plan sheet → 核对 digest 与路径 → 二次确认写入 → 检查 `.agents/skills`、`.claude/skills`、`AGENTS.md`、`CLAUDE.md`，确认项目没有管理器专用文件，再核对应用数据目录中的项目锁。随后到来源页粘贴 Matt 链接并固定 ref，确认候选未进入项目；在 Skills 检查 `ponytail-review` 阻塞；在 MCP 页面用临时 scope 生成配置计划；在 Plugins 页面核对真实缓存、安装索引与 hooks 风险，并为本机已发现插件生成生命周期计划，核对命令与风险后取消。真实宿主命令只在明确授权的单独验收中执行。
 
 CLI 演示应使用 `--state <临时目录>`，完成后执行 `skillset operations get` 和 `skillset rollback` 验证 journal 与恢复。应用本身不启动 HTTP server。
 
