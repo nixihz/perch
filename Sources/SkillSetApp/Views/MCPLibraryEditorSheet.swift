@@ -4,6 +4,7 @@ import SkillSetCore
 struct MCPLibraryEditorSheet: View {
     @Bindable var library: MCPLibraryModel
     @State var entry: MCPLibraryEntry
+    var onSaved: (MCPLibraryEntry) -> Void = { _ in }
     @State private var validation: [String] = []
     @Environment(\.dismiss) private var dismiss
 
@@ -49,7 +50,10 @@ struct MCPLibraryEditorSheet: View {
                 Button(L10n.tr("取消")) { dismiss() }.keyboardShortcut(.cancelAction)
                 Button(L10n.tr("保存到配置库")) {
                     validation = entry.draft(host: .codex, scope: .user).validationIssues()
-                    if validation.isEmpty, library.save(entry) { dismiss() }
+                    if validation.isEmpty, library.save(entry) {
+                        onSaved(library.entries.first { $0.id == entry.id } ?? entry)
+                        dismiss()
+                    }
                 }
                 .buttonStyle(AppButtonStyle(kind: .primary)).keyboardShortcut("s", modifiers: .command)
                 .accessibilityIdentifier("mcp.library.save")

@@ -2,6 +2,16 @@ import Foundation
 import Observation
 import SkillSetCore
 
+struct ProjectPlanNotice: Equatable {
+    enum Tone: Equatable {
+        case info
+        case error
+    }
+
+    let message: String
+    let tone: Tone
+}
+
 @MainActor
 @Observable
 final class AppModel {
@@ -11,7 +21,18 @@ final class AppModel {
     let mcpLibrary: MCPLibraryModel
     let globalConfiguration: GlobalConfigurationModel
 
-    var section: NavigationItem = .projects
+    var section: NavigationItem = .projects {
+        didSet {
+            guard section == .mcp, oldValue != .mcp else { return }
+            // 只沿用真实入口的编辑范围，不能让另一页遗留的项目选择覆盖全局工具。
+            if oldValue == .projects, let project = selectedProject,
+               let host = MCPHost(rawValue: project.editingAgent), let projectID = UUID(uuidString: project.id) {
+                mcpLibrary.preferUsageTarget(host: host, projectID: projectID)
+            } else {
+                mcpLibrary.preferUsageTarget(host: globalConfiguration.host, projectID: nil)
+            }
+        }
+    }
     var query = ""
     var selectedProjectID = ""
     var selectedSkillID: String?
@@ -33,6 +54,7 @@ final class AppModel {
     private var templatePlanPaths: [String] = []
     private(set) var lastTemplateWritePaths: [String] = []
     var planError: String?
+    private(set) var projectPlanNotices: [String: ProjectPlanNotice] = [:]
     var projects: [ProjectRecord] = []
     var projectIssues: [String: [String]] = [:]
     var projectSkillObservations: [String: [ProjectSkillObservation]] = [:]
@@ -53,6 +75,11 @@ final class AppModel {
     private(set) var skillRemovalError: String?
     var sourceImportError: String?
     var sourceOrigins: [String: SourceSkillOrigin] = [:]
+    var skillsShQuery = ""
+    private(set) var skillsShResults: [SkillsShHit] = []
+    private(set) var skillsShError: String?
+    private(set) var isSearchingSkillsSh = false
+    private(set) var installingSkillsShID: String?
     var selectedSkillDocument = ""
     var selectedSkillFiles: [SkillPackageFile] = []
     var skillFilesError: String?
@@ -66,6 +93,7 @@ final class AppModel {
     private let draftStore: ProjectDraftStore
     private let planStore: DeploymentPlanStore
     private let executor: FileTransactionExecutor
+    private let skillsShClient: SkillsShDirectoryClient
     private var service: SkillSetService?
 
     func report(_ message: LocalizedText) {
@@ -79,9 +107,11 @@ final class AppModel {
     init(
         snapshot: AppSnapshot? = nil,
         runtimePaths: SkillSetRuntimePaths = .detect(),
-        globalLocations: GlobalConfigurationLocations? = nil
+        globalLocations: GlobalConfigurationLocations? = nil,
+        skillsShClient: SkillsShDirectoryClient = SkillsShDirectoryClient()
     ) {
         self.runtimePaths = runtimePaths
+        self.skillsShClient = skillsShClient
         self.mcpLibrary = MCPLibraryModel(paths: runtimePaths, locations: globalLocations)
         self.globalConfiguration = GlobalConfigurationModel(paths: runtimePaths, locations: globalLocations)
         let base = snapshot ?? SkillSetService.defaultSnapshot(for: runtimePaths)
@@ -248,6 +278,22 @@ final class AppModel {
         projects.first(where: { $0.id == selectedProjectID })
     }
 
+    var canPrepareDeploymentPlan: Bool {
+        selectedProject != nil && !isWorking
+    }
+
+    func projectPlanNotice(for projectID: String) -> ProjectPlanNotice? {
+        projectPlanNotices[projectID]
+    }
+
+    private func setProjectPlanNotice(_ notice: ProjectPlanNotice?, for projectID: String) {
+        if let notice {
+            projectPlanNotices[projectID] = notice
+        } else {
+            projectPlanNotices.removeValue(forKey: projectID)
+        }
+    }
+
     var selectedSkill: SkillEntry? {
         snapshot.catalog.entries.first(where: { $0.id == selectedSkillID })
     }
@@ -348,13 +394,11 @@ final class AppModel {
             switch target {
             case .project(let rawID):
                 guard let id = UUID(uuidString: rawID), let draft = latest.projectDraft else { throw DeploymentError.invalidPlan }
-                let registration = try projectStore.project(id: id)
-                let manifest = try ProjectLockStore(projectRoot: URL(fileURLWithPath: registration.canonicalPath),
-                    stateRoot: runtimePaths.applicationSupportRoot).loadManifest()
-                plan = try fresh.makePlan(projectID: id, skillIDs: draft.skillIDs, instructionIDs: draft.instructionIDs,
-                    agents: draft.agents, ruleBlockID: manifest?.ruleBlockID ?? "project-rules", installMethod: skillInstallMethod)
+                guard let agent = latest.agents.first else { throw DeploymentError.invalidPlan }
+                plan = try fresh.makeHarnessPlan(projectID: id, agent: agent,
+                    selection: draft.resolvedHarnessSelections[agent], installMethod: skillInstallMethod)
                 _ = try draftStore.save(projectID: id, skillIDs: draft.skillIDs, instructionIDs: draft.instructionIDs,
-                    agents: draft.agents, plugins: draft.plugins, mcpServers: draft.mcpServers)
+                    agents: draft.agents, plugins: draft.plugins, mcpServers: draft.mcpServers, harnessSelections: draft.harnessSelections)
                 try reloadProjects(preferredID: id)
             case .global(let host):
                 guard let draft = latest.globalDraft else { throw DeploymentError.invalidPlan }
@@ -422,7 +466,8 @@ final class AppModel {
                     projectID: registration.id,
                     skillIDs: manifest?.skills ?? inspection?.observedSkillIDs ?? [],
                     instructionIDs: manifest?.instructions ?? [],
-                    agents: manifest?.agents ?? (registration.agents.isEmpty ? ["codex"] : registration.agents)
+                    agents: manifest?.agents ?? (registration.agents.isEmpty ? ["codex"] : registration.agents),
+                    harnessSelections: manifest?.harnessSelections
                 )
             }
             try reloadProjects(preferredID: registration.id)
@@ -473,6 +518,7 @@ final class AppModel {
             }
             projects[index].draftSkillIDs.insert(skill.id)
         }
+        projects[index].updateEditingSelection()
         persistDraft(for: projects[index])
     }
 
@@ -489,16 +535,31 @@ final class AppModel {
             projects[index].fragments.append(id)
             projects[index].fragments.sort()
         }
+        projects[index].updateEditingSelection()
         persistDraft(for: projects[index])
+    }
+
+    func selectProjectHost(_ host: AgentHost, projectID: String? = nil) {
+        guard let index = projects.firstIndex(where: { $0.id == (projectID ?? selectedProjectID) }) else { return }
+        let agent = host == .codex ? "codex" : "claude-code"
+        if projects[index].editingAgent != agent {
+            setProjectPlanNotice(nil, for: projects[index].id)
+        }
+        projects[index].selectEditingAgent(agent)
     }
 
     func toggleAgent(_ host: AgentHost) {
         guard let index = projects.firstIndex(where: { $0.id == selectedProjectID }) else { return }
+        let agent = host == .codex ? "codex" : "claude-code"
         if projects[index].agents.contains(host.rawValue) {
             projects[index].agents.remove(host.rawValue)
+            projects[index].harnessSelections.removeValue(forKey: agent)
         } else {
             projects[index].agents.insert(host.rawValue)
+            projects[index].harnessSelections[agent] = ProjectHarnessSelection()
         }
+        projects[index].selectEditingAgent(agent)
+        projects[index].adapter = projects[index].agents.isEmpty ? "未选 AI 工具" : projects[index].agents.sorted().joined(separator: " · ")
         persistDraft(for: projects[index])
     }
 
@@ -584,7 +645,7 @@ final class AppModel {
         do {
             _ = try draftStore.save(projectID: id, skillIDs: proposed.draftSkillIDs,
                 instructionIDs: proposed.fragments, agents: canonicalAgentIDs(proposed.agents),
-                plugins: proposed.draftPlugins, mcpServers: proposed.draftMCPServers)
+                plugins: proposed.draftPlugins, mcpServers: proposed.draftMCPServers, harnessSelections: proposed.harnessSelections)
             projects[index] = proposed
             report("草稿已保存；尚未写入项目")
         } catch { reportKey(UserFacingText.error(error)) }
@@ -605,19 +666,22 @@ final class AppModel {
             return false
         }
         do {
-            // 先持久化再更新界面，保存失败时保留原草稿和目标选择。
-            let draft = try draftStore.save(
-                projectID: id,
-                skillIDs: preset.skills,
-                instructionIDs: preset.instructionFragments,
-                agents: canonicalAgentIDs(projects[index].agents),
-                plugins: preset.plugins, mcpServers: preset.mcpServers
+            // 预设技能与规则只替换当前宿主；插件与 MCP 已有各自明确的宿主范围。
+            var proposed = projects[index]
+            proposed.draftSkillIDs = Set(preset.skills)
+            proposed.fragments = preset.instructionFragments
+            proposed.updateEditingSelection()
+            proposed.draftPlugins = preset.plugins
+            proposed.draftMCPServers = preset.mcpServers
+            _ = try draftStore.save(
+                projectID: id, skillIDs: proposed.allDraftSkillIDs,
+                instructionIDs: proposed.fragments, agents: canonicalAgentIDs(proposed.agents),
+                plugins: proposed.draftPlugins, mcpServers: proposed.draftMCPServers,
+                harnessSelections: proposed.harnessSelections
             )
-            projects[index].draftSkillIDs = Set(draft.skillIDs)
-            projects[index].fragments = draft.instructionIDs
-            projects[index].draftPlugins = draft.plugins
-            projects[index].draftMCPServers = draft.mcpServers
+            projects[index] = proposed
             projects[index].pendingChanges = pendingChangeCount(for: projects[index])
+            setProjectPlanNotice(nil, for: targetID)
             selectedProjectID = targetID
             selectedPresetID = preset.id
             section = .projects
@@ -644,13 +708,18 @@ final class AppModel {
             report("请先添加并选择一个项目")
             return
         }
+        setProjectPlanNotice(nil, for: project.id)
         guard service != nil else {
-            report("未找到技能库目录，无法生成部署计划")
+            let message = L10n.tr("未找到技能库目录，无法生成部署计划")
+            setProjectPlanNotice(ProjectPlanNotice(message: message, tone: .error), for: project.id)
+            reportKey("未找到技能库目录，无法生成部署计划")
             return
         }
         let knownFragments = Set(snapshot.templates.map(\.id))
         guard Set(project.fragments).isSubset(of: knownFragments) else {
-            report("草稿中有找不到的AGENTS 片段，请重新选择预设或AGENTS 片段")
+            let message = L10n.tr("草稿引用了已删除的 AGENTS 片段，请移除引用后再预览。")
+            setProjectPlanNotice(ProjectPlanNotice(message: message, tone: .error), for: project.id)
+            reportKey("草稿引用了已删除的 AGENTS 片段，请移除引用后再预览。")
             return
         }
         isWorking = true
@@ -661,25 +730,31 @@ final class AppModel {
                 skillIDs: project.draftSkillIDs,
                 instructionIDs: project.fragments,
                 agents: canonicalAgentIDs(project.agents),
-                plugins: project.draftPlugins, mcpServers: project.draftMCPServers
+                plugins: project.draftPlugins, mcpServers: project.draftMCPServers,
+                harnessSelections: project.harnessSelections
             )
             guard let service else {
                 report("服务未初始化，无法生成部署计划")
                 return
             }
-            preparedPlan = try service.makePlan(
+            preparedPlan = try service.makeHarnessPlan(
                 projectID: id,
-                skillIDs: project.draftSkillIDs.sorted(),
-                instructionIDs: project.fragments,
-                agents: canonicalAgentIDs(project.agents),
-                ruleBlockID: "project-rules",
+                agent: project.editingAgent,
+                selection: project.harnessSelections[project.editingAgent],
                 installMethod: skillInstallMethod
             )
             planPresented = true
             report("已生成变更计划；等待本机人工批准")
+        } catch let error as DeploymentError where error == .noChanges {
+            preparedPlan = nil
+            planPresented = false
+            let message = L10n.tr("草稿与项目现状一致，没有需要写入的变更。")
+            setProjectPlanNotice(ProjectPlanNotice(message: message, tone: .info), for: project.id)
+            reportKey("草稿与项目现状一致，没有需要写入的变更。")
         } catch {
             preparedPlan = nil
             planPresented = false
+            setProjectPlanNotice(ProjectPlanNotice(message: UserFacingText.error(error), tone: .error), for: project.id)
             reportKey(UserFacingText.error(error))
         }
     }
@@ -761,10 +836,19 @@ final class AppModel {
     }
 
     func pendingChangeCount(for project: ProjectRecord) -> Int {
-        let targetCount = max(project.agents.count, 1)
-        let skillDelta = project.draftSkillIDs.symmetricDifference(project.appliedSkillIDs).count * targetCount
+        let current = try? ProjectLockStore(projectRoot: URL(fileURLWithPath: project.path),
+            stateRoot: runtimePaths.applicationSupportRoot).loadManifest()
+        let old = current?.resolvedHarnessSelections ?? [:]
+        let hosts = Set(old.keys).union(project.harnessSelections.keys)
+        let selectionDelta = hosts.reduce(0) { count, host in
+            let before = old[host] ?? ProjectHarnessSelection()
+            let after = project.harnessSelections[host] ?? ProjectHarnessSelection()
+            return count + Set(before.skillIDs).symmetricDifference(after.skillIDs).count
+                + Set(before.instructionIDs).symmetricDifference(after.instructionIDs).count
+                + ((old[host] == nil) != (project.harnessSelections[host] == nil) ? 1 : 0)
+        }
         let lockDelta = project.lockStatus == "valid" ? 0 : 1
-        return skillDelta + (ruleBlockMatches(project) ? 0 : targetCount) + lockDelta
+        return selectionDelta + (ruleBlockMatches(project) ? 0 : 1) + lockDelta
     }
 
     func refreshMCPStatus(_ server: MCPServerRecord) {
@@ -817,6 +901,91 @@ final class AppModel {
             report("已加入技能库 \(entry.slug)；可到项目页选择并预览变更")
             return true
         } catch { sourceImportError = UserFacingText.error(error); return false }
+    }
+
+    func searchSkillsSh() async {
+        let query = skillsShQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard query.count >= 2 else {
+            skillsShResults = []
+            skillsShError = nil
+            return
+        }
+        guard !isSearchingSkillsSh else { return }
+        isSearchingSkillsSh = true
+        skillsShError = nil
+        defer { isSearchingSkillsSh = false }
+        do {
+            let results = try await skillsShClient.search(query: query)
+            guard skillsShQuery.trimmingCharacters(in: .whitespacesAndNewlines) == query else { return }
+            skillsShResults = results
+        } catch {
+            guard skillsShQuery.trimmingCharacters(in: .whitespacesAndNewlines) == query else { return }
+            skillsShResults = []
+            skillsShError = UserFacingText.error(error)
+        }
+    }
+
+    func installSkillsSh(_ hit: SkillsShHit) async -> SkillEntry? {
+        guard !isWorking else { return nil }
+        isWorking = true
+        installingSkillsShID = hit.id
+        skillsShError = nil
+        defer {
+            isWorking = false
+            installingSkillsShID = nil
+        }
+        let paths = runtimePaths
+        do {
+            let entry = try await Task.detached(priority: .userInitiated) {
+                try SkillSetService(paths: paths).installDirectorySkill(hit)
+            }.value
+            try reloadLibrary()
+            report("已从 skills.sh 安装 \(entry.slug) 到技能库；尚未启用到项目")
+            return entry
+        } catch {
+            skillsShError = UserFacingText.error(error)
+            return nil
+        }
+    }
+
+    func installedSkillsShEntry(for hit: SkillsShHit) -> SkillEntry? {
+        let matches = installedSkillsShEntries(for: hit)
+        return matches.count == 1 ? matches[0] : nil
+    }
+
+    private func installedSkillsShEntries(for hit: SkillsShHit) -> [SkillEntry] {
+        guard let repositoryURL = hit.repositoryURL else { return [] }
+        let skillID = SkillsShCandidateMatcher.normalizedIdentifier(hit.skillId)
+        guard !skillID.isEmpty else { return [] }
+        return snapshot.catalog.entries.filter { entry in
+            guard let origin = sourceOrigins[entry.id], origin.url == repositoryURL else { return false }
+            let pathLeaf = origin.path.split(separator: "/").last.map(String.init) ?? ""
+            // 本机名称和标识可能由用户重新定义，不能据此把另一个目录条目视为已安装。
+            // 旧证据没有原始名称时只按来源路径匹配，避免猜测并卸载错误的技能。
+            return origin.declaredName.map { SkillsShCandidateMatcher.normalizedIdentifier($0) == skillID } == true
+                || SkillsShCandidateMatcher.normalizedIdentifier(pathLeaf) == skillID
+        }
+    }
+
+    @discardableResult
+    func uninstallSkillsSh(_ hit: SkillsShHit) -> Bool {
+        guard !isWorking else { return false }
+        let matches = installedSkillsShEntries(for: hit)
+        guard !matches.isEmpty else {
+            skillsShError = L10n.tr("技能库中找不到这个技能，请重新搜索后再试。")
+            return false
+        }
+        guard matches.count == 1 else {
+            skillsShError = L10n.tr("技能库中有多个已安装技能匹配这个目录条目，请先在技能库中核对再卸载。")
+            return false
+        }
+        skillsShError = nil
+        let removed = removeSkills(matches)
+        guard !removed.isEmpty, skillRemovalError == nil else {
+            skillsShError = skillRemovalError ?? L10n.tr("未能从技能库卸载这个技能，请重新读取后重试。")
+            return false
+        }
+        return true
     }
 
     func mcpCommandPreview(_ server: MCPServerRecord) -> String {
@@ -1111,7 +1280,8 @@ final class AppModel {
                     skillIDs: manifest?.skills ?? inspection?.observedSkillIDs ?? [],
                     instructionIDs: manifest?.instructions ?? [],
                     agents: manifest?.agents
-                        ?? (registration.agents.isEmpty ? ["codex"] : registration.agents)
+                        ?? (registration.agents.isEmpty ? ["codex"] : registration.agents),
+                    harnessSelections: manifest?.harnessSelections
                 )
             }
             let agents = displayAgentNames(draft?.agents ?? registration.agents)
@@ -1130,8 +1300,12 @@ final class AppModel {
                 pendingChanges: 0,
                 lockStatus: projectState.status,
                 draftPlugins: draft?.plugins ?? [],
-                draftMCPServers: draft?.mcpServers ?? []
+                draftMCPServers: draft?.mcpServers ?? [],
+                harnessSelections: draft?.resolvedHarnessSelections
             )
+            let editingAgent = projects.first(where: { $0.id == record.id })?.editingAgent
+                ?? (record.harnessSelections["codex"] != nil ? "codex" : record.harnessSelections.keys.sorted().first ?? "codex")
+            record.selectEditingAgent(editingAgent)
             record.pendingChanges = pendingChangeCount(for: record)
             records.append(record)
             skillObservations[record.id] = inspection?.skillObservations ?? []
@@ -1162,11 +1336,14 @@ final class AppModel {
                 skillIDs: project.draftSkillIDs,
                 instructionIDs: project.fragments,
                 agents: canonicalAgentIDs(project.agents),
-                plugins: project.draftPlugins, mcpServers: project.draftMCPServers
+                plugins: project.draftPlugins, mcpServers: project.draftMCPServers,
+                harnessSelections: project.harnessSelections
             )
             if let index = projects.firstIndex(where: { $0.id == project.id }) {
                 projects[index].pendingChanges = pendingChangeCount(for: projects[index])
             }
+            // 草稿已经改变，上一次预览结论不再对应当前内容。
+            setProjectPlanNotice(nil, for: project.id)
             report("草稿已保存；尚未写入项目")
         } catch {
             reportKey(UserFacingText.error(error))
@@ -1174,20 +1351,21 @@ final class AppModel {
     }
 
     private func ruleBlockMatches(_ project: ProjectRecord) -> Bool {
-        let expected = project.fragments.compactMap { id in
-            snapshot.templates.first(where: { $0.id == id })?.body
-        }.joined(separator: "\n\n").trimmingCharacters(in: .whitespacesAndNewlines)
         let targets = canonicalAgentIDs(project.agents).compactMap {
             AgentDeploymentAdapter.target(for: $0)
         }
-        guard !targets.isEmpty,
-              let inspection = try? ProjectInspector.inspect(
+        guard let inspection = try? ProjectInspector.inspect(
             projectURL: URL(fileURLWithPath: project.path, isDirectory: true),
-            catalog: snapshot.catalog
+            catalog: snapshot.catalog,
+            operationsRoot: runtimePaths.operationsRoot,
+            versionsRoot: runtimePaths.versionsRoot
         ) else {
             return false
         }
         return targets.allSatisfy { target in
+            let expected = (project.harnessSelections[target.agent]?.instructionIDs ?? []).compactMap { id in
+                snapshot.templates.first(where: { $0.id == id })?.body
+            }.joined(separator: "\n\n").trimmingCharacters(in: .whitespacesAndNewlines)
             let observed = inspection.ruleBodies[target.instructionsFile]
             return expected.isEmpty ? observed == nil : observed == expected
         }

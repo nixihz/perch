@@ -5,6 +5,91 @@ import SkillSetCore
 
 @MainActor
 final class TemplateWorkflowTests: XCTestCase {
+    func testProjectReferenceNavigatesToOwningHarnessWithoutChangingDraftOrFiles() throws {
+        try fixture { root, paths, locations in
+            let project = root.appendingPathComponent("目标项目")
+            try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+            let model = AppModel(runtimePaths: paths, globalLocations: locations)
+            XCTAssertTrue(model.registerProject(project))
+            let projectID = try XCTUnwrap(model.selectedProject).id
+            let template = try save(model, name: "Claude 专用规则", body: "仅用于 Claude。")
+            model.selectProjectHost(.claude)
+            model.toggleInstruction(template)
+            model.prepareDeploymentPlan()
+            XCTAssertTrue(model.approveAndApplyPreparedPlan(), model.planError ?? model.lastAction)
+            model.selectProjectHost(.codex)
+
+            let anotherProject = root.appendingPathComponent("当前项目")
+            try FileManager.default.createDirectory(at: anotherProject, withIntermediateDirectories: true)
+            XCTAssertTrue(model.registerProject(anotherProject))
+            XCTAssertNotEqual(model.selectedProjectID, projectID)
+            let draftURL = ProjectDraftStore(rootURL: paths.applicationSupportRoot).documentURL
+            let draftBefore = try Data(contentsOf: draftURL)
+            let ruleURL = project.appendingPathComponent("CLAUDE.md")
+            let ruleBefore = try Data(contentsOf: ruleURL)
+            let plansBefore = try DeploymentPlanStore(rootURL: paths.plansRoot).list().map(\.id)
+
+            let references = try model.templateReferences(template.id)
+            XCTAssertEqual(references.count, 1)
+            let reference = try XCTUnwrap(references.first)
+            XCTAssertEqual(reference.name, "目标项目 · Claude Code")
+            XCTAssertTrue(reference.inDraft)
+            XCTAssertTrue(reference.isApplied)
+            model.showTemplateReference(reference)
+
+            XCTAssertEqual(model.section, .projects)
+            XCTAssertEqual(model.selectedProjectID, projectID)
+            XCTAssertEqual(model.selectedProject?.editingAgent, "claude-code")
+            XCTAssertEqual(model.selectedProject?.fragments, [template.id])
+            XCTAssertEqual(try Data(contentsOf: draftURL), draftBefore, "查看使用位置不能修改任何宿主的草稿")
+            XCTAssertEqual(try Data(contentsOf: ruleURL), ruleBefore)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: project.appendingPathComponent("AGENTS.md").path))
+            XCTAssertEqual(try DeploymentPlanStore(rootURL: paths.plansRoot).list().map(\.id), plansBefore)
+        }
+    }
+
+    func testProjectReferenceStatusesSeparateUnappliedDraftFromPendingRemoval() throws {
+        try fixture { root, paths, locations in
+            let project = root.appendingPathComponent("分开配置")
+            try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+            let model = AppModel(runtimePaths: paths, globalLocations: locations)
+            XCTAssertTrue(model.registerProject(project))
+            let template = try save(model, name: "分别使用的规则", body: "需要核对的正文。")
+            model.selectProjectHost(.claude)
+            model.toggleInstruction(template)
+            model.prepareDeploymentPlan()
+            XCTAssertTrue(model.approveAndApplyPreparedPlan(), model.planError ?? model.lastAction)
+            model.toggleInstruction(template)
+            model.selectProjectHost(.codex)
+            model.toggleInstruction(template)
+            var updated = TemplateEditorDraft(template: template)
+            updated.body = "已经更新但尚未写入的正文。"
+            XCTAssertTrue(model.saveTemplate(updated))
+
+            let references = try model.templateReferences(template.id)
+            XCTAssertEqual(references.count, 2)
+            XCTAssertEqual(Set(references.map(\.id)).count, 2)
+            let codex = try XCTUnwrap(references.first { $0.name == "分开配置 · Codex" })
+            XCTAssertTrue(codex.inDraft)
+            XCTAssertFalse(codex.isApplied)
+            XCTAssertFalse(codex.needsUpdate)
+            let claude = try XCTUnwrap(references.first { $0.name == "分开配置 · Claude Code" })
+            XCTAssertFalse(claude.inDraft)
+            XCTAssertTrue(claude.isApplied)
+            XCTAssertTrue(claude.needsUpdate)
+            model.showTemplateReference(claude)
+            XCTAssertEqual(model.selectedProject?.editingAgent, "claude-code")
+            XCTAssertTrue(try XCTUnwrap(model.selectedProject).fragments.isEmpty)
+            model.showTemplateReference(codex)
+            XCTAssertEqual(model.selectedProject?.editingAgent, "codex")
+            XCTAssertEqual(model.selectedProject?.fragments, [template.id])
+            XCTAssertFalse(FileManager.default.fileExists(atPath: project.appendingPathComponent("AGENTS.md").path))
+            let written = try String(contentsOf: project.appendingPathComponent("CLAUDE.md"), encoding: .utf8)
+            XCTAssertTrue(written.contains("需要核对的正文。"))
+            XCTAssertFalse(written.contains(updated.body))
+        }
+    }
+
     func testProjectPreviewApprovalUpdateAndRemovalPreserveOtherSelectionsAndHandwrittenRules() throws {
         try fixture { root, paths, locations in
             let projectURL = root.appendingPathComponent("项目 空格")
@@ -20,6 +105,7 @@ final class TemplateWorkflowTests: XCTestCase {
             model.toggleInstruction(other)
             model.toggleSkill(skill)
             model.toggleAgent(.claude)
+            model.selectProjectHost(.codex)
             let template = try save(model, name: "接口约定", body: "检查超时。")
             let target = TemplateUseTarget.project(try XCTUnwrap(model.selectedProject).id)
             let draftFile = ProjectDraftStore(rootURL: paths.applicationSupportRoot).documentURL
@@ -27,7 +113,7 @@ final class TemplateWorkflowTests: XCTestCase {
             let preview = try model.templateUsePreview(templateID: template.id, target: target)
             XCTAssertEqual(preview.skillCount, 1)
             XCTAssertTrue(preview.body.contains("保留其他片段。"))
-            XCTAssertEqual(Set(preview.paths.map { URL(fileURLWithPath: $0).lastPathComponent }), ["AGENTS.md", "CLAUDE.md"])
+            XCTAssertEqual(Set(preview.paths.map { URL(fileURLWithPath: $0).lastPathComponent }), ["AGENTS.md"])
             XCTAssertEqual(try Data(contentsOf: draftFile), originalDraft, "仅打开选择窗口不保存草稿")
             XCTAssertTrue(model.prepareTemplateUse(templateID: template.id, target: target, preview: preview), model.templateError ?? "")
             let plan = try XCTUnwrap(model.preparedPlan)
@@ -44,7 +130,7 @@ final class TemplateWorkflowTests: XCTestCase {
             let next = try model.templateUsePreview(templateID: template.id, target: target)
             XCTAssertTrue(model.prepareTemplateUse(templateID: template.id, target: target, preview: next))
             XCTAssertTrue(model.approveAndApplyPreparedPlan(), model.planError ?? model.lastAction)
-            XCTAssertEqual(model.lastTemplateWritePaths.count, 2)
+            XCTAssertEqual(model.lastTemplateWritePaths.count, 1)
             XCTAssertTrue(try model.templateReferences(template.id).contains { $0.isApplied && $0.inDraft })
             var edit = TemplateEditorDraft(template: template)
             edit.body = "检查超时和重试上限。"
@@ -162,7 +248,7 @@ final class TemplateWorkflowTests: XCTestCase {
         }
     }
 
-    func testUnreadableStagingAndNoHostSelectionCannotProduceAnApprovablePreview() throws {
+    func testEnablingUnconfiguredHostStillRejectsChangedStagingBeforeWritingProject() throws {
         try fixture { root, paths, locations in
             let project = root.appendingPathComponent("project")
             try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
@@ -171,11 +257,11 @@ final class TemplateWorkflowTests: XCTestCase {
             let template = try save(model, name: "预览核对", body: "必须审阅这行。")
             let target = TemplateUseTarget.project(try XCTUnwrap(model.selectedProject).id)
             model.toggleAgent(.codex)
-            XCTAssertThrowsError(try model.templateUsePreview(templateID: template.id, target: target)) { error in
-                XCTAssertTrue(error is TemplateUsePreviewError)
-            }
-            model.toggleAgent(.codex)
+            let draftURL = ProjectDraftStore(rootURL: paths.applicationSupportRoot).documentURL
+            let beforePreview = try Data(contentsOf: draftURL)
             let preview = try model.templateUsePreview(templateID: template.id, target: target)
+            XCTAssertEqual(try Data(contentsOf: draftURL), beforePreview)
+            XCTAssertNil(model.selectedProject?.harnessSelections["codex"])
             XCTAssertTrue(model.prepareTemplateUse(templateID: template.id, target: target, preview: preview))
             let plan = try XCTUnwrap(model.preparedPlan)
             let change = try XCTUnwrap(plan.plan.changes.first { $0.relativePath == "AGENTS.md" })

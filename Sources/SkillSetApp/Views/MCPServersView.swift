@@ -21,23 +21,28 @@ struct MCPObservedServersView: View {
         VStack(alignment: .leading, spacing: 18) {
             PageHeader(
                 eyebrow: "MCP SERVERS",
-                title: L10n.tr("管理 AI 工具的 MCP 服务"),
+                title: L10n.tr("AI 工具中的 MCP 配置"),
                 detail: L10n.tr("查看 Codex 和 Claude Code 的 MCP 配置。修改前先生成计划，等你在本机批准；不会读取凭据值或启动服务。")
             )
             HStack(spacing: 8) {
-                StatusBadge(text: L10n.tr("\(model.mcpConfigInspections.count) 个配置目标"), tone: .accent)
-                StatusBadge(text: L10n.tr("\(model.mcpServers.count) 个服务"), tone: .neutral)
-                StatusBadge(text: L10n.tr("修改前预览并批准"), tone: .warning)
-                StatusBadge(text: L10n.tr("凭据只保留引用"), tone: .positive)
+                Text(L10n.tr("\(model.mcpConfigInspections.count) 个配置目标 · \(model.mcpServers.count) 个服务"))
+                    .font(AppFont.secondary).foregroundStyle(.secondary)
                 Spacer()
                 Button {
                     editingServer = nil
                     configPresented = true
                 } label: {
-                    Label(L10n.tr("添加 MCP 服务"), systemImage: "plus")
+                    Label(L10n.tr("直接配置连接…"), systemImage: "plus")
                 }
                 .buttonStyle(AppButtonStyle(kind: .primary))
                 .tint(AppColor.accent)
+            }
+            if let project = model.selectedProject {
+                Text(L10n.tr("显示全局配置与项目：\(project.name)"))
+                    .font(AppFont.secondary).foregroundStyle(.secondary)
+            } else {
+                Text(L10n.tr("当前显示全局配置；选择项目后可查看对应的项目连接。"))
+                    .font(AppFont.secondary).foregroundStyle(.secondary)
             }
             HStack(alignment: .top, spacing: AppLayout.columnSpacing) {
                 serverList
@@ -77,7 +82,7 @@ struct MCPObservedServersView: View {
                 AppSearchField(query: $query, prompt: L10n.tr("搜索名称、工具或路径"),
                                label: L10n.tr("搜索 MCP 服务"), identifier: "mcp.search")
                 if filteredServers.isEmpty {
-                    Text(query.isEmpty ? L10n.tr("还没有 MCP 服务。点击「添加 MCP 服务」开始配置。") : L10n.tr("没有匹配的 MCP 服务，请调整搜索条件。"))
+                    Text(query.isEmpty ? L10n.tr("尚未发现连接。可以直接配置连接，或到配置库添加可复用服务。") : L10n.tr("没有匹配的 MCP 服务，请调整搜索条件。"))
                         .font(AppFont.secondary)
                         .foregroundStyle(.secondary)
                 }
@@ -204,7 +209,7 @@ struct MCPObservedServersView: View {
                 }
             }
         } else {
-            EmptyState(icon: "point.3.connected.trianglepath.dotted", title: L10n.tr("选择一个 MCP 服务"), detail: L10n.tr("从左侧选择服务查看配置，或点击「添加 MCP 服务」创建连接计划。"))
+            EmptyState(icon: "point.3.connected.trianglepath.dotted", title: L10n.tr("选择一个 MCP 服务"), detail: L10n.tr("从左侧选择服务查看配置，或点击「直接配置连接…」创建待批准计划。"))
         }
     }
 }

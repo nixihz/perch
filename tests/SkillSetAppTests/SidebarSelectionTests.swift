@@ -6,7 +6,7 @@ import XCTest
 @MainActor
 final class SidebarSelectionTests: XCTestCase {
     func testNativeKeyboardSelectionSkipsHeadingsAndUpdatesBinding() async throws {
-        var selected = NavigationItem.sources
+        var selected = NavigationItem.mcp
         let binding = Binding(get: { selected }, set: { selected = $0 })
         let controller = NSHostingController(rootView: SidebarList(selection: binding, skillCount: 150))
         let window = NSWindow(
@@ -44,13 +44,13 @@ final class SidebarSelectionTests: XCTestCase {
             isARepeat: false, keyCode: 125
         ))
         table.keyDown(with: down)
-        XCTAssertEqual(selected, .mcp, "上下键必须跳过 AI 工具分组标题")
+        XCTAssertEqual(selected, .sources, "上下键必须从能力库跳过来源分组标题")
         XCTAssertEqual(table.selectedRow, 9)
 
         selected = .aiAccess
         controller.rootView = SidebarList(selection: binding, skillCount: 151)
         try await Task.sleep(for: .milliseconds(80))
-        XCTAssertEqual(table.selectedRow, 11, "菜单快捷键改变绑定时，原生侧栏必须同步")
+        XCTAssertEqual(table.selectedRow, 12, "菜单快捷键改变绑定时，原生侧栏必须同步")
         let skillCell = try XCTUnwrap(table.view(atColumn: 0, row: 5, makeIfNecessary: true) as? SidebarDestinationCell)
         XCTAssertEqual(skillCell.subtitleLabel.stringValue, AppPreferences.shared.language.resolved() == .english ? "151 skills to search and edit" : "151 个技能，可搜索和编辑")
 

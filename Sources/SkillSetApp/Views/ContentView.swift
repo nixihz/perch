@@ -35,6 +35,7 @@ struct ContentView: View {
 
 struct SidebarView: View {
     @Bindable var model: AppModel
+    @State private var relationshipPresented = false
 
     var body: some View {
         SidebarList(selection: $model.section, skillCount: model.snapshot.catalog.entries.count)
@@ -44,6 +45,17 @@ struct SidebarView: View {
         .safeAreaInset(edge: .bottom) {
             VStack(alignment: .leading, spacing: 7) {
                 Divider()
+                Button {
+                    relationshipPresented = true
+                } label: {
+                    Label(L10n.tr("配置关系图"), systemImage: "point.3.filled.connected.trianglepath.dotted")
+                        .font(AppFont.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(8)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("sidebar.relationships")
                 Button {
                     model.section = .settings
                 } label: {
@@ -71,6 +83,9 @@ struct SidebarView: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
+        }
+        .sheet(isPresented: $relationshipPresented) {
+            ConfigurationMapSheet(model: model)
         }
     }
 

@@ -132,6 +132,36 @@ struct MCPLibraryTests {
         }
     }
 
+    @Test func scanRejectsCredentialURLsInsideArgumentValuesAndKeepsPlainURLs() throws {
+        try fixture { service, library, _, _, home in
+            let claude = #"{"mcpServers":{"query":{"command":"run","args":["--url=https://example.test/mcp?key=abc123"]},"auth":{"command":"run","args":["--url=https://user:abc123@example.test/mcp"]},"fragment":{"command":"run","args":["--url=https://example.test/mcp#abc123"]},"safe":{"command":"run","args":["--url=https://example.test/mcp"]}}}"#
+            let codex = """
+            [mcp_servers.query]
+            command = "run"
+            args = ["--url=https://example.test/mcp?key=abc123"]
+            """
+            let claudeURL = home.appendingPathComponent(".claude.json")
+            let codexURL = home.appendingPathComponent(".codex/config.toml")
+            try claude.write(to: claudeURL, atomically: true, encoding: .utf8)
+            try codex.write(to: codexURL, atomically: true, encoding: .utf8)
+
+            let candidates = try service.scanMCPLibrary()
+            #expect(candidates.count == 5)
+            let safe = try #require(candidates.first { $0.name == "safe" }?.entry)
+            #expect(safe.args == ["--url=https://example.test/mcp"])
+            for blocked in candidates.filter({ $0.name != "safe" }) {
+                #expect(blocked.entry == nil)
+                #expect(blocked.issue != nil)
+                #expect(blocked.issue?.contains("abc123") == false)
+            }
+            try library.importEntries(candidates.compactMap(\.entry))
+            #expect(try library.entries().map(\.name) == ["safe"])
+            #expect(!String(decoding: try Data(contentsOf: library.documentURL), as: UTF8.self).contains("abc123"))
+            #expect(try String(contentsOf: claudeURL, encoding: .utf8) == claude)
+            #expect(try String(contentsOf: codexURL, encoding: .utf8) == codex)
+        }
+    }
+
     @Test func duplicateImportAndCorruptLibraryLeaveExistingBytesUntouched() throws {
         try fixture { _, library, _, _, _ in
             _ = try library.save(MCPLibraryEntry(name: "docs", commandOrURL: "old"))

@@ -39,6 +39,19 @@ struct TemplateUseSheet: View {
                     ForEach(model.projects) { Text($0.name).tag($0.id) }
                 }
                 .accessibilityIdentifier("templates.use.project")
+                if let project = model.projects.first(where: { $0.id == projectID }) {
+                    AppPicker(title: L10n.tr("目标 AI 工具"), selection: Binding(
+                        get: { project.editingAgent },
+                        set: {
+                            model.selectProjectHost($0 == "codex" ? .codex : .claude, projectID: projectID)
+                            refresh()
+                        }
+                    ), valueLabel: project.editingAgentName) {
+                        Text("Codex").tag("codex")
+                        Text("Claude Code").tag("claude-code")
+                    }
+                    .accessibilityIdentifier("templates.use.projectHost")
+                }
             }
             if let preview {
                 ScrollView {

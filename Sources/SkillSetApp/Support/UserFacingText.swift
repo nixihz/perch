@@ -72,6 +72,8 @@ enum UserFacingText {
             ?? (error as? ProjectLockError)?.code
         if let code {
             switch code {
+            case "HARNESS_SCOPE_CONFLICT":
+                return "本次变化也会修改另一个 AI 工具，当前计划未生成。请核对共用技能、规则和安装方式；若需共同更新，可通过 CLI 或 MCP 明确选择多个工具生成计划。"
             case "PLUGIN_SOURCE_CHANGED":
                 return "插件内容在扫描后已改变，请重新扫描并选择后再收录。"
             case "PLUGIN_SOURCE_COLLECTED":
@@ -88,6 +90,20 @@ enum UserFacingText {
                 return "来源内容或许可文件已改变，请重新预览仓库后再加入技能库。"
             case "SOURCE_IMPORT_UNAVAILABLE":
                 return "这个技能暂时无法导入，请检查来源文件并重新预览仓库。"
+            case "SKILLS_SH_QUERY_TOO_SHORT":
+                return "请至少输入 2 个字符，再搜索 skills.sh。"
+            case "SKILLS_SH_SEARCH_FAILED":
+                return "skills.sh 搜索失败，请检查网络后重试。"
+            case "SKILLS_SH_RESPONSE_INVALID":
+                return "skills.sh 返回了无法识别的响应，请稍后重试。"
+            case "SKILLS_SH_SKILL_ID_INVALID":
+                return "这个目录条目缺少可用的技能标识，无法安装。"
+            case "SKILLS_SH_INVALID_SOURCE":
+                return "这个目录条目没有可用的 GitHub 仓库，请到 skills.sh 查看安装说明。"
+            case "SKILLS_SH_SKILL_NOT_FOUND":
+                return "在来源仓库的当前提交中找不到这个技能，请到 skills.sh 核对条目。"
+            case "SKILLS_SH_AMBIGUOUS_SKILL":
+                return "来源仓库中有多个同名技能，无法确定要安装哪一个，请换一个目录条目。"
             case "SKILL_FILE_LIMIT_EXCEEDED":
                 return "技能目录条目过多，无法展示附属文件；请检查来源目录。"
             case "LIBRARY_DOCUMENT_INVALID":
@@ -325,6 +341,18 @@ enum UserFacingText {
             if text.hasPrefix("Codex TOML") { return "只修改本应用管理的配置部分，保留其他文本和注释。" }
             return "计划包含无法识别的提示，请先核对目标、范围和风险，暂不批准。"
         }
+    }
+
+    static func mcpStatus(_ inspection: MCPConfigurationInspection) -> String? {
+        guard !inspection.issues.isEmpty else { return nil }
+        // 仅识别观察器生成的完整提示；外部名称和系统异常都不能作为界面文案回显。
+        let existingConnectionNotes = Set(inspection.servers
+            .filter { !$0.managed && inspection.scope == .user }
+            .map { "\($0.name)：现有用户级配置；编辑或删除须预览并批准。" })
+        if inspection.issues.allSatisfy(existingConnectionNotes.contains) {
+            return "已有配置；可编辑或删除，批准计划后生效。"
+        }
+        return "MCP 配置无法读取，请检查配置文件和目录权限后重新扫描。"
     }
 
     static func pluginRisk(_ text: String) -> String {

@@ -17,8 +17,9 @@ enum NavigationItem: String, CaseIterable, Identifiable {
     // 菜单、侧栏共用任务顺序；快捷键保留已有的 1 / 2 / 3 习惯。
     static let groups: [(title: String, items: [NavigationItem])] = [
         ("配置", [.globalConfiguration, .projects, .presets]),
-        ("技能与规则", [.skills, .templates, .sources]),
-        ("AI 工具", [.mcp, .plugins, .aiAccess])
+        ("能力库", [.skills, .templates, .mcp]),
+        ("来源", [.sources, .plugins]),
+        ("对外接口", [.aiAccess])
     ]
 
     var keyboardShortcut: String {
@@ -56,12 +57,12 @@ enum NavigationItem: String, CaseIterable, Identifiable {
         case .globalConfiguration: L10n.tr("管理当前用户的技能与规则")
         case .projects: L10n.tr("选择技能，预览并写入项目")
         case .skills: L10n.tr("查找、阅读和编辑技能")
-        case .mcp: L10n.tr("管理 Codex 与 Claude Code 连接")
+        case .mcp: L10n.tr("保存连接，选择在哪里使用")
         case .plugins: L10n.tr("管理来源与扫描收录插件")
         case .sources: L10n.tr("从仓库发现更多技能")
         case .presets: L10n.tr("保存组合，用于不同项目")
         case .templates: L10n.tr("用于项目或全局的 AGENTS.md 片段")
-        case .aiAccess: L10n.tr("让 AI 帮你准备配置计划")
+        case .aiAccess: L10n.tr("通过 MCP 让 AI 调用栖集")
         case .settings: L10n.tr("外观与语言")
         }
     }

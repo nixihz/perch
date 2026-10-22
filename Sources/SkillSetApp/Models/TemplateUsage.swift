@@ -6,6 +6,11 @@ enum TemplateUseTarget: Hashable {
     case global(MCPHost)
 }
 
+enum TemplateReferenceTarget: Hashable {
+    case project(String, MCPHost)
+    case global(MCPHost)
+}
+
 struct TemplateUseRequest: Identifiable {
     let template: TemplateRecord
     var id: String { template.id }
@@ -17,7 +22,7 @@ struct TemplateReference: Identifiable {
     let inDraft: Bool
     let isApplied: Bool
     let needsUpdate: Bool
-    let target: TemplateUseTarget?
+    let target: TemplateReferenceTarget?
     let presetID: String?
 }
 
@@ -46,11 +51,18 @@ extension AppModel {
             let currentBody = snapshot.templates.first { $0.id == id }?.body
             let writtenHash = lock?.instructions.first { $0.id == id }?.sha256
             let needsUpdate = currentBody.map { SkillAssetCopier.sha256(Data($0.utf8)) != writtenHash } ?? true
-            let inDraft = draft?.instructionIDs.contains(id) == true
-            let applied = manifest?.instructions.contains(id) == true
-            if inDraft || applied {
-                references.append(TemplateReference(id: project.id.uuidString, name: project.name,
-                    inDraft: inDraft, isApplied: applied, needsUpdate: applied && needsUpdate, target: .project(project.id.uuidString), presetID: nil))
+            let draftSelections = draft?.resolvedHarnessSelections ?? [:]
+            let appliedSelections = manifest?.resolvedHarnessSelections ?? [:]
+            // 使用位置必须保留宿主，否则同一项目的草稿和写入状态会互相混淆。
+            for host in MCPHost.allCases {
+                let inDraft = draftSelections[host.rawValue]?.instructionIDs.contains(id) == true
+                let applied = appliedSelections[host.rawValue]?.instructionIDs.contains(id) == true
+                if inDraft || applied {
+                    references.append(TemplateReference(id: project.id.uuidString + "-" + host.rawValue,
+                        name: project.name + " · " + host.displayName,
+                        inDraft: inDraft, isApplied: applied, needsUpdate: applied && needsUpdate,
+                        target: .project(project.id.uuidString, host), presetID: nil))
+                }
             }
         }
         let global = GlobalConfigurationManager(paths: paths, locations: globalConfiguration.locations)
@@ -85,7 +97,10 @@ extension AppModel {
             section = .presets
         } else if let target = reference.target {
             switch target {
-            case .project(let id): selectedProjectID = id; section = .projects
+            case .project(let id, let host):
+                selectedProjectID = id
+                selectProjectHost(host == .codex ? .codex : .claude, projectID: id)
+                section = .projects
             case .global(let host): globalConfiguration.selectHost(host); section = .globalConfiguration
             }
         }
@@ -108,11 +123,21 @@ extension AppModel {
             let manifest = try ProjectLockStore(projectRoot: URL(fileURLWithPath: project.canonicalPath),
                 stateRoot: runtimePaths.applicationSupportRoot).loadManifest()
             var draft = current ?? ProjectDraft(projectID: id, skillIDs: manifest?.skills ?? [],
-                instructionIDs: manifest?.instructions ?? [], agents: manifest?.agents ?? project.agents, updatedAt: .distantPast)
-            draft.instructionIDs = Array(Set(draft.instructionIDs + [templateID])).sorted()
-            agents = draft.agents
-            ids = draft.instructionIDs
-            skills = draft.skillIDs.count
+                instructionIDs: manifest?.instructions ?? [], agents: manifest?.agents ?? project.agents,
+                updatedAt: .distantPast, harnessSelections: manifest?.harnessSelections)
+            let editingAgent = projects.first(where: { $0.id == rawID })?.editingAgent
+                ?? (draft.agents.contains("codex") ? "codex" : draft.agents.first ?? "codex")
+            var selections = draft.resolvedHarnessSelections
+            var selection = selections[editingAgent] ?? ProjectHarnessSelection()
+            selection.instructionIDs = Array(Set(selection.instructionIDs + [templateID])).sorted()
+            selections[editingAgent] = selection
+            draft.harnessSelections = selections
+            // 只在预览副本中提出启用；确认加入草稿前不保存，也不改变界面中的实际草稿。
+            draft.agents = selections.keys.sorted()
+            draft.instructionIDs = Array(Set(selections.values.flatMap(\.instructionIDs))).sorted()
+            agents = [editingAgent]
+            ids = selection.instructionIDs
+            skills = selection.skillIDs.count
             paths = try agents.map {
                 guard let adapter = AgentDeploymentAdapter.target(for: $0, ruleBlockID: manifest?.ruleBlockID ?? "project-rules") else {
                     throw ProjectLockError.unsupportedAgent($0)

@@ -3,6 +3,7 @@ import AppKit
 import SkillSetCore
 
 struct ProjectsView: View {
+    @State private var removingHost = false
     @Bindable var model: AppModel
 
     var body: some View {
@@ -62,7 +63,7 @@ struct ProjectsView: View {
                                 Text(project.name)
                                     .font(AppFont.body.weight(.semibold))
                                     .foregroundStyle(.primary)
-                                Text(L10n.tr("\(project.draftSkillIDs.count) 个技能 · \(L10n.text(project.adapter))"))
+                                Text(L10n.tr("\(project.allDraftSkillIDs.count) 个技能 · \(L10n.text(project.adapter))"))
                                     .font(AppFont.secondary)
                                     .foregroundStyle(.secondary)
                             }
@@ -103,13 +104,17 @@ struct ProjectsView: View {
                             .font(AppFont.title.weight(.bold))
                             .fixedSize(horizontal: false, vertical: true)
                         Spacer()
-                        Button(L10n.tr("预览变更")) {
+                        Button(L10n.tr("预览 \(project.editingAgentName) 变更")) {
                             model.prepareDeploymentPlan()
                         }
                         .buttonStyle(AppButtonStyle(kind: .primary))
                         .tint(AppColor.accent)
                         .fixedSize()
-                        .disabled(model.isWorking || model.runtimePaths.repositoryRoot == nil)
+                        .disabled(!model.canPrepareDeploymentPlan)
+                        .help(model.isWorking
+                            ? L10n.tr("正在处理，请稍候")
+                            : L10n.tr("生成变更计划，审阅后再写入"))
+                        .accessibilityIdentifier("projects.previewChanges")
                     }
                     Text(project.path)
                         .font(AppFont.secondary.monospaced())
@@ -119,6 +124,17 @@ struct ProjectsView: View {
                     ViewThatFits(in: .horizontal) {
                         HStack(spacing: 8) { projectStateBadges(project) }
                         VStack(alignment: .leading, spacing: 6) { projectStateBadges(project) }
+                    }
+                    if let notice = model.projectPlanNotice(for: project.id) {
+                        Label {
+                            Text(notice.message)
+                                .fixedSize(horizontal: false, vertical: true)
+                        } icon: {
+                            Image(systemName: notice.tone == .error ? "exclamationmark.triangle" : "checkmark.circle")
+                        }
+                        .font(AppFont.secondary)
+                        .foregroundStyle(notice.tone == .error ? .red : .secondary)
+                        .accessibilityIdentifier("projects.planNotice")
                     }
                     Divider()
                     if (model.projectIssues[project.id] ?? []).isEmpty {
@@ -170,7 +186,7 @@ struct ProjectsView: View {
                             Text(L10n.tr("AGENTS 片段"))
                                 .font(AppFont.heading)
                             Spacer()
-                            StatusBadge(text: L10n.tr("写入 AGENTS.md / CLAUDE.md"), tone: .neutral)
+                            StatusBadge(text: project.editingAgent == "codex" ? "AGENTS.md" : "CLAUDE.md", tone: .neutral)
                         }
                         ForEach(model.snapshot.templates) { template in
                             Button {
@@ -210,7 +226,7 @@ struct ProjectsView: View {
                     }
                 }
 
-                ForEach(MCPHost.allCases.filter { project.agents.contains($0.displayName) }) { host in
+                ForEach(MCPHost.allCases.filter { $0.rawValue == project.editingAgent }) { host in
                     MCPSelectionCard(model: model, host: host, projectID: UUID(uuidString: project.id))
                     if let projectID = UUID(uuidString: project.id) {
                         PluginConfigurationCard(model: model, host: host, projectID: projectID)
@@ -352,7 +368,7 @@ struct ProjectsView: View {
     private func projectStateBadges(_ project: ProjectRecord) -> some View {
         StatusBadge(text: project.adapter, tone: .accent).fixedSize()
         StatusBadge(text: lockStatusLabel(project.lockStatus), tone: project.lockStatus == "valid" ? .positive : .warning).fixedSize()
-        StatusBadge(text: L10n.tr("草稿 \(project.pendingChanges) 项变更"), tone: project.pendingChanges > 0 ? .warning : .positive).fixedSize()
+        StatusBadge(text: L10n.tr("全部工具草稿 \(project.pendingChanges) 项变更"), tone: project.pendingChanges > 0 ? .warning : .positive).fixedSize()
     }
 
     @ViewBuilder
@@ -362,22 +378,53 @@ struct ProjectsView: View {
     }
 
     private func hostPicker(project: ProjectRecord) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(L10n.tr("目标 AI 工具"))
+        VStack(alignment: .leading, spacing: 10) {
+            Text(L10n.tr("正在配置的 AI 工具"))
                 .font(AppFont.secondary.weight(.semibold))
             HStack(spacing: 8) {
                 ForEach(AgentHost.allCases) { host in
-                    let selected = project.agents.contains(host.rawValue)
+                    let agent = host == .codex ? "codex" : "claude-code"
+                    let selected = project.editingAgent == agent
+                    let selection = project.harnessSelections[agent]
                     Button {
-                        model.toggleAgent(host)
+                        model.selectProjectHost(host)
                     } label: {
-                        Label(host.rawValue, systemImage: selected ? "checkmark.circle.fill" : "circle")
-                            .frame(maxWidth: .infinity)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(host.rawValue).font(AppFont.secondary.weight(.semibold))
+                            Text(selection.map { L10n.tr("\($0.skillIDs.count) 个技能 · \($0.instructionIDs.count) 个片段") }
+                                ?? L10n.tr("尚未配置"))
+                                .font(AppFont.metadata).foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .buttonStyle(AppButtonStyle(selected: selected))
+                    .accessibilityIdentifier("projects.host.\(agent)")
                     .accessibilityAddTraits(selected ? [.isSelected] : [])
                 }
             }
+            Text(L10n.tr("技能和规则按 AI 工具分别保存。切换工具不会复制选择，也不会修改项目文件。"))
+                .font(AppFont.secondary).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(L10n.tr("预览只提交当前工具的技能与规则，其他工具的未部署草稿会保留。"))
+                .font(AppFont.secondary).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(alignment: .top, spacing: 8) {
+                Text(project.editingAgent == "codex" ? ".agents/skills · AGENTS.md" : ".claude/skills · CLAUDE.md")
+                    .font(AppFont.code).foregroundStyle(.secondary).textSelection(.enabled)
+                Spacer()
+                if project.harnessSelections[project.editingAgent] != nil {
+                    Button(L10n.tr("移除此工具的配置…")) { removingHost = true }
+                        .buttonStyle(AppButtonStyle(kind: .quiet))
+                        .accessibilityIdentifier("projects.removeHost")
+                }
+            }
+        }
+        .confirmationDialog(L10n.tr("移除当前 AI 工具的项目配置？"), isPresented: $removingHost) {
+            Button(L10n.tr("从草稿移除"), role: .destructive) {
+                model.toggleAgent(project.editingAgent == "codex" ? .codex : .claude)
+            }
+        } message: {
+            Text(L10n.tr("将清空此工具的技能与规则选择。预览并批准后，才会移除栖集管理的内容；另一个工具及项目已有内容保留。"))
         }
     }
 

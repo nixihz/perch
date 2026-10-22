@@ -670,7 +670,7 @@ public struct MCPConfigurationManager {
                     }
                     let entry = MCPLibraryEntry(name: server.name, transport: server.transport,
                         commandOrURL: server.command, args: args, envKeys: Array(Set(keys)).sorted())
-                    guard !MCPLibraryScanCandidate.containsCredential([server.command] + args),
+                    guard !MCPConnectionSafety.containsCredential([server.command] + args),
                           !server.command.hasPrefix("<"),
                           entry.draft(host: target.host, scope: target.scope).validationIssues().isEmpty else {
                         throw MCPConfigurationError.invalidDraft("")

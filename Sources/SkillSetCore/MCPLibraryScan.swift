@@ -6,16 +6,25 @@ public struct MCPLibraryScanCandidate: Identifiable, Sendable {
     public let source: String
     public let entry: MCPLibraryEntry?
     public let issue: String?
+}
 
-    static func containsCredential(_ values: [String]) -> Bool {
+/// 扫描入库与界面摘要共用检测规则，避免同一参数在不同入口暴露凭据。
+public enum MCPConnectionSafety {
+    public static func containsCredential(_ values: [String]) -> Bool {
         values.contains { value in
             let lower = value.lowercased()
             if ["token", "secret", "password", "api_key", "api-key", "apikey", "authorization", "bearer", "credential"].contains(where: lower.contains) { return true }
             if value.range(of: #"(sk-[A-Za-z0-9_-]{12,}|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)"#, options: .regularExpression) != nil { return true }
-            if let url = URL(string: value), ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
+            // 同时识别独立 URL 和 --url=https://… 这类参数值，参数名本身不是 URL。
+            var urlValues = [value]
+            if let separator = value.firstIndex(of: "=") {
+                urlValues.append(String(value[value.index(after: separator)...]))
+            }
+            return urlValues.contains { candidate in
+                guard let url = URLComponents(string: candidate),
+                      ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return false }
                 return url.user != nil || url.password != nil || url.query != nil || url.fragment != nil
             }
-            return false
         }
     }
 }

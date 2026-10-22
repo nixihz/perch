@@ -7,28 +7,50 @@ struct MCPServersView: View {
     @State private var query = ""
     @State private var selectedID: UUID?
     @State private var editor: MCPLibraryEntry?
+    @State private var usingEntry: MCPLibraryEntry?
     @State private var deleting: MCPLibraryEntry?
     @State private var scanPresented = false
+    @State private var pendingPlan = false
+    @State private var savedFeedback = false
     private var library: MCPLibraryModel { model.mcpLibrary }
     private var filtered: [MCPLibraryEntry] {
         library.entries.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) || $0.commandOrURL.localizedCaseInsensitiveContains(query) }
+    }
+    private var selectedEntry: MCPLibraryEntry? {
+        filtered.first(where: { $0.id == selectedID }) ?? filtered.first
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             Picker(L10n.tr("MCP 服务"), selection: $tab) {
                 Text(L10n.tr("配置库")).tag("library")
-                Text(L10n.tr("已有连接")).tag("observed")
-            }.pickerStyle(.segmented).frame(maxWidth: 340)
-            if tab == "observed" {
-                MCPObservedServersView(model: model)
-            } else {
-                libraryContent
+                Text(L10n.tr("AI 工具中的配置")).tag("observed")
+            }
+            .pickerStyle(.segmented)
+            .frame(maxWidth: 360, maxHeight: 32)
+            if tab == "observed" { MCPObservedServersView(model: model) }
+            else { libraryContent }
+        }
+        .task { library.refresh(); library.refreshUsage() }
+        .sheet(item: $editor) { entry in
+            MCPLibraryEditorSheet(library: library, entry: entry) { saved in
+                query = ""; selectedID = saved.id; savedFeedback = true
+                library.refreshUsage()
             }
         }
-        .task { library.refresh() }
-        .sheet(item: $editor) { entry in MCPLibraryEditorSheet(library: library, entry: entry) }
-        .sheet(isPresented: $scanPresented) { MCPLibraryScanSheet(library: library) }
+        .sheet(isPresented: $scanPresented, onDismiss: {
+            if let id = library.lastImportedIDs.first { query = ""; selectedID = id; savedFeedback = true }
+            library.refreshUsage()
+        }) { MCPLibraryScanSheet(library: library) }
+        .sheet(item: $usingEntry, onDismiss: {
+            if pendingPlan { pendingPlan = false; model.planPresented = true }
+        }) { entry in
+            MCPLibraryUseSheet(model: model, entry: entry) { plan in
+                model.preparedPlan = plan
+                pendingPlan = true
+            }
+        }
+        .onChange(of: model.planPresented) { _, presented in if !presented { library.refreshUsage() } }
         .confirmationDialog(L10n.tr("从配置库删除服务？"), isPresented: Binding(
             get: { deleting != nil }, set: { if !$0 { deleting = nil } }
         ), titleVisibility: .visible) {
@@ -46,13 +68,13 @@ struct MCPServersView: View {
     private var libraryContent: some View {
         VStack(alignment: .leading, spacing: 18) {
             PageHeader(eyebrow: "MCP LIBRARY", title: L10n.tr("MCP 配置库"),
-                detail: L10n.tr("在这里管理可复用的 MCP 配置，再到全局配置或项目中勾选使用。保存配置不会写入 AI 工具。"))
+                detail: L10n.tr("保存连接 → 选择项目或全局范围 → 预览并批准。配置库负责复用，AI 工具负责加载服务。"))
             HStack {
                 Text(L10n.tr("\(library.entries.count) 个服务")).font(AppFont.secondary).foregroundStyle(.secondary)
                 Spacer()
                 Button(L10n.tr("扫描已有配置…")) { library.scan(); scanPresented = true }
                     .accessibilityIdentifier("mcp.library.scan")
-                Button { editor = MCPLibraryEntry() } label: {
+                Button { savedFeedback = false; editor = MCPLibraryEntry() } label: {
                     Label(L10n.tr("添加 MCP 服务"), systemImage: "plus")
                 }
                 .buttonStyle(AppButtonStyle(kind: .primary))
@@ -60,61 +82,234 @@ struct MCPServersView: View {
             }
             if let error = library.error { Text(L10n.text(error)).foregroundStyle(.red) }
             HStack(alignment: .top, spacing: AppLayout.columnSpacing) {
-                SurfaceCard {
-                    VStack(alignment: .leading, spacing: 12) {
-                        AppSearchField(query: $query, prompt: L10n.tr("搜索名称或命令"),
-                            label: L10n.tr("搜索 MCP 服务"), identifier: "mcp.library.search")
-                        if filtered.isEmpty {
-                            Text(L10n.tr("没有匹配的服务。添加配置，或扫描已有连接入库。"))
-                                .font(AppFont.secondary).foregroundStyle(.secondary)
+                libraryList.frame(width: AppLayout.listWidth)
+                if let entry = selectedEntry {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 16) {
+                            connectionDetail(entry)
+                            usageDetail(entry)
                         }
-                        ScrollView {
-                            LazyVStack(alignment: .leading, spacing: 8) {
-                                ForEach(filtered) { entry in
-                                    Button { selectedID = entry.id } label: {
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text(entry.name).font(AppFont.body.weight(.semibold)).foregroundStyle(.primary)
-                                            Text(entry.transport).font(AppFont.secondary).foregroundStyle(.secondary)
-                                        }
-                                        .padding(10).frame(maxWidth: .infinity, alignment: .leading)
-                                        .selectionRow(selectedID == entry.id).contentShape(Rectangle())
-                                    }.buttonStyle(.plain)
-                                }
-                            }
-                        }
-                    }
-                }.frame(width: AppLayout.listWidth)
-                if let entry = filtered.first(where: { $0.id == selectedID }) ?? filtered.first {
-                    SurfaceCard {
-                        VStack(alignment: .leading, spacing: 14) {
-                            Text(entry.name).font(AppFont.title.weight(.bold))
-                            StatusBadge(text: entry.transport, tone: .accent)
-                            Text(entry.commandOrURL).font(AppFont.code).textSelection(.enabled)
-                                .fixedSize(horizontal: false, vertical: true)
-                            if !entry.args.isEmpty {
-                                Text(entry.args.joined(separator: "\n")).font(AppFont.code).textSelection(.enabled)
-                            }
-                            if !entry.envKeys.isEmpty {
-                                Text(L10n.tr("环境变量引用：\(entry.envKeys.joined(separator: "、"))（只保存名称）"))
-                                    .font(AppFont.secondary).foregroundStyle(.secondary)
-                            }
-                            Divider()
-                            Text(L10n.tr("在全局配置或项目中勾选这个服务，再预览并批准 MCP 变更。修改配置库后，已写入的连接需重新预览更新。"))
-                                .font(AppFont.secondary).foregroundStyle(.secondary)
-                            HStack {
-                                Button(L10n.tr("编辑…")) { editor = entry }
-                                Button(L10n.tr("删除…"), role: .destructive) { deleting = entry }
-                                Spacer()
-                                Button(L10n.tr("前往全局配置")) { model.section = .globalConfiguration }
-                                Button(L10n.tr("前往项目")) { model.section = .projects }
-                            }
-                        }.frame(maxWidth: .infinity, alignment: .leading)
-                    }
+                    }.frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     EmptyState(icon: "point.3.connected.trianglepath.dotted", title: L10n.tr("添加可复用的 MCP 配置"),
                         detail: L10n.tr("手动添加服务，或从系统已有配置扫描入库。"))
                 }
             }
         }
+    }
+
+    private var libraryList: some View {
+        SurfaceCard {
+            VStack(alignment: .leading, spacing: 12) {
+                AppSearchField(query: $query, prompt: L10n.tr("搜索名称或命令"),
+                    label: L10n.tr("搜索 MCP 服务"), identifier: "mcp.library.search")
+                if filtered.isEmpty {
+                    Text(L10n.tr("没有匹配的服务。添加配置，或扫描已有连接入库。"))
+                        .font(AppFont.secondary).foregroundStyle(.secondary)
+                }
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 8) {
+                        ForEach(filtered) { entry in
+                            Button { selectedID = entry.id; savedFeedback = false } label: {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text(entry.name).font(AppFont.body.weight(.semibold)).foregroundStyle(.primary)
+                                    Text(MCPConnectionFields.transportTitle(entry.transport))
+                                        .font(AppFont.secondary).foregroundStyle(.secondary)
+                                    let count = library.usageTargets.filter { $0.references(entry) }.count
+                                    Text(library.usageError == nil ? L10n.tr("\(count) 个配置范围") : L10n.tr("使用范围暂不可读"))
+                                        .font(AppFont.metadata).foregroundStyle(.secondary)
+                                }
+                                .padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                                .selectionRow(selectedEntry?.id == entry.id).contentShape(Rectangle())
+                            }.buttonStyle(.plain)
+                            .accessibilityIdentifier("mcp.library.entry.\(entry.id)")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func connectionDetail(_ entry: MCPLibraryEntry) -> some View {
+        SurfaceCard {
+            VStack(alignment: .leading, spacing: 14) {
+                Text(entry.name).font(AppFont.title.weight(.bold))
+                if savedFeedback {
+                    Label(L10n.tr("已保存在配置库，下一步选择使用范围。"), systemImage: "checkmark.circle")
+                        .font(AppFont.secondary).foregroundStyle(AppColor.positive)
+                }
+                MCPConnectionFields(entry: entry)
+                Button(L10n.tr("用于配置…")) { library.refreshUsage(); usingEntry = entry }
+                    .buttonStyle(AppButtonStyle(kind: .primary))
+                    .accessibilityIdentifier("mcp.library.use")
+                HStack {
+                    Button(L10n.tr("编辑…")) { savedFeedback = false; editor = entry }
+                    Button(L10n.tr("删除…"), role: .destructive) { deleting = entry }
+                }
+                Text(L10n.tr("保存和编辑只改变配置库。已有连接需要重新预览并批准更新。"))
+                    .font(AppFont.secondary).foregroundStyle(.secondary)
+            }.frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func usageDetail(_ entry: MCPLibraryEntry) -> some View {
+        SurfaceCard {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(L10n.tr("使用范围")).font(AppFont.heading)
+                let usages = library.usageTargets.filter { $0.references(entry) }
+                if let error = library.usageError {
+                    Text(L10n.text(error)).font(AppFont.secondary).foregroundStyle(.orange)
+                } else if usages.isEmpty {
+                    Text(L10n.tr("尚未在栖集的项目或全局草稿中选用。"))
+                        .font(AppFont.secondary).foregroundStyle(.secondary)
+                }
+                ForEach(usages) { usage in
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(usage.host.displayName + " · " + (usage.projectName ?? L10n.tr("全局配置")))
+                            .font(AppFont.body.weight(.semibold))
+                        HStack {
+                            if usage.selectedIDs.contains(entry.id) { StatusBadge(text: L10n.tr("草稿已选择"), tone: .accent) }
+                            if usage.appliedEntries.contains(where: { $0.id == entry.id }) {
+                                StatusBadge(text: L10n.tr("有写入记录"), tone: .neutral)
+                            }
+                        }
+                        Text(usage.configPath).font(AppFont.code).textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if let issue = usage.issue { Text(L10n.text(issue)).font(AppFont.secondary).foregroundStyle(.orange) }
+                        Button(L10n.tr("查看这份配置")) {
+                            if let projectID = usage.projectID {
+                                model.selectedProjectID = projectID.uuidString
+                                model.selectProjectHost(usage.host == .codex ? .codex : .claude)
+                                model.section = .projects
+                            } else {
+                                model.globalConfiguration.selectHost(usage.host); model.section = .globalConfiguration
+                            }
+                        }
+                    }
+                    Divider()
+                }
+                Text(L10n.tr("草稿选择、历史写入和 AI 工具加载是三个状态。写入记录不代表服务正在运行。"))
+                    .font(AppFont.metadata).foregroundStyle(.secondary)
+            }.frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+struct MCPConnectionFields: View {
+    let entry: MCPLibraryEntry
+
+    static func transportTitle(_ transport: String) -> String {
+        L10n.tr(transport == "stdio" ? "本机进程 · stdio" : "远程地址 · HTTP")
+    }
+
+    private var endpoint: String {
+        guard entry.transport != "stdio" else {
+            return MCPConnectionSafety.containsCredential([entry.commandOrURL]) ? L10n.tr("已隐藏敏感内容") : entry.commandOrURL
+        }
+        guard var url = URLComponents(string: entry.commandOrURL) else { return entry.commandOrURL }
+        // 地址摘要不展示认证字段；完整表单只用于用户主动编辑。
+        url.user = nil; url.password = nil; url.query = nil; url.fragment = nil
+        return url.string ?? ""
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            field(L10n.tr("连接方式"), value: Self.transportTitle(entry.transport))
+            field(L10n.tr(entry.transport == "stdio" ? "启动命令" : "服务地址"), value: endpoint, code: true)
+            if entry.transport == "stdio" {
+                DisclosureGroup(L10n.tr("\(entry.args.count) 个启动参数")) {
+                    if entry.args.isEmpty {
+                        Text(L10n.tr("未设置")).font(AppFont.secondary).foregroundStyle(.secondary)
+                    } else if let arguments = Self.visibleArguments(entry) {
+                        Text(arguments.joined(separator: "\n")).font(AppFont.code).textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        Text(L10n.tr("参数可能含凭据，已隐藏。请编辑配置并改用环境变量引用。"))
+                            .font(AppFont.secondary).foregroundStyle(.orange)
+                    }
+                }.font(AppFont.secondary)
+            }
+            field(L10n.tr("环境变量名称"), value: entry.envKeys.isEmpty ? L10n.tr("未设置") : entry.envKeys.joined(separator: "、"), code: !entry.envKeys.isEmpty)
+        }
+    }
+
+    static func visibleArguments(_ entry: MCPLibraryEntry) -> [String]? {
+        MCPConnectionSafety.containsCredential(entry.args) ? nil : entry.args
+    }
+
+    private func field(_ label: String, value: String, code: Bool = false) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label).font(AppFont.metadata).foregroundStyle(.secondary)
+            Text(value).font(code ? AppFont.code : AppFont.body).textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+        }.frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct MCPLibraryUseSheet: View {
+    @Bindable var model: AppModel
+    let entry: MCPLibraryEntry
+    let onPlan: (StoredDeploymentPlan) -> Void
+    @State private var targetID = ""
+    @Environment(\.dismiss) private var dismiss
+    private var library: MCPLibraryModel { model.mcpLibrary }
+    private var target: MCPLibraryUsageTarget? { library.usageTargets.first { $0.id == targetID } }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(L10n.tr("选择 MCP 使用范围")).font(AppFont.title.weight(.bold))
+            Text(entry.name).font(AppFont.heading)
+            AppPicker(title: L10n.tr("目标配置"), selection: $targetID, valueLabel: target.map(targetTitle) ?? L10n.tr("请选择")) {
+                ForEach(library.usageTargets) { target in Text(targetTitle(target)).tag(target.id) }
+            }
+            if let target {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
+                        Label(L10n.tr(target.projectID == nil
+                            ? "影响当前用户在该 AI 工具中的全部项目。"
+                            : "仅写入所选项目；全局 MCP 配置仍可能生效。"), systemImage: target.projectID == nil ? "globe" : "folder")
+                            .font(AppFont.secondary).foregroundStyle(target.projectID == nil ? .orange : .secondary)
+                        Text(L10n.tr("配置文件")).font(AppFont.heading)
+                        Text(target.configPath).font(AppFont.code).textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Divider()
+                        Text(L10n.tr("本次会预览这个范围的全部 MCP 草稿选择。"))
+                            .font(AppFont.secondary).foregroundStyle(.secondary)
+                        let names = library.entries.filter { target.selectedIDs.contains($0.id) || $0.id == entry.id }.map(\.name)
+                        Text(names.joined(separator: "、")).font(AppFont.body).textSelection(.enabled)
+                        if target.observedNames.contains(entry.name) && !target.appliedEntries.contains(where: { $0.id == entry.id }) {
+                            Label(L10n.tr("目标配置已有同名连接，预览会检查归属并阻止覆盖。"), systemImage: "exclamationmark.triangle")
+                                .font(AppFont.secondary).foregroundStyle(.orange)
+                        }
+                        if let issue = target.issue { Text(L10n.text(issue)).font(AppFont.secondary).foregroundStyle(.orange) }
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            if let error = library.error ?? library.usageError {
+                Text(L10n.text(error)).font(AppFont.secondary).foregroundStyle(.red)
+            }
+            Text(L10n.tr("Codex 仅支持全局 MCP。预览失败或取消审批时，已保存的草稿会保留；配置文件不会写入。"))
+                .font(AppFont.secondary).foregroundStyle(.secondary)
+            HStack {
+                Button(L10n.tr("取消")) { dismiss() }.keyboardShortcut(.cancelAction)
+                Spacer()
+                Button(L10n.tr("加入草稿并预览…")) {
+                    guard let target, let plan = library.prepareUse(entry, host: target.host, projectID: target.projectID) else { return }
+                    onPlan(plan)
+                    dismiss()
+                }
+                .buttonStyle(AppButtonStyle(kind: .primary)).keyboardShortcut(.defaultAction)
+                .disabled(target == nil || model.isWorking)
+                .accessibilityIdentifier("mcp.library.use.preview")
+            }
+        }.appControls().padding(26).frame(width: 660, height: 580)
+        .onAppear {
+            targetID = library.initialUsageTargetID(fallbackHost: model.globalConfiguration.host)
+        }
+    }
+
+    private func targetTitle(_ target: MCPLibraryUsageTarget) -> String {
+        target.host.displayName + " · " + (target.projectName ?? L10n.tr("全局配置"))
     }
 }

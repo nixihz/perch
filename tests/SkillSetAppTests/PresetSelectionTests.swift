@@ -13,9 +13,17 @@ final class PresetSelectionTests: XCTestCase {
             let store = ProjectDraftStore(rootURL: model.runtimePaths.applicationSupportRoot)
             let firstBefore = try store.load(projectID: UUID(uuidString: first)!)
             let index = try XCTUnwrap(model.projects.firstIndex { $0.id == second })
-            model.projects[index].draftSkillIDs = ["workspace/stc", "local-brian/research"]
-            model.projects[index].fragments = ["base-zh", "ui-craft"]
-            model.projects[index].agents = [AgentHost.claude.rawValue]
+            // 通过真实编辑入口建立 Claude 草稿，避免仅改展示字段留下 Codex 映射。
+            model.toggleAgent(.codex)
+            model.selectProjectHost(.claude)
+            for id in ["workspace/stc", "local-brian/research"] {
+                model.toggleSkill(try XCTUnwrap(model.snapshot.catalog.entries.first { $0.id == id }))
+            }
+            for id in ["base-zh", "ui-craft"] {
+                model.toggleInstruction(try XCTUnwrap(model.snapshot.templates.first { $0.id == id }))
+            }
+            XCTAssertEqual(model.projects[index].editingAgent, "claude-code")
+            XCTAssertNil(model.projects[index].harnessSelections["codex"])
             let preset = try XCTUnwrap(model.snapshot.presets.first { $0.id == "personal-base" })
             let beforePreview = model.projects
             let preview = PresetDraftPreview(preset: preset, project: model.projects[index], snapshot: model.snapshot)

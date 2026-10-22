@@ -6,40 +6,58 @@ struct MCPSelectionCard: View {
     let host: MCPHost
     let projectID: UUID?
     @State private var query = ""
+    @State private var selectedOnly = false
     private var library: MCPLibraryModel { model.mcpLibrary }
     private var unsupported: Bool { projectID != nil && host == .codex }
+    private var selectedIDs: [UUID] { library.selectedIDs(host: host, projectID: projectID) }
+    private var filtered: [MCPLibraryEntry] {
+        library.entries.filter { entry in
+            (!selectedOnly || selectedIDs.contains(entry.id)) && (query.isEmpty || entry.name.localizedCaseInsensitiveContains(query))
+        }
+    }
+    private var target: MCPLibraryUsageTarget? {
+        library.usageTargets.first { $0.host == host && $0.projectID == projectID }
+    }
 
     var body: some View {
         SurfaceCard {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     Text(L10n.tr("MCP 服务")).font(AppFont.heading)
-                    Text(host.displayName).font(AppFont.secondary).foregroundStyle(.secondary)
                     Spacer()
-                    Button(L10n.tr("预览 MCP 变更")) { model.prepareMCPLibraryPlan(host: host, projectID: projectID) }
-                        .disabled(unsupported || model.isWorking)
-                        .accessibilityIdentifier("mcp.selection.preview.\(host.rawValue)")
+                    Text(host.displayName).font(AppFont.secondary).foregroundStyle(.secondary)
                 }
-                Text(L10n.tr(projectID == nil ? "勾选配置库中的服务，影响当前用户该工具的全部项目。批准 MCP 计划后生效。" : "勾选配置库中的服务用于当前项目。全局 MCP 仍可能生效；批准 MCP 计划后写入。"))
+                Text(L10n.tr(projectID == nil
+                    ? "这里的选择影响当前用户该工具的全部项目。预览并批准后才写入配置文件。"
+                    : "这里的选择只写入当前项目；全局 MCP 仍可能生效。预览并批准后才写入配置文件。"))
                     .font(AppFont.secondary).foregroundStyle(.secondary)
                 if unsupported {
                     Text(L10n.tr("Codex 目前只支持用户级 MCP，请在全局配置中勾选。"))
                         .font(AppFont.secondary).foregroundStyle(.orange)
+                    Button(L10n.tr("前往 Codex 全局配置")) {
+                        model.globalConfiguration.selectHost(.codex)
+                        model.section = .globalConfiguration
+                    }
                 } else {
+                    if let target {
+                        Text(target.configPath).font(AppFont.code).foregroundStyle(.secondary).textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                     selectionList
+                    Button(L10n.tr("预览 MCP 变更")) { model.prepareMCPLibraryPlan(host: host, projectID: projectID) }
+                        .disabled(model.isWorking)
+                        .accessibilityIdentifier("mcp.selection.preview.\(host.rawValue)")
                 }
-                if let error = library.error {
-                    Text(L10n.text(error)).font(AppFont.secondary).foregroundStyle(.red)
-                }
+                if let error = library.error { Text(L10n.text(error)).font(AppFont.secondary).foregroundStyle(.red) }
                 Button(L10n.tr("管理 MCP 配置库")) { model.section = .mcp }
             }
         }
         .task(id: library.store.selectionKey(host: host, projectID: projectID)) {
             library.refresh()
             library.loadSelection(host: host, projectID: projectID)
+            library.refreshUsage()
             model.refreshMCPConfigurations()
         }
-
     }
 
     private var selectionList: some View {
@@ -48,18 +66,31 @@ struct MCPSelectionCard: View {
                 Text(L10n.tr("配置库为空，先添加服务或扫描已有配置入库。"))
                     .font(AppFont.secondary).foregroundStyle(.secondary)
             } else {
-                AppSearchField(query: $query, prompt: L10n.tr("搜索 MCP 服务"),
-                    label: L10n.tr("搜索 MCP 服务"), identifier: "mcp.selection.search")
+                Text(L10n.tr("配置库 \(library.entries.count) 个 · 草稿已选 \(selectedIDs.count) 个"))
+                    .font(AppFont.secondary).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("mcp.selection.summary")
+                HStack {
+                    AppSearchField(query: $query, prompt: L10n.tr("搜索 MCP 服务"),
+                        label: L10n.tr("搜索 MCP 服务"), identifier: "mcp.selection.search")
+                    Toggle(L10n.tr("只看已选"), isOn: $selectedOnly).toggleStyle(.checkbox)
+                        .font(AppFont.secondary)
+                }
                 ScrollView {
                     VStack(alignment: .leading, spacing: 12) {
-                        ForEach(library.entries.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }) { entry in
+                        if filtered.isEmpty {
+                            Text(L10n.tr("没有符合当前筛选的服务。"))
+                                .font(AppFont.secondary).foregroundStyle(.secondary)
+                            Button(L10n.tr("显示全部服务")) { query = ""; selectedOnly = false }
+                        }
+                        ForEach(filtered) { entry in
                             Toggle(isOn: Binding(
-                                get: { library.selectedIDs(host: host, projectID: projectID).contains(entry.id) },
+                                get: { selectedIDs.contains(entry.id) },
                                 set: { library.select(entry.id, enabled: $0, host: host, projectID: projectID) }
                             )) {
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(entry.name).font(AppFont.body.weight(.semibold))
-                                    Text(entry.transport).font(AppFont.secondary).foregroundStyle(.secondary)
+                                    Text(MCPConnectionFields.transportTitle(entry.transport))
+                                        .font(AppFont.secondary).foregroundStyle(.secondary)
                                 }
                             }
                             .toggleStyle(.checkbox)
@@ -68,11 +99,10 @@ struct MCPSelectionCard: View {
                     }.frame(maxWidth: .infinity, alignment: .leading)
                 }.frame(maxHeight: 220)
             }
-            ForEach(library.selectedIDs(host: host, projectID: projectID).filter { id in !library.entries.contains { $0.id == id } }, id: \.self) { id in
-                HStack {
+            ForEach(selectedIDs.filter { id in !library.entries.contains { $0.id == id } }, id: \.self) { id in
+                VStack(alignment: .leading, spacing: 6) {
                     Text(L10n.tr("所选服务已从配置库删除，请取消引用。"))
                         .font(AppFont.secondary).foregroundStyle(.orange)
-                    Spacer()
                     Button(L10n.tr("移除引用")) { library.select(id, enabled: false, host: host, projectID: projectID) }
                 }
             }

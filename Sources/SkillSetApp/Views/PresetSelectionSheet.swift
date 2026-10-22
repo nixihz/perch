@@ -238,6 +238,15 @@ struct PresetSelectionSheet: View {
                     .font(AppFont.secondary.weight(.medium))
             }
             if let project {
+                AppPicker(title: L10n.tr("目标 AI 工具"), selection: Binding(
+                    get: { project.editingAgent },
+                    set: { model.selectProjectHost($0 == "codex" ? .codex : .claude, projectID: project.id) }
+                ), valueLabel: project.editingAgentName, showsLabel: true) {
+                    Text("Codex").tag("codex")
+                    Text("Claude Code").tag("claude-code")
+                }
+                Text(L10n.tr("预设的技能与规则只替换此工具的草稿；插件与 MCP 沿用条目中标明的宿主和范围。"))
+                    .font(AppFont.metadata).foregroundStyle(.secondary)
                 Text(project.path)
                     .font(AppFont.metadata.monospaced()).foregroundStyle(.secondary)
                     .textSelection(.enabled)

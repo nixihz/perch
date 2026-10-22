@@ -7,13 +7,14 @@ struct SourcesView: View {
     @State private var editor: SourceEditorDraft?
     @State private var deletingPreview: SourcePreviewRecord?
     @State private var importingSkill: SourceSkillImportDraft?
+    @State private var browsingSkillsSh = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             PageHeader(
                 eyebrow: "SOURCE REGISTRY",
                 title: L10n.tr("技能来源"),
-                detail: L10n.tr("配置来源后同步到 ~/.perch，全部技能可在技能库搜索；启用时选择软链接或复制。")
+                detail: L10n.tr("配置来源后同步到 ~/.perch，全部技能可在技能库搜索；也可浏览 skills.sh 目录，将技能安装到本机技能库。")
             )
 
             if let error = model.sourceImportError, importingSkill == nil {
@@ -31,6 +32,9 @@ struct SourcesView: View {
         }
         .sheet(item: $importingSkill) { draft in
             SourceSkillImportSheet(model: model, initialDraft: draft)
+        }
+        .sheet(isPresented: $browsingSkillsSh) {
+            SkillsShBrowserSheet(model: model)
         }
         .confirmationDialog(
             L10n.tr("删除这个技能来源？"),
@@ -60,6 +64,18 @@ struct SourcesView: View {
                 Text(L10n.tr("技能来源"))
                     .font(AppFont.heading)
                 Spacer()
+                Button {
+                    browsingSkillsSh = true
+                } label: {
+                    Label("skills.sh", systemImage: "sparkle.magnifyingglass")
+                        .frame(minHeight: 32)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(AppButtonStyle(kind: .quiet))
+                .help(L10n.tr("浏览 skills.sh"))
+                .accessibilityLabel(L10n.tr("浏览 skills.sh"))
+                .accessibilityIdentifier("sources.skillsSh.browse")
+                .disabled(model.isWorking)
                 Button {
                     editor = SourceEditorDraft()
                 } label: {
