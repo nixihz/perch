@@ -16,4 +16,5 @@ extension DeploymentPlanStoreError: SkillSetCodedError {}
 extension ProjectDraftStoreError: SkillSetCodedError {}
 extension SkillSetServiceError: SkillSetCodedError {}
 extension SourcePreviewError: SkillSetCodedError {}
+extension SkillsShDirectoryError: SkillSetCodedError {}
 extension PluginLifecycleError: SkillSetCodedError {}

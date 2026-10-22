@@ -61,11 +61,16 @@ public struct SkillSetRuntimePaths: Sendable {
         environment: [String: String] = ProcessInfo.processInfo.environment,
         executableURL: URL? = Bundle.main.executableURL,
         currentDirectoryURL: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true),
+        bundleResourceURL: URL? = Bundle.main.resourceURL,
         applicationSupportRoot: URL = ProjectStore.defaultRootURL
     ) -> SkillSetRuntimePaths {
         var candidates: [URL] = []
         if let configured = environment["SKILLSET_REPOSITORY_ROOT"], !configured.isEmpty {
             candidates.append(URL(fileURLWithPath: configured, isDirectory: true))
+        }
+        // 发布包把可信技能快照放在 Resources/SkillSetLibrary，不能只沿可执行文件向上找仓库。
+        if let bundleResourceURL {
+            candidates.append(bundleResourceURL.appendingPathComponent("SkillSetLibrary", isDirectory: true))
         }
         if let executableURL {
             candidates.append(executableURL)

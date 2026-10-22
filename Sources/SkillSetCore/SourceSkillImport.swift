@@ -21,6 +21,8 @@ public struct SourceSkillOrigin: Codable, Equatable, Sendable {
     public let contentHash: String
     public let licenseEvidence: String
     public let licenseHashes: [String: String]
+    /// 导入时的来源名称属于身份依据；本机编辑 SKILL.md 不改变这份证据。
+    public let declaredName: String?
 }
 
 public struct SourceSkillImportDraft: Identifiable, Sendable {
@@ -101,7 +103,8 @@ extension SkillSetService {
         let origin = SourceSkillOrigin(
             url: record.canonicalURL, commit: record.resolvedCommit, path: path,
             contentHash: candidate.contentHash, licenseEvidence: record.licenseEvidence,
-            licenseHashes: licenses.mapValues { SHA256.hash(data: $0).map { String(format: "%02x", $0) }.joined() }
+            licenseHashes: licenses.mapValues { SHA256.hash(data: $0).map { String(format: "%02x", $0) }.joined() },
+            declaredName: candidate.declaredName
         )
         return (source, candidate, origin, analysis, licenses)
     }
