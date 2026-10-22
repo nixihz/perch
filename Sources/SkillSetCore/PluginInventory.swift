@@ -195,6 +195,25 @@ public struct PluginInventoryManager {
         )
     }
 
+    /// 来源盘点不读取宿主安装事实；缓存内容不能被当作已安装。
+    public func inspectSource(at root: URL) throws -> PluginInventorySnapshot {
+        let root = root.standardizedFileURL
+        guard root.resolvingSymlinksInPath() == root,
+              try root.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true else {
+            throw PluginInventoryError.unsafeRoot(root.path)
+        }
+        var manifests: Set<String> = []
+        var visited = 0
+        walk(directory: root, depth: 0, visited: &visited, manifests: &manifests)
+        var records: [PluginInventoryRecord] = []
+        var issues: [String] = []
+        for path in manifests.sorted() {
+            do { records.append(try parseManifest(at: URL(fileURLWithPath: path), installation: nil)) }
+            catch { issues.append(error.localizedDescription) }
+        }
+        return PluginInventorySnapshot(records: records, issues: issues, scannedRoots: [root.path])
+    }
+
     private func walk(
         directory: URL,
         depth: Int,

@@ -47,6 +47,8 @@ struct InstalledSkillScanTests {
         let broken = second.deletingLastPathComponent().appendingPathComponent("broken")
         try FileManager.default.createSymbolicLink(atPath: broken.path, withDestinationPath: root.appendingPathComponent("missing").path)
         let service = try SkillSetService(paths: paths, globalLocations: locations)
+        let direct = try service.scanInstalledSkills(additionalRoots: [first])
+        #expect(direct.contains { $0.path == first.path && $0.canImport })
         let scan = try service.scanInstalledSkills()
         #expect(scan.filter(\.canImport).count == 2)
         #expect(scan.first { $0.path == broken.path }?.issue != nil)

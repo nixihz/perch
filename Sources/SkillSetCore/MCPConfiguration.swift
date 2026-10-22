@@ -325,6 +325,14 @@ public struct ManagedMCPRegistry {
         try write(document)
     }
 
+    public func recordSelection(configPath: String, names: [String], removed: [String], contentHash: String) throws {
+        var document = try load()
+        let path = canonicalPath(configPath)
+        document.servers.removeAll { canonicalPath($0.configPath) == path && (names + removed).contains($0.serverName) }
+        document.servers += names.map { ManagedMCPServerRecord(configPath: path, serverName: $0, contentHash: contentHash, updatedAt: clock()) }
+        try write(document)
+    }
+
     private func load() throws -> ManagedMCPServerDocument {
         guard fileManager.fileExists(atPath: documentURL.path) else {
             return ManagedMCPServerDocument(schemaVersion: 1, servers: [])
@@ -608,12 +616,176 @@ public struct MCPConfigurationManager {
         )
     }
 
+    /// 扫描只提取可复用连接字段；env/header 的值不会进入候选或本机库。
+    public func libraryScanCandidates() -> [MCPLibraryScanCandidate] {
+        targets().flatMap { target -> [MCPLibraryScanCandidate] in
+            let inspection = inspect(target)
+            if inspection.servers.isEmpty && !inspection.issues.isEmpty {
+                return [MCPLibraryScanCandidate(id: target.configPath, name: target.host.displayName,
+                    source: target.configPath, entry: nil, issue: "配置无法安全解析，请检查原文件。")]
+            }
+            guard inspection.exists else { return [] }
+            return inspection.servers.map { server in
+                do {
+                    let url = URL(fileURLWithPath: target.configPath)
+                    try ensureInside(url, root: URL(fileURLWithPath: target.rootPath))
+                    guard (try? fileManager.destinationOfSymbolicLink(atPath: url.path)) == nil else {
+                        throw MCPConfigurationError.unsafePath(url.path)
+                    }
+                    let data = try Data(contentsOf: url)
+                    var args: [String] = []
+                    var keys = server.envKeys
+                    if target.host == .claudeCode {
+                        let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+                        let node = (object?["mcpServers"] as? [String: [String: Any]])?[server.name]
+                        if let value = node?["args"] {
+                            guard let parsed = value as? [String] else { throw MCPConfigurationError.invalidDraft("") }
+                            args = parsed
+                        }
+                    } else {
+                        let lines = String(decoding: data, as: UTF8.self).components(separatedBy: "\n")
+                        guard let start = lines.firstIndex(where: { codexServerName(fromHeader: $0) == server.name }) else {
+                            throw MCPConfigurationError.invalidDraft("")
+                        }
+                        let end = lines.indices.first { $0 > start && lines[$0].trimmingCharacters(in: .whitespaces).hasPrefix("[") } ?? lines.count
+                        let body = Array(lines[(start + 1)..<end])
+                        if let argStart = body.firstIndex(where: { $0.range(of: #"^\s*args\s*="#, options: .regularExpression) != nil }) {
+                            let raw = body[argStart...].joined(separator: "\n")
+                            args = try MCPTOMLArguments.parse(String(raw.dropFirst(raw.firstIndex(of: "=")!.utf16Offset(in: raw) + 1)))
+                        }
+                        // env 子表只读取键名，不保留值。
+                        let serverEnd = lines.indices.first { $0 > start && codexServerName(fromHeader: lines[$0]) != nil } ?? lines.count
+                        let tableKey = server.name.contains(".") ? tomlString(server.name) : server.name
+                        let envStart = ((start + 1)..<serverEnd).first {
+                            lines[$0].trimmingCharacters(in: .whitespaces) == "[mcp_servers.\(tableKey).env]"
+                        }
+                        if let envStart {
+                            for line in lines[(envStart + 1)...].prefix(while: { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("[") }) {
+                                if let equal = line.firstIndex(of: "=") {
+                                    let key = line[..<equal].trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+                                    if key.range(of: #"^[A-Za-z_][A-Za-z0-9_]*$"#, options: .regularExpression) != nil { keys.append(key) }
+                                }
+                            }
+                        }
+                    }
+                    let entry = MCPLibraryEntry(name: server.name, transport: server.transport,
+                        commandOrURL: server.command, args: args, envKeys: Array(Set(keys)).sorted())
+                    guard !MCPLibraryScanCandidate.containsCredential([server.command] + args),
+                          !server.command.hasPrefix("<"),
+                          entry.draft(host: target.host, scope: target.scope).validationIssues().isEmpty else {
+                        throw MCPConfigurationError.invalidDraft("")
+                    }
+                    return MCPLibraryScanCandidate(id: server.id, name: server.name,
+                        source: "\(target.host.displayName) · \(target.scope.displayName) · \(target.configPath)", entry: entry, issue: nil)
+                } catch {
+                    return MCPLibraryScanCandidate(id: server.id, name: server.name, source: target.configPath,
+                        entry: nil, issue: "连接包含敏感信息或不支持的参数格式，请手动添加并改用环境变量引用。")
+                }
+            }
+        }
+    }
+
+    /// 对整组勾选生成一次配置变更；仅替换本配置库先前写入且没有漂移的节点。
+    public func makeLibrarySelectionEdit(target: MCPConfigurationTarget, entries: [MCPLibraryEntry],
+                                         previous: MCPLibraryAppliedSelection?) throws -> MCPConfigEditResult {
+        let root = URL(fileURLWithPath: target.rootPath)
+        let url = URL(fileURLWithPath: target.configPath)
+        try ensureInside(url, root: root)
+        guard fileManager.fileExists(atPath: root.path),
+              (try? fileManager.destinationOfSymbolicLink(atPath: url.path)) == nil else {
+            throw MCPConfigurationError.unsafePath(url.path)
+        }
+        let before = fileManager.fileExists(atPath: url.path) ? try Data(contentsOf: url) : nil
+        var content = before ?? Data()
+        let hashes = try libraryNodeHashes(content: content, target: target)
+        for (name, expected) in previous?.nodeHashes ?? [:] {
+            guard hashes[name] == expected else {
+                throw MCPLibraryError.modifiedConnection
+            }
+        }
+        let oldNames = Set(previous?.nodeHashes.keys.map { $0 } ?? [])
+        let newNames = entries.map(\.name)
+        guard Set(newNames).count == newNames.count else {
+            throw MCPConfigurationError.invalidDraft("选择中存在同名服务。")
+        }
+        for entry in entries {
+            let draft = entry.draft(host: target.host, scope: target.scope)
+            guard draft.validationIssues().isEmpty else {
+                throw MCPConfigurationError.invalidDraft(draft.validationIssues().joined(separator: "；"))
+            }
+            if hashes[entry.name] != nil && !oldNames.contains(entry.name) {
+                throw MCPConfigurationError.configConflict(entry.name)
+            }
+        }
+        switch target.host {
+        case .claudeCode:
+            var object = content.isEmpty ? [:] : try JSONSerialization.jsonObject(with: content) as? [String: Any] ?? [:]
+            var servers = object["mcpServers"] as? [String: Any] ?? [:]
+            for name in oldNames { servers.removeValue(forKey: name) }
+            object["mcpServers"] = servers
+            content = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+            for entry in entries.sorted(by: { $0.name < $1.name }) {
+                content = try updateClaudeJSON(existing: content, draft: entry.draft(host: target.host, scope: target.scope),
+                                              target: target, managed: false)
+            }
+            if entries.isEmpty {
+                content = try JSONSerialization.data(withJSONObject: object,
+                    options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]) + Data("\n".utf8)
+            }
+        case .codex:
+            var lines = String(decoding: content, as: UTF8.self).components(separatedBy: "\n")
+            for block in try codexManagedBlocks(in: lines).reversed() where oldNames.contains(block.name) && !Set(newNames).contains(block.name) {
+                lines.removeSubrange(block.begin...block.end)
+            }
+            content = Data(lines.joined(separator: "\n").utf8)
+            for entry in entries.sorted(by: { $0.name < $1.name }) {
+                content = try updateCodex(existing: String(decoding: content, as: UTF8.self),
+                    draft: entry.draft(host: target.host, scope: target.scope), target: target)
+            }
+        }
+        return MCPConfigEditResult(target: target, serverName: newNames.joined(separator: ", "), content: content,
+            beforeHash: before.map(SkillAssetCopier.sha256), afterHash: SkillAssetCopier.sha256(content),
+            action: before == nil ? "add" : (before == content ? "noop" : "update"))
+    }
+
+    public func libraryNodeHashes(content: Data, target: MCPConfigurationTarget) throws -> [String: String] {
+        if content.isEmpty { return [:] }
+        switch target.host {
+        case .claudeCode:
+            guard let object = try JSONSerialization.jsonObject(with: content) as? [String: Any],
+                  object["mcpServers"] == nil || object["mcpServers"] is [String: Any] else {
+                throw MCPConfigurationError.configCorrupt(target.configPath)
+            }
+            return try (object["mcpServers"] as? [String: Any] ?? [:]).mapValues {
+                SkillAssetCopier.sha256(try JSONSerialization.data(withJSONObject: $0, options: [.sortedKeys, .fragmentsAllowed]))
+            }
+        case .codex:
+            let lines = String(decoding: content, as: UTF8.self).components(separatedBy: "\n")
+            var hashes: [String: String] = [:]
+            for name in lines.compactMap(codexServerName(fromHeader:)) {
+                guard hashes[name] == nil else { throw MCPConfigurationError.configCorrupt(target.configPath) }
+                hashes[name] = "external"
+            }
+            for block in try codexManagedBlocks(in: lines) {
+                hashes[block.name] = SkillAssetCopier.sha256(Data(lines[block.begin...block.end].joined(separator: "\n").utf8))
+            }
+            return hashes
+        }
+    }
+
     public func recordApplied(plan: DeploymentPlan) throws {
         guard plan.metadata?["planType"] == "mcp-configuration",
               let configPath = plan.metadata?["configPath"],
               let serverName = plan.metadata?["serverName"],
               let change = plan.changes.first,
               let afterHash = change.afterHash else {
+            return
+        }
+        if let selected = plan.metadata?["librarySelectedNames"],
+           let removed = plan.metadata?["libraryRemovedNames"] {
+            let names = try JSONDecoder().decode([String].self, from: Data(selected.utf8))
+            let removals = try JSONDecoder().decode([String].self, from: Data(removed.utf8))
+            try registry.recordSelection(configPath: configPath, names: names, removed: removals, contentHash: afterHash)
             return
         }
         if plan.metadata?["mcpAction"] == "remove" {

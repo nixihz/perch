@@ -334,6 +334,9 @@ public struct SkillSetService {
         guard isInside(staging, root: paths.stagingRoot.standardizedFileURL) else {
             throw SkillSetServiceError.invalidStagingPath(staging.path)
         }
+        if record.plan.metadata?["mcpLibrarySelection"] == "1" {
+            try validateMCPLibraryPlan(record.plan)
+        }
         if planType == "global-configuration" {
             try globalConfiguration.validate(plan: record.plan)
             let calculated = DeploymentPlanner.calculateDigest(
@@ -539,7 +542,9 @@ public struct SkillSetService {
         }
         return MCPConfigurationManager(
             projectRoot: projectRoot,
-            applicationSupportRoot: paths.applicationSupportRoot
+            applicationSupportRoot: paths.applicationSupportRoot,
+            environment: ["CODEX_HOME": globalConfiguration.locations.codexRoot.path],
+            homeDirectory: globalConfiguration.locations.home
         ).inspectAll()
     }
 
@@ -561,7 +566,9 @@ public struct SkillSetService {
         }
         let manager = MCPConfigurationManager(
             projectRoot: projectRoot,
-            applicationSupportRoot: paths.applicationSupportRoot
+            applicationSupportRoot: paths.applicationSupportRoot,
+            environment: ["CODEX_HOME": globalConfiguration.locations.codexRoot.path],
+            homeDirectory: globalConfiguration.locations.home
         )
         guard let target = manager.targets().first(where: {
             $0.host == draft.host && $0.scope == draft.scope
@@ -630,6 +637,86 @@ public struct SkillSetService {
             metadata: metadata
         )
         return try planStore.save(plan: plan, stagingPath: stage.path)
+    }
+
+    public func makeMCPLibraryPlan(host: MCPHost, projectID: UUID? = nil) throws -> StoredDeploymentPlan {
+        let library = MCPLibraryStore(rootURL: paths.applicationSupportRoot)
+        let ids = try library.selectedIDs(host: host, projectID: projectID)
+        let available = try library.entries()
+        let entries = try ids.map { id in
+            guard let entry = available.first(where: { $0.id == id }) else {
+                throw MCPLibraryError.missingSelection
+            }
+            return entry
+        }.sorted { $0.name < $1.name }
+        let projectRoot = try projectID.map { URL(fileURLWithPath: try projectStore.project(id: $0).canonicalPath) }
+        let manager = MCPConfigurationManager(projectRoot: projectRoot, applicationSupportRoot: paths.applicationSupportRoot,
+            environment: ["CODEX_HOME": globalConfiguration.locations.codexRoot.path], homeDirectory: globalConfiguration.locations.home)
+        let scope: MCPConfigurationScope = projectID == nil ? .user : .project
+        guard let target = manager.targets().first(where: { $0.host == host && $0.scope == scope }) else {
+            throw MCPConfigurationError.unsupportedTarget("\(host.rawValue)/\(scope.rawValue)")
+        }
+        let previous = try library.applied(configPath: target.configPath)
+        guard !entries.isEmpty || previous != nil else { throw DeploymentError.noChanges }
+        let edit = try manager.makeLibrarySelectionEdit(target: target, entries: entries, previous: previous)
+        let allHashes = try manager.libraryNodeHashes(content: edit.content, target: target)
+        let names = Set(entries.map(\.name))
+        let applied = MCPLibraryAppliedSelection(configPath: target.configPath, entries: entries,
+            nodeHashes: allHashes.filter { names.contains($0.key) })
+        let appliedData = try library.encode(applied)
+        let appliedURL = library.appliedURL(configPath: target.configPath)
+        let oldApplied = FileManager.default.fileExists(atPath: appliedURL.path) ? try Data(contentsOf: appliedURL) : nil
+        guard edit.action != "noop" || oldApplied != appliedData else { throw DeploymentError.noChanges }
+        var root = URL(fileURLWithPath: target.rootPath).standardizedFileURL
+        while !appliedURL.path.hasPrefix(root.path == "/" ? "/" : root.path + "/") { root.deleteLastPathComponent() }
+        let planID = UUID()
+        let stage = paths.stagingRoot.appendingPathComponent(planID.uuidString)
+        let removed = (previous?.entries.map(\.name) ?? []).filter { !names.contains($0) }
+        var changes: [PlannedChange] = []
+        for (url, content, beforeHash, description) in [
+            (URL(fileURLWithPath: target.configPath), edit.content, edit.beforeHash,
+             "\(host.displayName) · \(scope.displayName)：保留或写入 [\(entries.map(\.name).joined(separator: ", "))]；移除 [\(removed.joined(separator: ", "))]"),
+            (appliedURL, appliedData, oldApplied.map(SkillAssetCopier.sha256), "记录本次 MCP 勾选及逐服务指纹")
+        ] {
+            let relative = String(url.path.dropFirst(root.path == "/" ? 1 : root.path.count + 1))
+            let staged = stage.appendingPathComponent(relative)
+            try FileManager.default.createDirectory(at: staged.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try content.write(to: staged, options: .atomic)
+            changes.append(PlannedChange(action: beforeHash == nil ? "add" : "update", relativePath: relative,
+                beforeHash: beforeHash, afterHash: SkillAssetCopier.sha256(content), unifiedDiff: description))
+        }
+        let encoder = JSONEncoder()
+        let metadata = ["planType": "mcp-configuration", "mcpLibrarySelection": "1",
+            "host": host.rawValue, "scope": scope.rawValue, "projectID": projectID?.uuidString ?? "",
+            "configPath": target.configPath, "serverName": entries.map(\.name).joined(separator: ", "),
+            "librarySelectedNames": String(decoding: try encoder.encode(entries.map(\.name)), as: UTF8.self),
+            "libraryRemovedNames": String(decoding: try encoder.encode(removed), as: UTF8.self)]
+        let digest = DeploymentPlanner.calculateDigest(projectPath: root.path, changes: changes, selectedSkills: [], metadata: metadata)
+        let plan = DeploymentPlan(id: planID, projectPath: root.path, createdAt: Date(), digest: digest,
+            changes: changes, warnings: ["目标配置：\(target.configPath)",
+                scope == .user ? "此操作影响当前用户在该 AI 工具中的全部项目。" : "只更新当前项目的 MCP 配置；全局连接仍可能生效。",
+                "取消勾选只移除本配置库写入且未被修改的服务。",
+                "环境变量只写入 ${NAME} 引用，不读取或复制值。"], metadata: metadata)
+        return try planStore.save(plan: plan, stagingPath: stage.path)
+    }
+
+    private func validateMCPLibraryPlan(_ plan: DeploymentPlan) throws {
+        guard let metadata = plan.metadata, let host = MCPHost(rawValue: metadata["host"] ?? "") else {
+            throw DeploymentError.invalidPlan
+        }
+        let projectID = UUID(uuidString: metadata["projectID"] ?? "")
+        let scope: MCPConfigurationScope = projectID == nil ? .user : .project
+        let projectRoot = try projectID.map { URL(fileURLWithPath: try projectStore.project(id: $0).canonicalPath) }
+        let manager = MCPConfigurationManager(projectRoot: projectRoot, applicationSupportRoot: paths.applicationSupportRoot,
+            environment: ["CODEX_HOME": globalConfiguration.locations.codexRoot.path], homeDirectory: globalConfiguration.locations.home)
+        guard let target = manager.targets().first(where: { $0.host == host && $0.scope == scope }),
+              target.configPath == metadata["configPath"] else { throw DeploymentError.invalidPlan }
+        let appliedURL = MCPLibraryStore(rootURL: paths.applicationSupportRoot).appliedURL(configPath: target.configPath)
+        let allowed = Set([target.configPath, appliedURL.path])
+        let actual = plan.changes.map { URL(fileURLWithPath: plan.projectPath).appendingPathComponent($0.relativePath).standardizedFileURL.path }
+        guard actual.count == 2, Set(actual) == allowed,
+              DeploymentPlanner.calculateDigest(projectPath: plan.projectPath, changes: plan.changes,
+                selectedSkills: [], metadata: metadata) == plan.digest else { throw DeploymentError.invalidPlan }
     }
 
     public func plugins(projectID: UUID? = nil) throws -> PluginInventorySnapshot {

@@ -18,13 +18,17 @@ extension SkillSetService {
         let roots = [locations.configuredSkillsRoot(.codex), locations.codexRoot.appendingPathComponent("skills"),
                      locations.configuredSkillsRoot(.claudeCode)] + additionalRoots
         var seen = Set<String>()
+        var seenEntries = Set<String>()
         var result: [InstalledSkillObservation] = []
         let fm = FileManager.default
         let known = Set(try SkillLibraryStore(rootURL: paths.libraryRoot).load().records.compactMap { $0.sourceOrigin?.contentHash })
         for root in roots where seen.insert(root.standardizedFileURL.path).inserted {
             guard fm.fileExists(atPath: root.path) else { continue }
-            for entry in try fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil).sorted(by: { $0.path < $1.path }) {
-                let child = root.appendingPathComponent(entry.lastPathComponent)
+            let entries = fm.fileExists(atPath: root.appendingPathComponent("SKILL.md").path)
+                ? [root] : try fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
+            for entry in entries.sorted(by: { $0.path < $1.path }) {
+                let child = entries.count == 1 && entry.path == root.path ? root : root.appendingPathComponent(entry.lastPathComponent)
+                guard seenEntries.insert(child.path).inserted else { continue }
                 let resolved = child.resolvingSymlinksInPath().standardizedFileURL
                 let linked = (try? fm.destinationOfSymbolicLink(atPath: child.path)) != nil
                 guard fm.fileExists(atPath: resolved.appendingPathComponent("SKILL.md").path) || linked else { continue }
