@@ -89,7 +89,7 @@ public struct MCPConfigurationTarget: Codable, Hashable, Sendable {
     }
 }
 
-public struct MCPConfigurationDraft: Hashable, Sendable {
+public struct MCPConfigurationDraft: Codable, Hashable, Sendable {
     public var name: String
     public var host: MCPHost
     public var scope: MCPConfigurationScope
@@ -317,6 +317,14 @@ public struct ManagedMCPRegistry {
         try write(document)
     }
 
+    public func forget(configPath: String, serverName: String) throws {
+        var document = try load()
+        document.servers.removeAll {
+            canonicalPath($0.configPath) == canonicalPath(configPath) && $0.serverName == serverName
+        }
+        try write(document)
+    }
+
     private func load() throws -> ManagedMCPServerDocument {
         guard fileManager.fileExists(atPath: documentURL.path) else {
             return ManagedMCPServerDocument(schemaVersion: 1, servers: [])
@@ -434,7 +442,7 @@ public struct MCPConfigurationManager {
                 servers: servers,
                 issues: servers
                     .filter { !$0.managed && target.scope == .user }
-                    .map { "\($0.name)：现有用户级配置仅观察，修改前必须显式接管。" }
+                    .map { "\($0.name)：现有用户级配置；编辑或删除须预览并批准。" }
             )
         } catch {
             return MCPConfigurationInspection(
@@ -502,12 +510,114 @@ public struct MCPConfigurationManager {
         )
     }
 
+    /// 只修改用户选中的连接字段，保留凭据、未知字段和其他服务。
+    public func makeExistingEdit(
+        target: MCPConfigurationTarget, server: MCPObservedServer,
+        draft: MCPConfigurationDraft?, replaceArguments: Bool = false
+    ) throws -> MCPConfigEditResult {
+        guard server.configPath == target.configPath, server.host == target.host,
+              server.scope == target.scope,
+              inspect(target).servers.contains(where: { $0 == server }) else {
+            throw MCPConfigurationError.configConflict(server.name)
+        }
+        if let draft {
+            guard draft.name == server.name, draft.host == server.host,
+                  draft.scope == server.scope, draft.validationIssues().isEmpty else {
+                throw MCPConfigurationError.invalidDraft("请检查连接信息；编辑时不能更换名称、工具或范围。")
+            }
+        }
+        let url = URL(fileURLWithPath: target.configPath)
+        try ensureInside(url, root: URL(fileURLWithPath: target.rootPath))
+        guard (try? fileManager.destinationOfSymbolicLink(atPath: url.path)) == nil else {
+            throw MCPConfigurationError.unsafePath(url.path)
+        }
+        let before = try Data(contentsOf: url)
+        let content: Data
+        switch target.host {
+        case .claudeCode:
+            guard var object = try JSONSerialization.jsonObject(with: before) as? [String: Any],
+                  var servers = object["mcpServers"] as? [String: Any],
+                  var node = servers[server.name] as? [String: Any] else {
+                throw MCPConfigurationError.configCorrupt(target.configPath)
+            }
+            if let draft {
+                guard draft.transport == server.transport else {
+                    throw MCPConfigurationError.invalidDraft("请保留原连接方式；切换方式请删除后重新添加。")
+                }
+                if draft.commandOrURL != server.command || !server.command.hasPrefix("<") {
+                    node[draft.transport == "stdio" ? "command" : "url"] = draft.commandOrURL
+                }
+                if replaceArguments { node["args"] = draft.args }
+                servers[server.name] = node
+            } else {
+                servers.removeValue(forKey: server.name)
+            }
+            object["mcpServers"] = servers
+            content = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]) + Data("\n".utf8)
+        case .codex:
+            var lines = String(decoding: before, as: UTF8.self).components(separatedBy: "\n")
+            guard let start = lines.firstIndex(where: { codexServerName(fromHeader: $0) == server.name }) else {
+                throw MCPConfigurationError.configConflict(server.name)
+            }
+            let blocks = try codexManagedBlocks(in: lines)
+            let block = blocks.first { $0.name == server.name }
+            let tableKey = server.name.contains(".") ? tomlString(server.name) : server.name
+            let next = lines.indices.first { index in
+                index > start && (
+                    lines[index].hasPrefix("# skillset:begin mcp ") ||
+                    (lines[index].trimmingCharacters(in: .whitespaces).hasPrefix("[") &&
+                     !lines[index].trimmingCharacters(in: .whitespaces).hasPrefix("[mcp_servers.\(tableKey)."))
+                )
+            } ?? lines.count
+            if let draft {
+                guard draft.transport == server.transport else {
+                    throw MCPConfigurationError.invalidDraft("请保留原连接方式；切换方式请删除后重新添加。")
+                }
+                let rootEnd = ((start + 1)..<next).first {
+                    lines[$0].trimmingCharacters(in: .whitespaces).hasPrefix("[") ||
+                    lines[$0].hasPrefix("# skillset:end")
+                } ?? next
+                let field = draft.transport == "stdio" ? "command" : "url"
+                let connectionPatch: [(String, String)] = draft.commandOrURL == server.command && server.command.hasPrefix("<")
+                    ? [] : [(field, tomlString(draft.commandOrURL))]
+                let patch = connectionPatch +
+                    (replaceArguments ? [("args", "[" + draft.args.map(tomlString).joined(separator: ", ") + "]")] : [])
+                // 字段逐项替换；缺失字段插入服务表开头。
+                for (key, value) in patch {
+                    if let index = ((start + 1)..<rootEnd).first(where: {
+                        lines[$0].range(of: "^\\s*" + key + "\\s*=", options: .regularExpression) != nil
+                    }) {
+                        // 多行数组无法逐行安全替换，拒绝而不损坏原配置。
+                        if key == "args", !lines[index].contains("]") {
+                            throw MCPConfigurationError.invalidDraft("多行参数请在原配置中修改，或保留现有参数。")
+                        }
+                        lines[index] = "\(key) = \(value)"
+                    } else { lines.insert("\(key) = \(value)", at: start + 1) }
+                }
+            } else {
+                let lower = block?.begin ?? start
+                let upper = block.map { $0.end + 1 } ?? next
+                lines.removeSubrange(lower..<upper)
+            }
+            content = Data(lines.joined(separator: "\n").utf8)
+        }
+        return MCPConfigEditResult(
+            target: target, serverName: server.name, content: content,
+            beforeHash: SkillAssetCopier.sha256(before), afterHash: SkillAssetCopier.sha256(content),
+            action: content == before ? "noop" : "update"
+        )
+    }
+
     public func recordApplied(plan: DeploymentPlan) throws {
         guard plan.metadata?["planType"] == "mcp-configuration",
               let configPath = plan.metadata?["configPath"],
               let serverName = plan.metadata?["serverName"],
               let change = plan.changes.first,
               let afterHash = change.afterHash else {
+            return
+        }
+        if plan.metadata?["mcpAction"] == "remove" {
+            try registry.forget(configPath: configPath, serverName: serverName)
             return
         }
         try registry.record(
@@ -561,12 +671,18 @@ public struct MCPConfigurationManager {
         var servers: [MCPObservedServer] = []
         for (offset, header) in headers.enumerated() {
             let end = offset + 1 < headers.count ? headers[offset + 1].index : lines.count
-            let body = lines[(header.index + 1)..<end]
+            // 子表及后续普通配置表不属于服务的连接字段。
+            let body = lines[(header.index + 1)..<end].prefix { line in
+                !line.trimmingCharacters(in: .whitespaces).hasPrefix("[")
+            }
             let command = body.first(where: { $0.trimmingCharacters(in: .whitespaces).hasPrefix("command =") })
                 .flatMap { tomlQuotedValue($0) }
                 ?? body.first(where: { $0.trimmingCharacters(in: .whitespaces).hasPrefix("url =") })
                     .flatMap { tomlQuotedValue($0) }
                 ?? ""
+            // Codex 自带运行组件不属于用户管理的连接；空连接也可能是 env 子表。
+            guard !command.isEmpty,
+                  !["computer-use", "node_repl"].contains(header.name) else { continue }
             let argsCount = body.first(where: { $0.trimmingCharacters(in: .whitespaces).hasPrefix("args =") })
                 .map(countTOMLArrayItems) ?? 0
             let envKeys = body.compactMap { tomlInlineEnvKeys($0) }.flatMap { $0 }
@@ -666,7 +782,7 @@ public struct MCPConfigurationManager {
     private func renderCodexServer(_ draft: MCPConfigurationDraft) -> [String] {
         var lines = [
             "# skillset:begin mcp name=\(draft.name) schema=1",
-            "[mcp_servers.\(draft.name)]"
+            "[mcp_servers.\(draft.name.contains(".") ? tomlString(draft.name) : draft.name)]"
         ]
         if draft.transport == "stdio" {
             lines.append("command = \(tomlString(draft.commandOrURL))")
@@ -731,14 +847,16 @@ public struct MCPConfigurationManager {
 
     private func codexServerName(fromHeader rawLine: String) -> String? {
         let line = rawLine.trimmingCharacters(in: .whitespaces)
-        let pattern = #"^\[mcp_servers\.([A-Za-z0-9][A-Za-z0-9._-]{0,63})\]\s*(?:#.*)?$"#
-        guard let range = line.range(of: pattern, options: .regularExpression) else { return nil }
-        let value = String(line[range])
-        guard let start = value.range(of: "mcp_servers.")?.upperBound,
-              let end = value.range(of: "]", options: .backwards)?.lowerBound else {
+        // 未加引号的点表示子表，不能作为服务名称的一部分。
+        let pattern = #"^\[mcp_servers\.(?:([A-Za-z0-9][A-Za-z0-9_-]{0,63})|"([A-Za-z0-9][A-Za-z0-9._-]{0,63})")\]\s*(?:#.*)?$"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)) else {
             return nil
         }
-        return String(value[start..<end])
+        for index in 1...2 {
+            if let range = Range(match.range(at: index), in: line) { return String(line[range]) }
+        }
+        return nil
     }
 
     private func tomlQuotedValue(_ line: String) -> String? {

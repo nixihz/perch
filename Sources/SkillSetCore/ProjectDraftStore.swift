@@ -18,6 +18,8 @@ public struct ProjectDraft: Codable, Identifiable, Hashable, Sendable {
     public var skillIDs: [String]
     public var instructionIDs: [String]
     public var agents: [String]
+    public var plugins: [PresetPluginReference]
+    public var mcpServers: [MCPConfigurationDraft]
     public var updatedAt: Date
 
     public var id: UUID { projectID }
@@ -27,13 +29,27 @@ public struct ProjectDraft: Codable, Identifiable, Hashable, Sendable {
         skillIDs: [String],
         instructionIDs: [String] = [],
         agents: [String] = ["codex"],
-        updatedAt: Date
+        updatedAt: Date,
+        plugins: [PresetPluginReference] = [],
+        mcpServers: [MCPConfigurationDraft] = []
     ) {
         self.projectID = projectID
         self.skillIDs = skillIDs
         self.instructionIDs = instructionIDs
         self.agents = agents
         self.updatedAt = updatedAt
+        self.plugins = plugins
+        self.mcpServers = mcpServers
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        projectID = try c.decode(UUID.self, forKey: .projectID)
+        skillIDs = try c.decode([String].self, forKey: .skillIDs)
+        instructionIDs = try c.decode([String].self, forKey: .instructionIDs)
+        agents = try c.decode([String].self, forKey: .agents)
+        updatedAt = try c.decode(Date.self, forKey: .updatedAt)
+        plugins = try c.decodeIfPresent([PresetPluginReference].self, forKey: .plugins) ?? []
+        mcpServers = try c.decodeIfPresent([MCPConfigurationDraft].self, forKey: .mcpServers) ?? []
     }
 }
 
@@ -72,15 +88,20 @@ public struct ProjectDraftStore {
         projectID: UUID,
         skillIDs: some Sequence<String>,
         instructionIDs: some Sequence<String>,
-        agents: some Sequence<String>
+        agents: some Sequence<String>,
+        plugins: [PresetPluginReference]? = nil,
+        mcpServers: [MCPConfigurationDraft]? = nil
     ) throws -> ProjectDraft {
         var document = try loadDocument()
+        let previous = document.drafts.first { $0.projectID == projectID }
         let draft = ProjectDraft(
             projectID: projectID,
             skillIDs: normalized(skillIDs),
             instructionIDs: normalized(instructionIDs),
             agents: normalized(agents),
-            updatedAt: clock()
+            updatedAt: clock(),
+            plugins: plugins ?? previous?.plugins ?? [],
+            mcpServers: mcpServers ?? previous?.mcpServers ?? []
         )
         document.drafts.removeAll { $0.projectID == projectID }
         document.drafts.append(draft)

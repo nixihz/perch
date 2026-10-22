@@ -5,6 +5,7 @@ public protocol SkillSetCodedError: Error {
 }
 
 extension DeploymentError: SkillSetCodedError {}
+extension ProjectLockError: SkillSetCodedError {}
 extension SkillAssetCopyError: SkillSetCodedError {
     public var code: String { "SKILL_ASSET_UNSAFE" }
 }

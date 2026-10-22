@@ -24,13 +24,13 @@ public enum SourcePreviewError: Error, LocalizedError, Equatable, Sendable {
     public var errorDescription: String? {
         switch self {
         case .invalidURL:
-            return "仓库链接格式不对，请填写 https://github.com/owner/repo 格式的链接。"
+            return "仓库链接格式不对，请填写 HTTPS、SSH Git 仓库链接，或 GitHub 的 owner/repo 简写。"
         case .invalidRef:
             return "分支或标签格式不对，请检查后重试，也可以留空使用默认分支。"
         case .credentialsInURL:
             return "请移除链接中的用户名和密钥。私有仓库请先通过系统 Git 登录。"
         case .unsupportedHost:
-            return "暂不支持这个来源，请使用 HTTPS 格式的 GitHub 仓库链接。"
+            return "暂不支持这个来源，请使用 HTTPS Git 仓库链接。"
         case .gitFailed:
             return "仓库读取失败，请检查网络、仓库访问权限和分支名称，再重新预览。"
         case let .workspaceLimitExceeded(message):
@@ -93,6 +93,7 @@ public struct SourcePreviewRecord: Codable, Identifiable, Hashable, Sendable {
     public let schemaVersion: Int
     public let id: UUID
     public let inputURL: String
+    public let requestedRef: String?
     public let canonicalURL: String
     public let namespace: String
     public let resolvedCommit: String
@@ -107,6 +108,7 @@ public struct SourcePreviewRecord: Codable, Identifiable, Hashable, Sendable {
         schemaVersion: Int = 1,
         id: UUID,
         inputURL: String,
+        requestedRef: String? = nil,
         canonicalURL: String,
         namespace: String,
         resolvedCommit: String,
@@ -120,6 +122,7 @@ public struct SourcePreviewRecord: Codable, Identifiable, Hashable, Sendable {
         self.schemaVersion = schemaVersion
         self.id = id
         self.inputURL = inputURL
+        self.requestedRef = requestedRef
         self.canonicalURL = canonicalURL
         self.namespace = namespace
         self.resolvedCommit = resolvedCommit
@@ -179,6 +182,15 @@ public struct SourcePreviewStore {
             return try load(id)
         }.sorted { $0.createdAt > $1.createdAt }
     }
+
+    public func remove(_ id: UUID) throws {
+        // 仅按存储内的 UUID 删除，不能相信预览记录里的工作区路径。
+        let directory = rootURL.appendingPathComponent(id.uuidString, isDirectory: true)
+        let removed = rootURL.appendingPathComponent(".removed-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.moveItem(at: directory, to: removed)
+        // 先移出可见记录集合，避免清理大仓库失败后留下半条预览。
+        try? fileManager.removeItem(at: removed)
+    }
 }
 
 public struct SourcePreviewService {
@@ -192,7 +204,7 @@ public struct SourcePreviewService {
 
     public init(
         previewsRoot: URL = ProjectStore.defaultRootURL.appendingPathComponent("previews", isDirectory: true),
-        allowedHosts: Set<String> = ["github.com"],
+        allowedHosts: Set<String> = [],
         fileManager: FileManager = .default,
         clock: @escaping () -> Date = Date.init,
         idGenerator: @escaping () -> UUID = UUID.init,
@@ -206,10 +218,16 @@ public struct SourcePreviewService {
         self.gitEnvironment = gitEnvironment
     }
 
-    public func preview(urlString: String, ref: String? = nil) throws -> SourcePreviewRecord {
+    public func preview(urlString: String, ref: String? = nil, replacing replacedID: UUID? = nil) throws -> SourcePreviewRecord {
         let source = try parseSource(urlString)
         let validatedRef = try validateRef(ref)
         let previewID = idGenerator()
+        if let replacedID {
+            guard replacedID != previewID else {
+                throw SourcePreviewError.corruptPreview(replacedID.uuidString)
+            }
+            _ = try SourcePreviewStore(rootURL: previewsRoot, fileManager: fileManager).load(replacedID)
+        }
         let previewRoot = previewsRoot.appendingPathComponent(previewID.uuidString, isDirectory: true)
         let checkout = previewRoot.appendingPathComponent("checkout", isDirectory: true)
         try fileManager.createDirectory(at: previewRoot, withIntermediateDirectories: true)
@@ -270,9 +288,12 @@ public struct SourcePreviewService {
                 previewID: previewID,
                 inputURL: urlString,
                 source: source,
-                commit: commit
+                commit: commit,
+                requestedRef: validatedRef
             )
-            try SourcePreviewStore(rootURL: previewsRoot, fileManager: fileManager).save(record)
+            let store = SourcePreviewStore(rootURL: previewsRoot, fileManager: fileManager)
+            try store.save(record)
+            if let replacedID { try store.remove(replacedID) }
             return record
         } catch {
             try? fileManager.removeItem(at: previewRoot)
@@ -285,7 +306,8 @@ public struct SourcePreviewService {
         previewID: UUID = UUID(),
         inputURL: String,
         source: ParsedSource? = nil,
-        commit: String
+        commit: String,
+        requestedRef: String? = nil
     ) throws -> SourcePreviewRecord {
         let root = checkout.resolvingSymlinksInPath().standardizedFileURL
         let parsed = source ?? ParsedSource(
@@ -373,6 +395,7 @@ public struct SourcePreviewService {
         return SourcePreviewRecord(
             id: previewID,
             inputURL: inputURL,
+            requestedRef: requestedRef,
             canonicalURL: parsed.canonicalURL,
             namespace: parsed.namespace,
             resolvedCommit: commit,
@@ -395,34 +418,43 @@ public struct SourcePreviewService {
     }
 
     public func parseSource(_ value: String) throws -> ParsedSource {
-        guard let components = URLComponents(string: value.trimmingCharacters(in: .whitespacesAndNewlines)),
-              components.scheme?.lowercased() == "https",
-              let host = components.host?.lowercased() else {
+        var input = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if input.hasPrefix("git@"), !input.contains("://"), let colon = input.firstIndex(of: ":") {
+            input = "ssh://" + input[..<colon] + "/" + input[input.index(after: colon)...]
+        } else if !input.contains("://"), input.range(of: #"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"#, options: .regularExpression) != nil {
+            input = "https://github.com/\(input)"
+        }
+        guard var components = URLComponents(string: input),
+              let scheme = components.scheme?.lowercased(), ["https", "ssh"].contains(scheme),
+              let host = components.host?.lowercased(), !host.isEmpty,
+              components.query == nil, components.fragment == nil else {
             throw SourcePreviewError.invalidURL(value)
         }
-        guard components.user == nil, components.password == nil else {
+        guard components.password == nil,
+              components.user == nil || (scheme == "ssh" && components.user == "git") else {
             throw SourcePreviewError.credentialsInURL
         }
-        guard allowedHosts.contains(host) else {
+        if !allowedHosts.isEmpty && !allowedHosts.contains(host) {
             throw SourcePreviewError.unsupportedHost(host)
         }
-        let pathComponents = components.path.split(separator: "/").map(String.init)
-        guard pathComponents.count == 2 else {
-            throw SourcePreviewError.invalidURL("首版请输入仓库根链接，例如 https://github.com/owner/repo")
-        }
-        var repository = pathComponents[1]
-        if repository.hasSuffix(".git") {
-            repository.removeLast(4)
-        }
-        guard !pathComponents[0].isEmpty, !repository.isEmpty else {
+        var parts = components.path.split(separator: "/").map(String.init)
+        guard parts.count >= 2,
+              !parts.contains(where: { $0 == "." || $0 == ".." || $0.contains("\\") }),
+              !(host == "github.com" && parts.count != 2) else {
             throw SourcePreviewError.invalidURL(value)
         }
-        let owner = sanitizeNamespacePart(pathComponents[0])
-        let repo = sanitizeNamespacePart(repository)
+        var repository = parts.removeLast()
+        if repository.hasSuffix(".git") { repository.removeLast(4) }
+        guard !repository.isEmpty else { throw SourcePreviewError.invalidURL(value) }
+        let path = (parts + [repository]).joined(separator: "/")
+        components.scheme = scheme
+        components.host = host
+        components.path = "/" + path
+        guard let canonical = components.string else { throw SourcePreviewError.invalidURL(value) }
         return ParsedSource(
-            canonicalURL: "https://\(host)/\(pathComponents[0])/\(repository)",
-            cloneURL: "https://\(host)/\(pathComponents[0])/\(repository).git",
-            namespace: "\(owner)-\(repo)"
+            canonicalURL: canonical,
+            cloneURL: canonical + ".git",
+            namespace: (parts + [repository]).map(sanitizeNamespacePart).joined(separator: "-")
         )
     }
 

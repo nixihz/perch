@@ -55,7 +55,6 @@ public struct SkillEntry: Codable, Identifiable, Hashable, Sendable {
     public let contentHash: String
     public let fileCount: Int
     public let bytes: Int
-    public let wasSymlink: Bool
     public let integrity: String
     public let issues: [CatalogIssue]
     public let licenseReview: String
@@ -108,15 +107,60 @@ public struct PresetRecord: Codable, Identifiable, Hashable, Sendable {
     public let revision: Int
     public let skills: [String]
     public let instructionFragments: [String]
+    public let plugins: [PresetPluginReference]
+    public let mcpServers: [MCPConfigurationDraft]
     public let mergePolicy: String
     public let status: String
+
+    public var componentCount: Int { skills.count + instructionFragments.count + plugins.count + mcpServers.count }
+
+    public init(id: String = UUID().uuidString, name: String, description: String = "", revision: Int = 1,
+                skills: [String] = [], instructionFragments: [String] = [],
+                plugins: [PresetPluginReference] = [], mcpServers: [MCPConfigurationDraft] = [],
+                status: String = "local") {
+        schemaVersion = 2
+        self.id = id
+        self.name = name
+        self.description = description
+        self.revision = revision
+        self.skills = skills
+        self.instructionFragments = instructionFragments
+        self.plugins = plugins
+        self.mcpServers = mcpServers
+        mergePolicy = "explicit-selection"
+        self.status = status
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try c.decode(Int.self, forKey: .schemaVersion)
+        id = try c.decode(String.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        description = try c.decode(String.self, forKey: .description)
+        revision = try c.decode(Int.self, forKey: .revision)
+        skills = try c.decode([String].self, forKey: .skills)
+        instructionFragments = try c.decode([String].self, forKey: .instructionFragments)
+        plugins = try c.decodeIfPresent([PresetPluginReference].self, forKey: .plugins) ?? []
+        mcpServers = try c.decodeIfPresent([MCPConfigurationDraft].self, forKey: .mcpServers) ?? []
+        mergePolicy = try c.decode(String.self, forKey: .mergePolicy)
+        status = try c.decode(String.self, forKey: .status)
+    }
 }
 
-public struct TemplateRecord: Identifiable, Hashable, Sendable {
+public struct TemplateRecord: Codable, Identifiable, Hashable, Sendable {
     public let id: String
     public let title: String
     public let body: String
     public let purpose: String
+    public let isLocal: Bool
+
+    public init(id: String = UUID().uuidString.lowercased(), title: String, body: String, purpose: String = "", isLocal: Bool = false) {
+        self.id = id
+        self.title = title
+        self.body = body
+        self.purpose = purpose
+        self.isLocal = isLocal
+    }
 }
 
 public struct MattSnapshot: Codable, Sendable {
@@ -301,6 +345,8 @@ public struct ProjectRecord: Identifiable, Hashable, Sendable {
     public var appliedSkillIDs: Set<String>
     public var agents: Set<String>
     public var fragments: [String]
+    public var draftPlugins: [PresetPluginReference]
+    public var draftMCPServers: [MCPConfigurationDraft]
     public var pendingChanges: Int
     public var lockStatus: String
 
@@ -315,7 +361,9 @@ public struct ProjectRecord: Identifiable, Hashable, Sendable {
         agents: Set<String>,
         fragments: [String],
         pendingChanges: Int,
-        lockStatus: String = "absent"
+        lockStatus: String = "absent",
+        draftPlugins: [PresetPluginReference] = [],
+        draftMCPServers: [MCPConfigurationDraft] = []
     ) {
         self.id = id
         self.name = name
@@ -326,6 +374,8 @@ public struct ProjectRecord: Identifiable, Hashable, Sendable {
         self.appliedSkillIDs = appliedSkillIDs
         self.agents = agents
         self.fragments = fragments
+        self.draftPlugins = draftPlugins
+        self.draftMCPServers = draftMCPServers
         self.pendingChanges = pendingChanges
         self.lockStatus = lockStatus
     }
@@ -408,7 +458,7 @@ public struct AppSnapshot: Sendable {
             ) ?? decode("\($0).json", as: PresetRecord.self, decoder: decoder)
         }
         let templateData: [(String, String, String)] = [
-            ("base-zh", "中文协作", "把协作约定放进每个项目的受管块。"),
+            ("base-zh", "中文协作", "把协作约定写入项目的规则文件。"),
             ("engineering", "工程质量", "把验证、边界和测试约束固定下来。"),
             ("ui-craft", "界面交付", "提醒 UI 任务先看 DESIGN.md 并保留证据。")
         ]
@@ -427,6 +477,18 @@ public struct AppSnapshot: Sendable {
             templates: templates,
             matt: matt ?? MattSnapshot(url: "", commit: "", version: "", license: "", capturedOn: "", network: false, candidates: [], excluded: MattExcluded(misc: 0, inProgress: 0, deprecated: 0))
         )
+    }
+
+    public func replacingPresets(_ presets: [PresetRecord]) -> AppSnapshot {
+        AppSnapshot(catalog: catalog, sources: sources, presets: presets, templates: templates, matt: matt)
+    }
+
+    public func replacingTemplates(_ templates: [TemplateRecord]) -> AppSnapshot {
+        AppSnapshot(catalog: catalog, sources: sources, presets: presets, templates: templates, matt: matt)
+    }
+
+    public func replacingCatalog(_ catalog: CatalogDocument) -> AppSnapshot {
+        AppSnapshot(catalog: catalog, sources: sources, presets: presets, templates: templates, matt: matt)
     }
 
     private static func decode<T: Decodable>(_ name: String, as type: T.Type, decoder: JSONDecoder) -> T? {

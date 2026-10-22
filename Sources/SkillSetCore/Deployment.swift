@@ -17,6 +17,10 @@ public enum DeploymentError: Error, LocalizedError, Equatable, Sendable {
     case projectNotFound(String)
     case unsupportedAgent(String)
     case instructionNotFound(String)
+    case unmanagedSkillConflict(String)
+    case managedSkillDrift(String)
+    case unmanagedRuleConflict(String)
+    case managedRuleDrift(String)
 
     public var code: String {
         switch self {
@@ -35,6 +39,10 @@ public enum DeploymentError: Error, LocalizedError, Equatable, Sendable {
         case .projectNotFound: "PROJECT_NOT_FOUND"
         case .unsupportedAgent: "AGENT_UNSUPPORTED"
         case .instructionNotFound: "INSTRUCTION_NOT_FOUND"
+        case .unmanagedSkillConflict: "SKILL_TARGET_CONFLICT"
+        case .managedSkillDrift: "SKILL_MANAGED_DRIFT"
+        case .unmanagedRuleConflict: "RULE_TARGET_CONFLICT"
+        case .managedRuleDrift: "RULE_MANAGED_DRIFT"
         }
     }
 
@@ -70,6 +78,14 @@ public enum DeploymentError: Error, LocalizedError, Equatable, Sendable {
             return "不支持的目标 agent：\(agent)"
         case let .instructionNotFound(id):
             return "找不到指令片段：\(id)"
+        case let .unmanagedSkillConflict(path):
+            return "目标技能不是栖集管理的内容，不能覆盖：\(path)"
+        case let .managedSkillDrift(path):
+            return "受管技能已被修改，需先处理差异：\(path)"
+        case let .unmanagedRuleConflict(path):
+            return "已有同标记规则不属于栖集，不能替换：\(path)"
+        case let .managedRuleDrift(path):
+            return "受管规则已被修改，需先处理差异：\(path)"
         }
     }
 }
@@ -345,6 +361,8 @@ public struct DeploymentPlan: Codable, Identifiable, Hashable, Sendable {
     public let warnings: [String]
     public let isApplied: Bool
     public let metadata: [String: String]?
+    public let ownershipReceipt: ProjectOwnershipReceipt?
+    public let observations: [PlannedObservation]?
 
     public init(
         id: UUID = UUID(),
@@ -354,7 +372,9 @@ public struct DeploymentPlan: Codable, Identifiable, Hashable, Sendable {
         changes: [PlannedChange],
         warnings: [String],
         isApplied: Bool = false,
-        metadata: [String: String]? = nil
+        metadata: [String: String]? = nil,
+        ownershipReceipt: ProjectOwnershipReceipt? = nil,
+        observations: [PlannedObservation]? = nil
     ) {
         self.id = id
         self.projectPath = projectPath
@@ -364,6 +384,8 @@ public struct DeploymentPlan: Codable, Identifiable, Hashable, Sendable {
         self.warnings = warnings
         self.isApplied = isApplied
         self.metadata = metadata
+        self.ownershipReceipt = ownershipReceipt
+        self.observations = observations
     }
 }
 
@@ -391,6 +413,8 @@ public struct DeploymentPlanner {
     public let catalog: CatalogDocument
     public let repositoryRoot: URL
     public let stagingRoot: URL
+    public let operationsRoot: URL?
+    private let skillSourceURLs: [String: URL]
 
     private let fileManager: FileManager
     private let clock: () -> Date
@@ -400,6 +424,8 @@ public struct DeploymentPlanner {
         catalog: CatalogDocument,
         repositoryRoot: URL,
         stagingRoot: URL,
+        operationsRoot: URL? = nil,
+        skillSourceURLs: [String: URL] = [:],
         fileManager: FileManager = .default,
         clock: @escaping () -> Date = Date.init,
         idGenerator: @escaping () -> UUID = UUID.init
@@ -407,6 +433,8 @@ public struct DeploymentPlanner {
         self.catalog = catalog
         self.repositoryRoot = repositoryRoot
         self.stagingRoot = stagingRoot
+        self.operationsRoot = operationsRoot
+        self.skillSourceURLs = skillSourceURLs
         self.fileManager = fileManager
         self.clock = clock
         self.idGenerator = idGenerator
@@ -419,6 +447,22 @@ public struct DeploymentPlanner {
         fragments: [String: String]
     ) throws -> DeploymentPlan {
         let projectRoot = try validatedProjectRoot(projectPath)
+        let lockStore = ProjectLockStore(projectRoot: projectRoot, fileManager: fileManager)
+        // 损坏或孤立的锁不能被当作首次接入，静默重建会丢失原管理信息。
+        for name in [ProjectLockStore.manifestFileName, ProjectLockStore.lockFileName] {
+            try ensureSafeTarget(projectRoot.appendingPathComponent(name), root: projectRoot)
+        }
+        let currentManifest = try lockStore.loadManifest()
+        let currentLock = try lockStore.loadLock()
+        if let currentLock {
+            guard let currentManifest else { throw ProjectLockError.lockStale }
+            try currentLock.validate(against: currentManifest)
+        }
+        let currentOwnership = try ProjectOwnershipReader.receipt(
+            projectRoot: projectRoot, operationsRoot: operationsRoot, fileManager: fileManager
+        )
+        let ownedSkills = currentOwnership?.skillHashes ?? [:]
+        let ownedRules = currentOwnership?.ruleHashes ?? [:]
         guard request.ruleBlockID.range(of: #"^[a-z0-9][a-z0-9._-]{0,63}$"#, options: .regularExpression) != nil else {
             throw DeploymentError.invalidMarkerID(request.ruleBlockID)
         }
@@ -437,6 +481,8 @@ public struct DeploymentPlanner {
             try fileManager.removeItem(at: stage)
         }
         try fileManager.createDirectory(at: stage, withIntermediateDirectories: true)
+        var keepStage = false
+        defer { if !keepStage { try? fileManager.removeItem(at: stage) } }
 
         let selected = try manifest.skills.map { id -> SkillEntry in
             guard let entry = catalog.entries.first(where: { $0.id == id }) else {
@@ -461,13 +507,23 @@ public struct DeploymentPlanner {
         }
 
         let objectStore = SkillObjectStore(repositoryRoot: repositoryRoot)
-        let currentLock = try? ProjectLockStore(projectRoot: projectRoot).loadLock()
         var lockedSkills: [LockedSkillRevision] = []
         var objectCount = 0
         var objectBytes = 0
         var changes: [PlannedChange] = []
+        var observations: [PlannedObservation] = []
+        var nextOwnedSkills: [String: String] = [:]
+        var nextOwnedRules: [String: String] = [:]
+        var selectionWarnings: [String] = []
+        for name in [ProjectLockStore.manifestFileName, ProjectLockStore.lockFileName] {
+            let url = projectRoot.appendingPathComponent(name)
+            observations.append(PlannedObservation(
+                relativePath: name,
+                contentHash: fileManager.fileExists(atPath: url.path) ? try SkillAssetCopier.sha256(fileAt: url) : nil
+            ))
+        }
         for entry in selected {
-            let catalogSource = repositoryRoot.appendingPathComponent(entry.path)
+            let catalogSource = skillSourceURLs[entry.id] ?? repositoryRoot.appendingPathComponent(entry.path)
             var source = catalogSource
             let sourceHash = try? SkillAssetCopier.analyze(from: catalogSource, fileManager: fileManager).contentHash
             var restoredSource: URL?
@@ -518,7 +574,20 @@ public struct DeploymentPlanner {
                     throw SkillAssetCopyError(path: entry.path, reason: "对象存储与 staging 指纹不一致")
                 }
                 let observedTarget = projectRoot.appendingPathComponent(relativePath, isDirectory: true)
+                try ensureSafeTarget(observedTarget, root: projectRoot)
                 let beforeHash = try directoryDigest(observedTarget)
+                observations.append(PlannedObservation(relativePath: relativePath, contentHash: beforeHash))
+                if let expected = ownedSkills[relativePath], let beforeHash, beforeHash != expected {
+                    throw DeploymentError.managedSkillDrift(relativePath)
+                }
+                if let beforeHash, ownedSkills[relativePath] == nil {
+                    guard beforeHash == copy.contentHash else {
+                        throw DeploymentError.unmanagedSkillConflict(relativePath)
+                    }
+                    selectionWarnings.append("\(relativePath)：项目已有相同内容，保留原归属，取消选择不会删除。")
+                } else {
+                    nextOwnedSkills[relativePath] = copy.contentHash
+                }
                 let action = beforeHash == nil ? "add" : (beforeHash == copy.contentHash ? "noop" : "update")
                 changes.append(PlannedChange(
                     action: action,
@@ -531,6 +600,32 @@ public struct DeploymentPlanner {
             if let restoredSource {
                 try? fileManager.removeItem(at: restoredSource)
             }
+        }
+
+        // 以受管路径差异处理取消技能和取消宿主，不能按裸名称删除外部内容。
+        let desiredPaths = Set(targets.flatMap { target in selected.map { "\(target.skillsRoot)/\($0.slug)" } })
+        let allowedOldPaths = Set((currentLock?.targets ?? []).flatMap { target in
+            (currentLock?.skills ?? []).map { "\(target.skillsRoot)/\($0.id.split(separator: "/").last ?? "")" }
+        })
+        for path in allowedOldPaths.sorted() where !desiredPaths.contains(path) && ownedSkills[path] == nil {
+            let destination = projectRoot.appendingPathComponent(path)
+            if fileManager.fileExists(atPath: destination.path)
+                || (try? fileManager.destinationOfSymbolicLink(atPath: destination.path)) != nil {
+                selectionWarnings.append("\(path)：缺少本机管理记录，保留已有内容，不自动删除。")
+            }
+        }
+        for (path, expected) in ownedSkills.sorted(by: { $0.key < $1.key }) where !desiredPaths.contains(path) {
+            guard allowedOldPaths.contains(path) else { throw DeploymentError.invalidPlan }
+            let destination = projectRoot.appendingPathComponent(path)
+            try ensureSafeTarget(destination, root: projectRoot)
+            let actual = try directoryDigest(destination)
+            observations.append(PlannedObservation(relativePath: path, contentHash: actual))
+            guard let actual else { continue }
+            guard actual == expected else { throw DeploymentError.managedSkillDrift(path) }
+            changes.append(PlannedChange(
+                action: "remove", relativePath: path, beforeHash: actual, afterHash: nil,
+                unifiedDiff: "移除未漂移的受管技能 \(path)；操作备份可用于撤销"
+            ))
         }
 
         let selectedIDs = Set(selected.map(\.id))
@@ -556,38 +651,74 @@ public struct DeploymentPlanner {
             ))
         }
 
-        for target in targets {
-            let targetURL = projectRoot.appendingPathComponent(target.instructionsFile)
+        let rulePaths = Set(targets.map(\.instructionsFile) + (currentLock?.targets.map(\.instructionsFile) ?? []))
+        for path in rulePaths.sorted() {
+            let targetURL = projectRoot.appendingPathComponent(path)
             try ensureSafeTarget(targetURL, root: projectRoot)
-            let original = fileManager.fileExists(atPath: targetURL.path)
+            let existed = fileManager.fileExists(atPath: targetURL.path)
+            let original = existed
                 ? try String(contentsOf: targetURL, encoding: .utf8)
                 : ""
-            let block = instructionBody.isEmpty
-                ? try ManagedBlocks.remove(original: original, id: target.ruleBlockID)
-                : try ManagedBlocks.upsert(original: original, id: target.ruleBlockID, body: instructionBody)
-            if block.changed {
-                let staged = stage.appendingPathComponent(target.instructionsFile)
-                try Data(block.content.utf8).write(to: staged, options: .atomic)
+            observations.append(PlannedObservation(
+                relativePath: path, contentHash: existed ? SkillAssetCopier.sha256(Data(original.utf8)) : nil
+            ))
+            var updated = original
+            var summaries: [String] = []
+            let desiredTarget = targets.first { $0.instructionsFile == path }
+            var blockIDs = Set((currentLock?.targets ?? []).filter { $0.instructionsFile == path }.map(\.ruleBlockID))
+            if let desiredTarget { blockIDs.insert(desiredTarget.ruleBlockID) }
+            for id in blockIDs.sorted() {
+                let key = "\(path)#\(id)"
+                let existingBody = try ManagedBlocks.extract(original: updated, id: id)
+                let desiredBody = desiredTarget?.ruleBlockID == id && !instructionBody.isEmpty ? instructionBody : nil
+                if let expected = ownedRules[key], let existingBody,
+                   SkillAssetCopier.sha256(Data(existingBody.utf8)) != expected {
+                    throw DeploymentError.managedRuleDrift(path)
+                }
+                if let existingBody, ownedRules[key] == nil {
+                    guard desiredBody == nil || desiredBody == existingBody else {
+                        throw DeploymentError.unmanagedRuleConflict(path)
+                    }
+                    selectionWarnings.append("\(path)：已有同标记规则保留原归属，取消选择不会删除。")
+                    continue
+                }
+                let block = try desiredBody.map { try ManagedBlocks.upsert(original: updated, id: id, body: $0) }
+                    ?? ManagedBlocks.remove(original: updated, id: id)
+                updated = block.content
+                if let desiredBody { nextOwnedRules[key] = SkillAssetCopier.sha256(Data(desiredBody.utf8)) }
+                if block.changed {
+                    summaries.append(desiredBody == nil ? "移除受管块 \(id)" : (block.wasInserted ? "追加受管块 \(id)" : "替换受管块 \(id)"))
+                }
+            }
+            if updated != original {
+                let staged = stage.appendingPathComponent(path)
+                try Data(updated.utf8).write(to: staged, options: .atomic)
                 changes.append(PlannedChange(
-                    action: original.isEmpty ? "add" : "update",
-                    relativePath: target.instructionsFile,
-                    beforeHash: original.isEmpty ? nil : SkillAssetCopier.sha256(Data(original.utf8)),
-                    afterHash: SkillAssetCopier.sha256(Data(block.content.utf8)),
-                    unifiedDiff: instructionBody.isEmpty
-                        ? "移除受管块 \(target.ruleBlockID)"
-                        : (block.wasInserted
-                            ? "追加受管块 \(target.ruleBlockID)"
-                            : "替换受管块 \(target.ruleBlockID)")
+                    action: existed ? "update" : "add",
+                    relativePath: path,
+                    beforeHash: existed ? SkillAssetCopier.sha256(Data(original.utf8)) : nil,
+                    afterHash: SkillAssetCopier.sha256(Data(updated.utf8)),
+                    unifiedDiff: summaries.joined(separator: "\n")
                 ))
             }
         }
 
-        let lock = ProjectLockDocument(
+        var lock = ProjectLockDocument(
             manifestDigest: manifest.digest,
             targets: targets,
             skills: lockedSkills,
-            instructions: lockedInstructions
+            instructions: lockedInstructions,
+            managementRevision: currentLock?.managementRevision
         )
+        // 每次实际部署给锁一个无机器信息的修订身份，避免同内容历史误配归属收据。
+        // 无变更时沿用旧身份，仍可正确报告 PLAN_NO_CHANGES。
+        if changes.contains(where: { $0.action != "noop" })
+            || currentManifest != manifest || currentLock != lock {
+            lock = ProjectLockDocument(
+                manifestDigest: manifest.digest, targets: targets, skills: lockedSkills,
+                instructions: lockedInstructions, managementRevision: planID
+            )
+        }
         try lock.validate(against: manifest)
 
         for (relativePath, data, description) in [
@@ -622,13 +753,20 @@ public struct DeploymentPlanner {
         }
 
         let createdAt = clock()
+        let receipt = ProjectOwnershipReceipt(
+            lockHash: SkillAssetCopier.sha256(lock.encodedData), skillHashes: nextOwnedSkills,
+            ruleHashes: nextOwnedRules
+        )
         let digest = Self.calculateDigest(
             projectPath: projectRoot.path,
             manifestDigest: manifest.digest,
             changes: executableChanges,
             selectedSkills: selected.map { "\($0.id)@\($0.contentHash)" },
-            metadata: ["planType": "skill-deployment"]
+            metadata: ["planType": "skill-deployment"],
+            ownershipReceipt: receipt,
+            observations: observations
         )
+        keepStage = true
         return DeploymentPlan(
             id: planID,
             projectPath: projectRoot.path,
@@ -636,8 +774,11 @@ public struct DeploymentPlanner {
             digest: digest,
             changes: executableChanges,
             warnings: selected.map { "\($0.id) 仍处于 \($0.integrity)；许可审查为 \($0.licenseReview)。" }
+                + selectionWarnings
                 + ["对象存储新增 \(objectCount) 个对象，共 \(objectBytes) 字节；项目锁绑定 manifest \(manifest.digest)。"],
-            metadata: ["planType": "skill-deployment"]
+            metadata: ["planType": "skill-deployment"],
+            ownershipReceipt: receipt,
+            observations: observations
         )
     }
 
@@ -646,7 +787,9 @@ public struct DeploymentPlanner {
         manifestDigest: String = "",
         changes: [PlannedChange],
         selectedSkills: [String],
-        metadata: [String: String]? = nil
+        metadata: [String: String]? = nil,
+        ownershipReceipt: ProjectOwnershipReceipt? = nil,
+        observations: [PlannedObservation]? = nil
     ) -> String {
         var canonical = "project=\(projectPath)\n"
         canonical += "manifest=\(manifestDigest)\n"
@@ -656,6 +799,18 @@ public struct DeploymentPlanner {
         }
         for (key, value) in (metadata ?? [:]).sorted(by: { $0.key < $1.key }) {
             canonical += "meta|\(key)|\(value)\n"
+        }
+        if let ownershipReceipt {
+            canonical += "ownership-lock|\(ownershipReceipt.lockHash)\n"
+            for (path, hash) in ownershipReceipt.skillHashes.sorted(by: { $0.key < $1.key }) {
+                canonical += "ownership|\(path)|\(hash)\n"
+            }
+            for (key, hash) in (ownershipReceipt.ruleHashes ?? [:]).sorted(by: { $0.key < $1.key }) {
+                canonical += "rule-ownership|\(key)|\(hash)\n"
+            }
+        }
+        for observation in observations ?? [] {
+            canonical += "observe|\(observation.relativePath)|\(observation.contentHash ?? "nil")\n"
         }
         return SkillAssetCopier.sha256(Data(canonical.utf8))
     }
@@ -674,12 +829,14 @@ public struct DeploymentPlanner {
         guard !relative.isEmpty, !relative.contains("..") else {
             throw DeploymentError.pathOutsideRoot(target.path)
         }
-        if fileManager.fileExists(atPath: target.path),
-           (try? fileManager.destinationOfSymbolicLink(atPath: target.path)) != nil {
+        if (try? fileManager.destinationOfSymbolicLink(atPath: target.path)) != nil {
             throw DeploymentError.symlinkDetected(target.path)
         }
         var cursor = target.deletingLastPathComponent()
         while cursor.path != root.path && cursor.path.hasPrefix(root.path + "/") {
+            if (try? fileManager.destinationOfSymbolicLink(atPath: cursor.path)) != nil {
+                throw DeploymentError.symlinkDetected(cursor.path)
+            }
             if fileManager.fileExists(atPath: cursor.path) {
                 let values = try cursor.resourceValues(forKeys: [.isSymbolicLinkKey])
                 if values.isSymbolicLink == true {

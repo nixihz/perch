@@ -39,6 +39,7 @@ public struct ProjectServiceSummary: Codable, Identifiable, Hashable, Sendable {
     public let instructionIDs: [String]
     public let lockStatus: String
     public let issues: [String]
+    public let skillObservations: [ProjectSkillObservation]
 
     public init(
         id: UUID,
@@ -49,7 +50,8 @@ public struct ProjectServiceSummary: Codable, Identifiable, Hashable, Sendable {
         observedSkillIDs: [String],
         instructionIDs: [String],
         lockStatus: String,
-        issues: [String]
+        issues: [String],
+        skillObservations: [ProjectSkillObservation] = []
     ) {
         self.id = id
         self.name = name
@@ -60,6 +62,7 @@ public struct ProjectServiceSummary: Codable, Identifiable, Hashable, Sendable {
         self.instructionIDs = instructionIDs
         self.lockStatus = lockStatus
         self.issues = issues
+        self.skillObservations = skillObservations
     }
 }
 
@@ -108,7 +111,9 @@ public struct SkillSetService {
         pluginLifecycleManager: PluginLifecycleManager? = nil
     ) throws {
         self.paths = paths
-        snapshot = AppSnapshot.load(repositoryRoot: paths.repositoryRoot)
+        let base = AppSnapshot.load(repositoryRoot: paths.repositoryRoot)
+        snapshot = try base.replacingCatalog(SkillLibraryStore(rootURL: paths.libraryRoot).catalog(merging: base.catalog))
+            .replacingTemplates(TemplateStore(rootURL: paths.applicationSupportRoot).list(merging: base.templates))
         self.projectStore = projectStore ?? ProjectStore(rootURL: paths.applicationSupportRoot)
         self.draftStore = draftStore ?? ProjectDraftStore(rootURL: paths.applicationSupportRoot)
         self.planStore = planStore ?? DeploymentPlanStore(rootURL: paths.plansRoot)
@@ -123,7 +128,9 @@ public struct SkillSetService {
     public func projects() throws -> [ProjectServiceSummary] {
         try projectStore.list().map { registration in
             let projectURL = URL(fileURLWithPath: registration.canonicalPath, isDirectory: true)
-            let inspection = try ProjectInspector.inspect(projectURL: projectURL, catalog: snapshot.catalog)
+            let inspection = try ProjectInspector.inspect(
+                projectURL: projectURL, catalog: snapshot.catalog, operationsRoot: executor.operationsRoot
+            )
             let draft = try draftStore.load(projectID: registration.id)
             let projectState = ProjectLockStore(projectRoot: projectURL).inspect()
             return ProjectServiceSummary(
@@ -137,7 +144,8 @@ public struct SkillSetService {
                 lockStatus: projectState.status,
                 issues: projectState.issues + inspection.issues
                     + inspection.ambiguousSlugs.map { "\($0)：来源不唯一。" }
-                    + inspection.driftedSlugs.map { "\($0)：内容漂移。" }
+                    + inspection.driftedSlugs.map { "\($0)：内容漂移。" },
+                skillObservations: inspection.skillObservations
             )
         }
     }
@@ -177,7 +185,9 @@ public struct SkillSetService {
         let planner = DeploymentPlanner(
             catalog: snapshot.catalog,
             repositoryRoot: repositoryRoot,
-            stagingRoot: paths.stagingRoot
+            stagingRoot: paths.stagingRoot,
+            operationsRoot: executor.operationsRoot,
+            skillSourceURLs: try SkillLibraryStore(rootURL: paths.libraryRoot).sourceURLs()
         )
         let plan = try planner.makePlan(
             projectPath: URL(fileURLWithPath: project.canonicalPath, isDirectory: true),
@@ -240,6 +250,10 @@ public struct SkillSetService {
             throw SkillSetServiceError.invalidStagingPath(staging.path)
         }
         if planType == "skill-deployment" {
+            guard record.plan.ownershipReceipt != nil, record.plan.observations != nil else {
+                // 升级前生成的计划没有归属与读取依赖，不能沿用旧审批绕过新保护。
+                throw DeploymentPlanStoreError.invalidState("需要重新生成包含管理归属的计划")
+            }
             guard let repositoryRoot = paths.repositoryRoot else {
                 throw SkillSetServiceError.repositoryNotFound
             }
@@ -423,7 +437,10 @@ public struct SkillSetService {
 
     public func makeMCPConfigPlan(
         projectID: UUID?,
-        draft: MCPConfigurationDraft
+        draft: MCPConfigurationDraft,
+        existingServer: MCPObservedServer? = nil,
+        remove: Bool = false,
+        replaceArguments: Bool = false
     ) throws -> StoredDeploymentPlan {
         let projectRoot: URL?
         if let projectID {
@@ -445,7 +462,14 @@ public struct SkillSetService {
                 "\(draft.host.rawValue)/\(draft.scope.rawValue)"
             )
         }
-        let edit = try manager.makeEdit(target: target, draft: draft)
+        let edit: MCPConfigEditResult
+        if let existingServer {
+            edit = try manager.makeExistingEdit(target: target, server: existingServer,
+                draft: remove ? nil : draft, replaceArguments: replaceArguments)
+        } else {
+            guard !remove else { throw MCPConfigurationError.configConflict(draft.name) }
+            edit = try manager.makeEdit(target: target, draft: draft)
+        }
         guard edit.action != "noop" else {
             throw DeploymentError.noChanges
         }
@@ -465,10 +489,11 @@ public struct SkillSetService {
             relativePath: target.relativePath,
             beforeHash: edit.beforeHash,
             afterHash: edit.afterHash,
-            unifiedDiff: "\(edit.action == "add" ? "新增" : "更新") \(target.host.displayName) \(target.scope.displayName) MCP Server \(edit.serverName)"
+            unifiedDiff: "\(edit.action == "add" ? "新增" : (remove ? "删除" : "更新")) \(target.host.displayName) \(target.scope.displayName) MCP Server \(edit.serverName)"
         )
         let metadata = [
             "planType": "mcp-configuration",
+            "mcpAction": remove ? "remove" : "upsert",
             "host": target.host.rawValue,
             "scope": target.scope.rawValue,
             "serverName": edit.serverName,
@@ -492,7 +517,7 @@ public struct SkillSetService {
                 "环境变量只写入 ${NAME} 引用，不读取或复制值。",
                 target.host == .claudeCode
                     ? "Claude JSON 会保留未知键，但对象键顺序会归一化。"
-                    : "Codex TOML 只修改带 skillset 标记的受管块，其他文本和注释保留。"
+                    : "Codex TOML 只修改选中的服务，其他配置保留。"
             ],
             metadata: metadata
         )

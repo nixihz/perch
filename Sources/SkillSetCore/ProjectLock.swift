@@ -215,6 +215,7 @@ public struct ProjectLockDocument: Codable, Hashable, Sendable {
     public let targets: [ProjectDeploymentTarget]
     public let skills: [LockedSkillRevision]
     public let instructions: [LockedInstructionRevision]
+    public let managementRevision: UUID?
 
     public init(
         schemaVersion: Int = 1,
@@ -224,7 +225,8 @@ public struct ProjectLockDocument: Codable, Hashable, Sendable {
         adapterVersion: String = "native-macos-1",
         targets: [ProjectDeploymentTarget],
         skills: [LockedSkillRevision],
-        instructions: [LockedInstructionRevision]
+        instructions: [LockedInstructionRevision],
+        managementRevision: UUID? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.manifestDigest = manifestDigest
@@ -234,6 +236,7 @@ public struct ProjectLockDocument: Codable, Hashable, Sendable {
         self.targets = targets
         self.skills = skills.sorted { $0.id < $1.id }
         self.instructions = instructions.sorted { $0.id < $1.id }
+        self.managementRevision = managementRevision
     }
 
     public var encodedData: Data {
