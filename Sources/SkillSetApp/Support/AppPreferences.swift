@@ -58,17 +58,56 @@ final class AppPreferences {
 }
 
 private struct AppPreferencesModifier: ViewModifier {
-    var preferences = AppPreferences.shared
+    let preferences: AppPreferences
 
     func body(content: Content) -> some View {
         content
             .environment(\.locale, preferences.language.locale)
-            .preferredColorScheme(preferences.appearance.colorScheme)
+            .background(WindowAppearancePreference(appearance: preferences.appearance))
+    }
+}
+
+private struct WindowAppearancePreference: NSViewRepresentable {
+    let appearance: AppAppearance
+
+    func makeNSView(context: Context) -> WindowAppearanceView {
+        let view = WindowAppearanceView()
+        view.selectedAppearance = appearance
+        return view
+    }
+
+    func updateNSView(_ view: WindowAppearanceView, context: Context) {
+        view.selectedAppearance = appearance
+    }
+}
+
+private final class WindowAppearanceView: NSView {
+    var selectedAppearance: AppAppearance = .system {
+        didSet { applyAppearance() }
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        applyAppearance()
+    }
+
+    private func applyAppearance() {
+        guard let window else { return }
+        let override: NSAppearance? = switch selectedAppearance {
+        case .system: nil
+        case .light: NSAppearance(named: .aqua)
+        case .dark: NSAppearance(named: .darkAqua)
+        }
+        // 跟随系统时明确移除窗口覆盖，由 AppKit 继承并持续响应系统外观；
+        // 保留视图身份，避免切换外观丢失输入、焦点和页面状态。
+        if window.appearance != override {
+            window.appearance = override
+        }
     }
 }
 
 extension View {
-    func appPreferences() -> some View {
-        modifier(AppPreferencesModifier())
+    func appPreferences(_ preferences: AppPreferences = .shared) -> some View {
+        modifier(AppPreferencesModifier(preferences: preferences))
     }
 }

@@ -3,6 +3,7 @@ import SwiftUI
 @main
 struct SkillSetApp: App {
     @State private var model = AppModel()
+    @StateObject private var updates = AppUpdates.shared
 
     var body: some Scene {
         WindowGroup(L10n.text("栖集"), id: "main") {
@@ -10,6 +11,7 @@ struct SkillSetApp: App {
                 .appPreferences()
         }
         .defaultSize(width: 1280, height: 820)
+        .windowToolbarStyle(.unified)
         .commands {
             CommandGroup(replacing: .appSettings) {
                 Button(L10n.tr("设置")) {
@@ -18,18 +20,21 @@ struct SkillSetApp: App {
                 .keyboardShortcut(",", modifiers: [.command])
             }
             CommandGroup(after: .appInfo) {
-                Button(L10n.tr("显示项目")) {
-                    model.section = .projects
+                Button(L10n.tr("检查更新…")) {
+                    updates.checkForUpdates()
                 }
-                .keyboardShortcut("1", modifiers: [.command])
-                Button(L10n.tr("显示 Skills")) {
-                    model.section = .skills
+                .disabled(!updates.canCheckForUpdates)
+            }
+            CommandMenu(L10n.tr("前往")) {
+                ForEach(Array(NavigationItem.groups.enumerated()), id: \.offset) { index, group in
+                    if index > 0 { Divider() }
+                    ForEach(group.items) { item in
+                        Button(item.title) {
+                            model.section = item
+                        }
+                        .keyboardShortcut(KeyEquivalent(Character(item.keyboardShortcut)), modifiers: [.command])
+                    }
                 }
-                .keyboardShortcut("2", modifiers: [.command])
-                Button(L10n.tr("显示 MCP Servers")) {
-                    model.section = .mcp
-                }
-                .keyboardShortcut("3", modifiers: [.command])
             }
         }
     }

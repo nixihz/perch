@@ -4,6 +4,16 @@ import SkillSetCore
 
 enum UserFacingText {
     @MainActor
+    static func templateTitle(_ template: TemplateRecord, language: AppLanguage? = nil) -> String {
+        template.isLocal ? template.title : L10n.text(template.title, language: language)
+    }
+
+    @MainActor
+    static func templatePurpose(_ template: TemplateRecord, language: AppLanguage? = nil) -> String {
+        template.isLocal ? template.purpose : L10n.text(builtInDescription(template.purpose), language: language)
+    }
+
+    @MainActor
     static func localizedScope(_ value: String) -> String {
         let parts = value.components(separatedBy: " · ")
         return ([L10n.text(parts.first ?? "")] + parts.dropFirst()).joined(separator: " · ")
@@ -14,18 +24,30 @@ enum UserFacingText {
         let prefix = "项目观察失败："
         guard value.hasPrefix(prefix) else { return L10n.text(value) }
         let reason = LocalizedText(stringLiteral: String(value.dropFirst(prefix.count)))
-        return L10n.tr("项目观察失败：\(reason)")
+        return L10n.tr("无法读取项目配置：\(reason)")
     }
 
     @MainActor
     static func planSummary(_ change: PlannedChange) -> String {
-        let summary = change.unifiedDiff
+        change.unifiedDiff.components(separatedBy: "\n").map { localizedPlanSummary($0) }.joined(separator: "\n")
+    }
+
+    @MainActor
+    private static func localizedPlanSummary(_ summary: String) -> String {
         // 仅翻译管理器生成的说明，真实 diff、命令参数和技能内容不能被替换。
         if let match = summary.wholeMatch(of: /^复制 ([0-9]+) 个文件到 (.+)$/) {
             return L10n.tr("复制 \(match.1) 个文件到 \(match.2)")
         }
-        for prefix in ["追加受管块 ", "替换受管块 ", "移除受管块 "] where summary.hasPrefix(prefix) {
-            return L10n.text(String(prefix.dropLast())) + " " + summary.dropFirst(prefix.count)
+        if let match = summary.wholeMatch(of: /^移除未漂移的受管技能 (.+)；操作备份可用于撤销$/) {
+            return L10n.tr("移除栖集写入的技能 \(match.1)；可从操作备份恢复")
+        }
+        let ruleActions = [
+            ("追加受管块 ", "添加栖集维护的规则"),
+            ("替换受管块 ", "更新栖集维护的规则"),
+            ("移除受管块 ", "移除栖集维护的规则")
+        ]
+        for (prefix, title) in ruleActions where summary.hasPrefix(prefix) {
+            return L10n.text(title) + " " + summary.dropFirst(prefix.count)
         }
         for action in PluginLifecycleAction.allCases {
             let prefix = action.displayName + "："
@@ -33,8 +55,8 @@ enum UserFacingText {
                 return L10n.text(action.displayName) + ": " + summary.dropFirst(prefix.count)
             }
         }
-        if let match = summary.wholeMatch(of: /^(新增|更新) (Codex|Claude Code) (项目|用户) MCP Server (.+)$/) {
-            return "\(L10n.text(String(match.1))) \(match.2) \(L10n.text(String(match.3))) MCP Server \(match.4)"
+        if let match = summary.wholeMatch(of: /^(新增|更新|删除) (Codex|Claude Code) (项目|用户) MCP Server (.+)$/) {
+            return "\(L10n.text(String(match.1))) \(match.2) \(L10n.text(String(match.3))) \(L10n.text("MCP 服务")) \(match.4)"
         }
         return L10n.text(summary)
     }
@@ -47,6 +69,24 @@ enum UserFacingText {
             ?? (error as? ProjectLockError)?.code
         if let code {
             switch code {
+            case "TEMPLATE_STORE_CORRUPT":
+                return "本机片段库无法读取，请检查数据文件后重试。"
+            case "SOURCE_IMPORT_CHANGED":
+                return "来源内容或许可文件已改变，请重新预览仓库后再加入技能库。"
+            case "SOURCE_IMPORT_UNAVAILABLE":
+                return "这个技能暂时无法导入，请检查来源文件并重新预览仓库。"
+            case "SKILL_FILE_LIMIT_EXCEEDED":
+                return "技能目录条目过多，无法展示附属文件；请检查来源目录。"
+            case "LIBRARY_DOCUMENT_INVALID":
+                return "请保留完整的 YAML 头部，填写 name、description 和非空正文；文件不能超过 2 MiB。"
+            case "LIBRARY_SLUG_INVALID":
+                return "技能标识须为小写字母、数字和连字符，长度不超过 80 个字符。"
+            case "LIBRARY_DUPLICATE":
+                return "本地技能已有这个标识，请换一个标识后保存。"
+            case "LIBRARY_STALE":
+                return "技能内容已改变。请先复制保留未保存的改动，再关闭并重新打开编辑器。"
+            case "LIBRARY_CORRUPT":
+                return "本机技能库索引无法读取，请检查应用数据目录；已有版本仍保留在 packages 中。"
             case "PLAN_EXPIRED", "PLAN_STALE", "PLAN_DIGEST_MISMATCH", "PLUGIN_STATE_STALE", "PROJECT_LOCK_STALE":
                 return "计划已过期或目标已改变，请重新生成计划并审阅。"
             case "APPROVAL_REQUIRED":
@@ -75,12 +115,20 @@ enum UserFacingText {
                 return "技能来源已改变或无法读取，请检查来源后重新选择技能。"
             case "SKILL_BLOCKED", "SKILL_ASSET_UNSAFE":
                 return "技能未通过完整性检查，请先修复来源，再重新生成快照。"
+            case "SKILL_TARGET_CONFLICT":
+                return "项目已有同名技能且内容不同，本应用不会覆盖。请先核对差异或取消该技能。"
+            case "RULE_TARGET_CONFLICT":
+                return "已有同标记规则不属于本应用，请核对规则来源和内容后再配置。"
+            case "SKILL_MANAGED_DRIFT":
+                return "栖集写入的技能已被修改，请先核对并保留改动，再重新生成计划。"
+            case "RULE_MANAGED_DRIFT":
+                return "栖集写入的规则已被修改，请先核对并保留改动，再重新生成计划。"
             case "INSTRUCTION_NOT_FOUND":
-                return "找不到规则片段，请在草稿中重新选择。"
+                return "找不到AGENTS 片段，请在草稿中重新选择。"
             case "SELECTION_LIMIT_EXCEEDED":
                 return "一次最多选择 200 个技能，请减少选择后重试。"
             case "SOURCE_INVALID_URL", "SOURCE_HOST_NOT_ALLOWED":
-                return "请填写 HTTPS 格式的 GitHub 仓库链接。"
+                return "请填写 HTTPS 或 SSH Git 仓库链接，或 GitHub 的 owner/repo 简写。"
             case "SOURCE_INVALID_REF":
                 return "分支或标签格式不对，请检查后重试，也可以留空使用默认分支。"
             case "SOURCE_CREDENTIALS_REJECTED":
@@ -153,6 +201,21 @@ enum UserFacingText {
         case sourceKind, trust, licenseReview, metadataReview, integrity, presetStatus, mergePolicy, component, scope
     }
 
+    static func builtInDescription(_ value: String) -> String {
+        switch value {
+        case "把协作约定放进每个项目的受管块。": "把协作规则用于项目，只更新栖集维护的部分。"
+        default: value
+        }
+    }
+
+    static func mcpState(_ value: String) -> String {
+        switch value {
+        case "管理器受管": "由栖集管理"
+        case "仅观察": "已有配置"
+        default: "配置状态待检查"
+        }
+    }
+
     static func metadata(_ value: String, field: MetadataField) -> String {
         let labels: [String: String]
         switch field {
@@ -214,6 +277,8 @@ enum UserFacingText {
                 return "来源包含无法识别的提示，请先核对仓库内容和许可，不要直接启用。"
             }
         case .plan:
+            if text.contains("保留原归属") { return "项目原有内容会保留，取消选择不会删除。" }
+            if text.contains("缺少本机管理记录") { return "无法确认这些内容是否由栖集写入，会保留已有文件。请先核对来源和内容。" }
             if text.contains("许可审查") { return "技能许可尚未完成审查，请核对许可后再批准。" }
             if text.hasPrefix("宿主：") { return "请核对上方的目标工具、安装范围和工作目录。" }
             if text.hasPrefix("目标配置：") { return "请核对上方列出的配置文件路径。" }

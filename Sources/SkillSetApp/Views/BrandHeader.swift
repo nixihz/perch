@@ -17,6 +17,8 @@ struct BrandHeader: View {
                     .font(AppFont.metadata)
                     .foregroundStyle(.secondary)
             }
+            .lineLimit(1)
+            .truncationMode(.tail)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 14)

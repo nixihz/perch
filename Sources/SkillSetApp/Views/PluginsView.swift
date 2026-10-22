@@ -55,7 +55,7 @@ struct PluginsView: View {
         SurfaceCard {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    Text(L10n.tr("本机观察"))
+                    Text(L10n.tr("已发现的插件"))
                         .font(AppFont.heading)
                     Spacer()
                     Text("\(model.plugins.count)")
@@ -99,7 +99,7 @@ struct PluginsView: View {
                     .font(AppFont.secondary.weight(.medium))
                 }
 
-                DisclosureGroup(L10n.tr("扫描根 \(model.pluginScanRoots.count)")) {
+                DisclosureGroup(L10n.tr("扫描目录 \(model.pluginScanRoots.count) 个")) {
                     VStack(alignment: .leading, spacing: 6) {
                         ForEach(model.pluginScanRoots, id: \.self) { root in
                             Text(root)
@@ -189,7 +189,7 @@ struct PluginsView: View {
                             VStack(alignment: .leading, spacing: 10) {
                                 Text(L10n.tr("来源与版本"))
                                     .font(AppFont.heading)
-                                KeyValueLine(key: L10n.tr("宿主"), value: plugin.host.displayName)
+                                KeyValueLine(key: L10n.tr("AI 工具"), value: plugin.host.displayName)
                                 KeyValueLine(key: L10n.tr("市场"), value: plugin.marketplaceID ?? L10n.tr("项目或本地目录"))
                                 KeyValueLine(key: L10n.tr("声明版本"), value: plugin.version ?? L10n.tr("未声明"))
                                 KeyValueLine(key: L10n.tr("安装范围"), value: plugin.scope.map { L10n.text(UserFacingText.metadata($0, field: .scope)) } ?? L10n.tr("尚未确认"))
@@ -213,7 +213,7 @@ struct PluginsView: View {
                                     key: L10n.tr("依赖"),
                                     value: plugin.dependencyCount == 0
                                         ? L10n.tr("未声明")
-                                        : L10n.tr("\(plugin.dependencyCount) 项，安装解析由宿主负责")
+                                        : L10n.tr("\(plugin.dependencyCount) 项，安装时由 AI 工具处理")
                                 )
                                 KeyValueLine(key: L10n.tr("许可"), value: plugin.license ?? L10n.tr("未声明"))
                                 Text(plugin.sourcePath)
@@ -231,7 +231,7 @@ struct PluginsView: View {
 
                     SurfaceCard {
                         VStack(alignment: .leading, spacing: 10) {
-                            Label(L10n.tr("权限与副作用"), systemImage: "hand.raised.fill")
+                            Label(L10n.tr("权限与运行风险"), systemImage: "hand.raised.fill")
                                 .font(AppFont.heading)
                             ForEach(plugin.risks, id: \.self) { risk in
                                 Label(L10n.text(UserFacingText.pluginRisk(risk)), systemImage: risk.contains("hook") ? "exclamationmark.triangle.fill" : "info.circle")
@@ -278,7 +278,7 @@ struct PluginsView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Label(L10n.tr("插件操作"), systemImage: "gearshape.2.fill")
                     .font(AppFont.heading)
-                Text(L10n.tr("本应用只生成固定宿主命令的计划；批准后调用本机 Claude Code 或 Codex CLI。不会拼接任意 shell 参数。"))
+                Text(L10n.tr("先预览插件操作计划，核对后再批准。栖集会调用本机 Claude Code 或 Codex 完成操作。"))
                     .font(AppFont.secondary)
                     .foregroundStyle(.secondary)
 
@@ -336,12 +336,12 @@ struct PluginsView: View {
                 }
 
                 if plugin.host == .codex {
-                    Text(L10n.tr("Codex 当前公开 CLI 只提供 add / remove；本应用不会推断 enable、disable 或 update。"))
+                    Text(L10n.tr("Codex 目前只支持安装和卸载插件，暂不支持在这里启用、停用或更新。"))
                         .font(AppFont.secondary)
                         .foregroundStyle(.secondary)
                 }
                 if plugin.installed, plugin.enabled == nil {
-                    Text(L10n.tr("宿主尚未给出启用状态；生成动作计划时会重新读取，执行前仍未知则拒绝猜测。"))
+                    Text(L10n.tr("AI 工具尚未提供启用状态。生成计划时会重新检查，无法确认时不会继续操作。"))
                         .font(AppFont.secondary)
                         .foregroundStyle(.orange)
                 }

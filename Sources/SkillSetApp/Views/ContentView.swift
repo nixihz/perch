@@ -6,36 +6,24 @@ struct ContentView: View {
     var body: some View {
         NavigationSplitView {
             SidebarView(model: model)
+                .navigationSplitViewColumnWidth(min: 320, ideal: 320, max: 400)
         } detail: {
             DetailView(model: model)
         }
         .navigationSplitViewStyle(.balanced)
         .frame(minWidth: 1080, minHeight: 700)
-        .searchable(
-            text: Binding(
-                get: { model.query },
-                set: { model.updateQuery($0) }
-            ),
-            placement: .toolbar,
-            prompt: L10n.tr("搜索技能、来源或路径")
-        )
-        .toolbar {
-            ToolbarItem(placement: .status) {
-                HStack(spacing: 7) {
-                    Image(systemName: "info.circle")
-                        .foregroundStyle(.secondary)
-                    Text(model.lastAction)
-                        .font(AppFont.secondary)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-            }
-        }
         .sheet(isPresented: $model.planPresented) {
             PlanSheet(model: model)
         }
+        .sheet(item: $model.presetSelection) { request in
+            PresetSelectionSheet(model: model, request: request)
+        }
+        .sheet(item: $model.presetEditor) { draft in
+            PresetEditorSheet(model: model, draft: draft)
+        }
         .tint(AppColor.accent)
         .accentColor(AppColor.accent)
+        .disclosureGroupStyle(FullRowDisclosureGroupStyle())
         .font(AppFont.body)
         .lineSpacing(2)
     }
@@ -46,7 +34,6 @@ struct SidebarView: View {
 
     var body: some View {
         SidebarList(selection: $model.section, skillCount: model.snapshot.catalog.entries.count)
-        .navigationSplitViewColumnWidth(min: 210, ideal: 230, max: 280)
         .safeAreaInset(edge: .top, spacing: 0) {
             BrandHeader()
         }
@@ -66,10 +53,9 @@ struct SidebarView: View {
                                 .font(AppFont.metadata)
                                 .foregroundStyle(.secondary)
                         }
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                         Spacer(minLength: 0)
-                        Text("⌘,")
-                            .font(AppFont.metadata)
-                            .foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(8)

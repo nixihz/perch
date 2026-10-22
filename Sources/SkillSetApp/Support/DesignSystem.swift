@@ -149,6 +149,52 @@ struct EmptyState: View {
     }
 }
 
+/// 标题与空白共用一个按钮，避免把展开操作限制在箭头上。
+struct FullRowDisclosureGroupStyle: DisclosureGroupStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                configuration.isExpanded.toggle()
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: configuration.isExpanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 14)
+                        .accessibilityHidden(true)
+                    configuration.label
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .onKeyPress(.rightArrow) {
+                configuration.isExpanded = true
+                return .handled
+            }
+            .onKeyPress(.leftArrow) {
+                configuration.isExpanded = false
+                return .handled
+            }
+            // 视觉由整行按钮负责，辅助功能沿用原生展开控件的角色与状态。
+            .accessibilityRepresentation {
+                DisclosureGroup(isExpanded: configuration.$isExpanded) {
+                    EmptyView()
+                } label: {
+                    configuration.label
+                }
+                .disclosureGroupStyle(.automatic)
+            }
+            if configuration.isExpanded {
+                configuration.content
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
 extension View {
     func selectionRow(_ selected: Bool) -> some View {
         self

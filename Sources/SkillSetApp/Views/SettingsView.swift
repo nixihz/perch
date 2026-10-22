@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @Bindable var preferences = AppPreferences.shared
+    @ObservedObject var updates = AppUpdates.shared
 
     var body: some View {
         ScrollView {
@@ -9,7 +10,7 @@ struct SettingsView: View {
                 PageHeader(
                     eyebrow: "SETTINGS",
                     title: L10n.text("设置"),
-                    detail: L10n.text("外观与语言")
+                    detail: L10n.text("外观、语言与软件更新")
                 )
                 SurfaceCard {
                     HStack {
@@ -43,7 +44,30 @@ struct SettingsView: View {
                 Text(L10n.text("更改立即生效，并在下次打开时保留。"))
                     .font(AppFont.secondary)
                     .foregroundStyle(.secondary)
-                Label(L10n.text("受管写入仍需本机人工批准。"), systemImage: "lock.shield")
+                SurfaceCard {
+                    Label(L10n.text("软件更新"), systemImage: "arrow.down.circle")
+                        .font(AppFont.heading)
+                    LabeledContent(L10n.text("当前版本"), value: updates.version)
+                    Toggle(L10n.text("自动检查更新"), isOn: Binding(
+                        get: { updates.automaticallyChecksForUpdates },
+                        set: { updates.setAutomaticallyChecksForUpdates($0) }
+                    ))
+                    .disabled(!updates.isReady)
+                    .accessibilityIdentifier("settings.automaticUpdates")
+                    Text(L10n.text("发现新版本时通知你，由你决定何时安装。更新后应用会重新打开。"))
+                        .font(AppFont.secondary)
+                        .foregroundStyle(.secondary)
+                    Button(L10n.text("检查更新…")) { updates.checkForUpdates() }
+                        .disabled(!updates.canCheckForUpdates)
+                        .accessibilityIdentifier("settings.checkForUpdates")
+                    if let reason = updates.unavailableReason {
+                        Text(L10n.text(reason))
+                            .font(AppFont.secondary)
+                            .foregroundStyle(.secondary)
+                            .accessibilityIdentifier("settings.updateStatus")
+                    }
+                }
+                Label(L10n.text("写入项目或 AI 工具配置前，都需要你在本机批准。"), systemImage: "lock.shield")
                     .font(AppFont.metadata)
                     .foregroundStyle(.secondary)
             }

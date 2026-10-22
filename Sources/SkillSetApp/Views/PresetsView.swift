@@ -6,14 +6,13 @@ struct PresetsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            PageHeader(
-                eyebrow: "PRESETS",
-                title: L10n.tr("技能与规则预设"),
-                detail: L10n.tr("保存常用的技能和规则组合。载入只更新草稿，不会直接修改项目；预设更新也不会自动改动项目。")
-            )
+            PageHeader(eyebrow: "PRESETS", title: L10n.tr("用户预设"),
+                       detail: L10n.tr("保存常用的技能、插件、MCP 服务和规则组合，再选择项目使用。"))
+            if let error = model.presetError {
+                Label(L10n.text(error), systemImage: "exclamationmark.circle").font(AppFont.secondary).foregroundStyle(.red)
+            }
             HStack(alignment: .top, spacing: AppLayout.columnSpacing) {
-                presetList
-                    .frame(width: AppLayout.listWidth)
+                presetList.frame(width: AppLayout.listWidth)
                 presetDetail
             }
         }
@@ -23,42 +22,46 @@ struct PresetsView: View {
         SurfaceCard {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    Text(L10n.tr("已保存预设"))
-                        .font(AppFont.heading)
+                    Text(L10n.tr("已保存预设")).font(AppFont.heading)
                     Spacer()
-                    Text(L10n.tr("暂不支持新建"))
-                        .font(AppFont.secondary)
-                        .foregroundStyle(.secondary)
-                }
-                ForEach(model.snapshot.presets) { preset in
-                    Button {
-                        model.selectedPresetID = preset.id
-                    } label: {
-                        HStack(alignment: .top, spacing: 10) {
-                            Image(systemName: preset.id == model.selectedPresetID ? "rectangle.3.group.fill" : "rectangle.3.group")
-                                .foregroundStyle(preset.id == model.selectedPresetID ? AppColor.accentText : .secondary)
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(L10n.text(preset.name))
-                                    .font(AppFont.body.weight(.semibold))
-                                    .foregroundStyle(.primary)
-                                Text(L10n.tr("版本 \(preset.revision) · \(preset.skills.count) 个技能"))
-                                    .font(AppFont.secondary)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            StatusBadge(text: L10n.text(UserFacingText.metadata(preset.status, field: .presetStatus)), tone: .warning)
-                        }
-                        .padding(.vertical, 8)
-                        .padding(.horizontal, 8)
-                        .selectionRow(preset.id == model.selectedPresetID)
-                        .contentShape(Rectangle())
+                    Button { model.beginNewPreset() } label: {
+                        Label(L10n.tr("新建预设"), systemImage: "plus")
+                            .frame(minHeight: 32)
+                            .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                        .buttonStyle(.borderless).keyboardShortcut("n", modifiers: .command)
+                        .help(L10n.tr("新建预设"))
+                        .accessibilityLabel(L10n.tr("新建预设"))
+                        .accessibilityIdentifier("presets.new")
+                }
+                ScrollView {
+                    VStack(spacing: 6) {
+                        ForEach(model.snapshot.presets) { preset in
+                            Button { model.selectedPresetID = preset.id } label: {
+                                HStack(alignment: .top, spacing: 10) {
+                                    Image(systemName: "rectangle.3.group")
+                                        .foregroundStyle(preset.id == model.selectedPresetID ? AppColor.accentText : .secondary)
+                                    VStack(alignment: .leading, spacing: 5) {
+                                        Text(preset.status == "local" ? preset.name : L10n.text(preset.name))
+                                            .font(AppFont.body.weight(.semibold)).foregroundStyle(.primary)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                        Text(L10n.tr("\(preset.componentCount) 项内容 · 版本 \(preset.revision)"))
+                                            .font(AppFont.metadata).foregroundStyle(.secondary)
+                                    }
+                                }
+                                .padding(10).selectionRow(preset.id == model.selectedPresetID)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("presets.saved.\(preset.id)")
+                        }
+                    }
+                    .padding(2)
                 }
                 Divider()
-                Text(L10n.tr("载入会替换草稿中的技能和规则。项目文件只有在计划批准后才会改变。"))
-                    .font(AppFont.secondary)
-                    .foregroundStyle(.secondary)
+                Text(L10n.tr("使用预设后，可在项目中继续调整。预览并批准变更后，才会写入文件或安装组件。"))
+                    .font(AppFont.secondary).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -69,71 +72,96 @@ struct PresetsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     SurfaceCard(emphasis: true) {
-                        VStack(alignment: .leading, spacing: 9) {
-                            HStack {
-                                Text(L10n.text(preset.name))
-                                    .font(AppFont.title.weight(.bold))
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack(alignment: .firstTextBaseline) {
+                                Text(preset.status == "local" ? preset.name : L10n.text(preset.name)).font(AppFont.title.weight(.bold))
                                 Spacer()
                                 StatusBadge(text: L10n.tr("版本 \(preset.revision)"), tone: .accent)
                             }
-                            Text(L10n.text(preset.description))
-                                .font(AppFont.body)
-                                .foregroundStyle(.secondary)
-                            Text(L10n.tr("应用到：\(model.selectedProject?.name ?? L10n.tr("未选择项目"))"))
-                                .font(AppFont.secondary)
-                                .foregroundStyle(AppColor.accentText)
-                            Button(L10n.tr("载入草稿")) {
-                                model.loadPreset(preset)
+                            if !preset.description.isEmpty {
+                                Text(preset.status == "local" ? preset.description : L10n.text(preset.description))
+                                    .font(AppFont.body).foregroundStyle(.secondary)
                             }
-                            .buttonStyle(.borderedProminent)
-                            .tint(AppColor.accent)
-                            .disabled(model.selectedProject == nil)
-                            if model.selectedProject == nil {
-                                Text(L10n.tr("请先到「项目」添加并选择一个项目。"))
-                                    .font(AppFont.secondary)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                    SurfaceCard {
-                        VStack(alignment: .leading, spacing: 10) {
-                            HStack {
-                                Text(L10n.tr("包含的技能"))
-                                    .font(AppFont.heading)
-                                Spacer()
-                                Text(L10n.tr("\(preset.skills.count) 条"))
-                                    .font(AppFont.secondary)
-                                    .foregroundStyle(.secondary)
-                            }
-                            ForEach(preset.skills, id: \.self) { id in
-                                Label {
-                                    Text(id)
-                                        .font(AppFont.secondary.monospaced())
-                                } icon: {
-                                    Image(systemName: "checkmark.circle")
-                                        .foregroundStyle(AppColor.accentText)
+                            ViewThatFits(in: .horizontal) {
+                                HStack(spacing: 10) {
+                                    presetActions(preset)
+                                }
+                                VStack(alignment: .leading, spacing: 10) {
+                                    presetActions(preset)
                                 }
                             }
                         }
                     }
                     SurfaceCard {
-                        VStack(alignment: .leading, spacing: 9) {
-                            Text(L10n.tr("规则片段"))
-                                .font(AppFont.heading)
-                            Text(preset.instructionFragments.map { "#\($0)" }.joined(separator: "  "))
-                                .font(AppFont.secondary.monospaced())
-                                .foregroundStyle(AppColor.accentText)
-                            KeyValueLine(key: L10n.tr("策略"), value: L10n.text(UserFacingText.metadata(preset.mergePolicy, field: .mergePolicy)))
-                            Text(L10n.tr("预设更新后，如需同步到项目，请重新载入草稿、生成计划并批准。"))
-                                .font(AppFont.secondary)
-                                .foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 18) {
+                            componentHeader(.skills, count: preset.skills.count)
+                            ForEach(preset.skills, id: \.self) { id in
+                                let skill = model.snapshot.catalog.entries.first { $0.id == id }
+                                componentRow(skill?.declaredName ?? id, detail: skill?.sourceId ?? id)
+                            }
+                            Divider()
+                            componentHeader(.plugins, count: preset.plugins.count)
+                            ForEach(preset.plugins) { plugin in
+                                componentRow(plugin.name, detail: "\(plugin.host.displayName) · \(L10n.text(plugin.scope.displayName)) · \(plugin.manifestDigest.prefix(10))")
+                            }
+                            Divider()
+                            componentHeader(.mcp, count: preset.mcpServers.count)
+                            ForEach(preset.mcpServers, id: \.presetID) { server in
+                                componentRow(server.name, detail: "\(server.host.displayName) · \(L10n.text(server.scope.displayName)) · \(server.transport)")
+                            }
+                            Divider()
+                            componentHeader(.instructions, count: preset.instructionFragments.count)
+                            ForEach(preset.instructionFragments, id: \.self) { id in
+                                if let template = model.snapshot.templates.first(where: { $0.id == id }) {
+                                    DisclosureGroup(UserFacingText.templateTitle(template)) {
+                                        Text(template.body).font(AppFont.metadata.monospaced()).textSelection(.enabled)
+                                            .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
+                                    }
+                                    .font(AppFont.secondary)
+                                    .accessibilityIdentifier("presets.rule.details.\(id)")
+                                    Text(UserFacingText.templatePurpose(template))
+                                        .font(AppFont.secondary).foregroundStyle(.secondary)
+                                } else { Text(id).foregroundStyle(.red) }
+                            }
                         }
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         } else {
-            EmptyState(icon: "rectangle.3.group", title: L10n.tr("选择一个预设"), detail: L10n.tr("预设详情会展示固定版本和规则组合。"))
+            EmptyState(icon: "rectangle.3.group", title: L10n.tr("选择一个预设"), detail: L10n.tr("从左侧选择预设，或点「新建预设」保存常用组合。"))
         }
     }
-}
 
+    @ViewBuilder
+    private func presetActions(_ preset: PresetRecord) -> some View {
+        Button(L10n.tr("用于项目…")) { model.presetSelection = PresetSelectionRequest(presetID: preset.id) }
+            .buttonStyle(.borderedProminent).tint(AppColor.accent)
+            .accessibilityIdentifier("presets.chooseProject")
+        Button(L10n.tr("编辑预设")) {
+            model.beginEditingPreset(preset)
+        }
+        .accessibilityIdentifier("presets.edit")
+        Button(L10n.tr("复制为新预设")) {
+            model.beginEditingPreset(preset, copy: true)
+        }
+        .accessibilityIdentifier("presets.duplicate")
+    }
+
+    private func componentHeader(_ kind: PresetComponent, count: Int) -> some View {
+        HStack {
+            Label(L10n.text(kind.title), systemImage: kind.icon).font(AppFont.heading)
+            Spacer()
+            Text(count == 0 ? L10n.tr("未包含条目") : L10n.tr("\(count) 条"))
+                .font(AppFont.metadata).foregroundStyle(.secondary)
+        }
+    }
+
+    private func componentRow(_ name: String, detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(name).font(AppFont.secondary.weight(.medium))
+            Text(detail).font(AppFont.metadata).foregroundStyle(.secondary)
+        }
+        .textSelection(.enabled)
+    }
+}

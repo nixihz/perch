@@ -63,19 +63,9 @@ struct SidebarList: NSViewRepresentable {
             let item: NavigationItem?
         }
 
-        static let rows: [Row] = [
-            Row(heading: "工作台", item: nil),
-            Row(heading: nil, item: .projects),
-            Row(heading: nil, item: .skills),
-            Row(heading: nil, item: .mcp),
-            Row(heading: nil, item: .plugins),
-            Row(heading: "治理", item: nil),
-            Row(heading: nil, item: .sources),
-            Row(heading: nil, item: .presets),
-            Row(heading: nil, item: .templates),
-            Row(heading: "连接", item: nil),
-            Row(heading: nil, item: .aiAccess)
-        ]
+        static let rows: [Row] = NavigationItem.groups.flatMap { group in
+            [Row(heading: group.title, item: nil)] + group.items.map { Row(heading: nil, item: $0) }
+        }
 
         var selection: Binding<NavigationItem>
         var skillCount: Int
@@ -140,12 +130,13 @@ struct SidebarList: NSViewRepresentable {
 
         private func configure(_ cell: SidebarDestinationCell, item: NavigationItem, selected: Bool) {
             cell.titleLabel.stringValue = item.title
-            cell.subtitleLabel.stringValue = item == .skills ? L10n.tr("\(skillCount) 条来源化记录") : item.subtitle
+            cell.subtitleLabel.stringValue = item == .skills ? L10n.tr("\(skillCount) 个技能，可搜索和编辑") : item.subtitle
             cell.icon.image = NSImage(systemSymbolName: item.systemImage, accessibilityDescription: nil)
             cell.titleLabel.textColor = NSColor(selected ? AppColor.onSelection : AppColor.ink)
             cell.subtitleLabel.textColor = selected ? NSColor(AppColor.onSelection) : .secondaryLabelColor
             cell.icon.contentTintColor = NSColor(selected ? AppColor.onSelection : AppColor.accentText)
             cell.setAccessibilityLabel("\(item.title)，\(cell.subtitleLabel.stringValue)")
+            cell.toolTip = "\(item.title)\n\(cell.subtitleLabel.stringValue)"
         }
     }
 }
@@ -171,6 +162,7 @@ final class SidebarDestinationCell: NSTableCellView {
         for label in [titleLabel, subtitleLabel] {
             label.lineBreakMode = .byTruncatingTail
             label.maximumNumberOfLines = 1
+            label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         }
         let labels = NSStackView(views: [titleLabel, subtitleLabel])
         labels.orientation = .vertical
@@ -187,6 +179,9 @@ final class SidebarDestinationCell: NSTableCellView {
             icon.heightAnchor.constraint(equalToConstant: 19),
             labels.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 10),
             labels.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+            // 让文本字段跟随行宽收缩，省略号才能在实际可见边界内绘制。
+            titleLabel.trailingAnchor.constraint(equalTo: labels.trailingAnchor),
+            subtitleLabel.trailingAnchor.constraint(equalTo: labels.trailingAnchor),
             labels.centerYAnchor.constraint(equalTo: centerYAnchor)
         ])
         textField = titleLabel

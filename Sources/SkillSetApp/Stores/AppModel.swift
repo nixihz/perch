@@ -5,7 +5,8 @@ import SkillSetCore
 @MainActor
 @Observable
 final class AppModel {
-    let snapshot: AppSnapshot
+    private(set) var snapshot: AppSnapshot
+    private let baseSnapshot: AppSnapshot
     let runtimePaths: SkillSetRuntimePaths
 
     var section: NavigationItem = .projects
@@ -17,9 +18,14 @@ final class AppModel {
     var selectedSourceID = "workspace"
     var selectedPreviewID: UUID?
     var selectedPresetID = "personal-base"
+    var presetSelection: PresetSelectionRequest?
+    var presetEditor: PresetEditorDraft?
+    var presetError: String?
     var selectedTemplateID = "base-zh"
+    var templateError: String?
     var projects: [ProjectRecord] = []
     var projectIssues: [String: [String]] = [:]
+    var projectSkillObservations: [String: [ProjectSkillObservation]] = [:]
     var mcpServers: [MCPServerRecord] = []
     var mcpConfigInspections: [MCPConfigurationInspection] = []
     var plugins: [PluginInventoryRecord] = []
@@ -33,12 +39,24 @@ final class AppModel {
     var lastAction: String { L10n.tr(actionMessage) }
     var history: [String] = []
     var isWorking = false
+    var libraryError: String?
+    private(set) var skillRemovalError: String?
+    var sourceImportError: String?
+    var sourceOrigins: [String: SourceSkillOrigin] = [:]
+    var selectedSkillDocument = ""
+    var selectedSkillFiles: [SkillPackageFile] = []
+    var skillFilesError: String?
+    var selectedSkillFile: SkillPackageFile?
+    var selectedSkillFilePreview: SkillFilePreview?
+    var skillFilePreviewError: String?
+    var hiddenSkillCount = 0
+    var aiAccessError: LocalizedText?
 
     private let projectStore: ProjectStore
     private let draftStore: ProjectDraftStore
     private let planStore: DeploymentPlanStore
     private let executor: FileTransactionExecutor
-    private let service: SkillSetService?
+    private var service: SkillSetService?
 
     func report(_ message: LocalizedText) {
         actionMessage = message
@@ -53,7 +71,9 @@ final class AppModel {
         runtimePaths: SkillSetRuntimePaths = .detect()
     ) {
         self.runtimePaths = runtimePaths
-        self.snapshot = snapshot ?? AppSnapshot.load(repositoryRoot: runtimePaths.repositoryRoot)
+        let base = snapshot ?? AppSnapshot.load(repositoryRoot: runtimePaths.repositoryRoot)
+        self.baseSnapshot = base
+        self.snapshot = base
         projectStore = ProjectStore(rootURL: runtimePaths.applicationSupportRoot)
         draftStore = ProjectDraftStore(rootURL: runtimePaths.applicationSupportRoot)
         planStore = DeploymentPlanStore(rootURL: runtimePaths.plansRoot)
@@ -62,6 +82,7 @@ final class AppModel {
         selectedSkillID = self.snapshot.catalog.entries.first?.id
 
         do {
+            try reloadLibrary()
             let recovered = try executor.recoverPendingOperations()
             try reloadProjects(preferredID: nil)
             refreshMCPConfigurations()
@@ -70,9 +91,9 @@ final class AppModel {
             if !recovered.isEmpty {
                 report("已恢复 \(recovered.count) 个中断的写入操作")
             } else if runtimePaths.repositoryRoot == nil {
-                report("未找到技能库目录；已登记项目仍可查看")
+                report("未找到技能库目录；已添加项目仍可查看")
             } else if projects.isEmpty {
-                report("尚未登记项目")
+                report("尚未添加项目")
             } else {
                 report("已载入 \(projects.count) 个本机项目")
             }
@@ -83,6 +104,134 @@ final class AppModel {
 
     var filteredSkills: [SkillEntry] {
         matchingSkills(snapshot.catalog.entries, query: query)
+    }
+
+    private var libraryStore: SkillLibraryStore { SkillLibraryStore(rootURL: runtimePaths.libraryRoot) }
+
+    func loadSelectedSkillDocument() {
+        libraryError = nil
+        selectedSkillDocument = ""
+        selectedSkillFiles = []
+        skillFilesError = nil
+        closeSkillFile()
+        guard let skill = selectedSkill else { return }
+        do { selectedSkillDocument = try libraryStore.document(for: skill, repositoryRoot: runtimePaths.repositoryRoot) }
+        catch { libraryError = UserFacingText.error(error) }
+        do { selectedSkillFiles = try libraryStore.attachedFiles(for: skill, repositoryRoot: runtimePaths.repositoryRoot) }
+        catch { skillFilesError = UserFacingText.error(error) }
+    }
+
+    func openSkillFile(_ file: SkillPackageFile) {
+        closeSkillFile()
+        guard let skill = selectedSkill, selectedSkillFiles.contains(file) else { return }
+        selectedSkillFile = file
+        do { selectedSkillFilePreview = try libraryStore.previewAttachedFile(file.path, for: skill, repositoryRoot: runtimePaths.repositoryRoot) }
+        catch { skillFilePreviewError = UserFacingText.error(error) }
+    }
+
+    func closeSkillFile() {
+        selectedSkillFile = nil
+        selectedSkillFilePreview = nil
+        skillFilePreviewError = nil
+    }
+
+    func selectedSkillFileURL() -> URL? {
+        guard let skill = selectedSkill, let file = selectedSkillFile else { return nil }
+        do { return try libraryStore.attachedFileURL(file.path, for: skill, repositoryRoot: runtimePaths.repositoryRoot) }
+        catch { skillFilePreviewError = UserFacingText.error(error); return nil }
+    }
+
+    func editorDraft(for skill: SkillEntry) -> SkillEditorDraft? {
+        libraryError = nil
+        do {
+            return SkillEditorDraft(
+                slug: skill.slug,
+                document: try libraryStore.document(for: skill, repositoryRoot: runtimePaths.repositoryRoot),
+                original: skill
+            )
+        } catch {
+            libraryError = UserFacingText.error(error)
+            return nil
+        }
+    }
+
+    @discardableResult
+    func saveSkill(_ draft: SkillEditorDraft) -> Bool {
+        libraryError = nil
+        do {
+            let entry = try libraryStore.save(draft, repositoryRoot: runtimePaths.repositoryRoot)
+            try reloadLibrary()
+            query = ""
+            selectedSkillID = entry.id
+            loadSelectedSkillDocument()
+            report("已保存技能 \(entry.slug)；项目更新仍需生成计划")
+            return true
+        } catch {
+            libraryError = UserFacingText.error(error)
+            return false
+        }
+    }
+
+    func removeSkill(_ skill: SkillEntry) {
+        removeSkills([skill])
+    }
+
+    @discardableResult
+    func removeSkills(_ skills: [SkillEntry]) -> Set<String> {
+        libraryError = nil
+        skillRemovalError = nil
+        var removed: Set<String> = []
+        for skill in skills where !removed.contains(skill.id) {
+            do {
+                try libraryStore.remove(skill)
+                removed.insert(skill.id)
+            } catch {
+                // 首次失败后停止，保留未完成项供用户核对和重试。
+                skillRemovalError = UserFacingText.error(error)
+                break
+            }
+        }
+        do {
+            try reloadLibrary()
+            if !filteredSkills.contains(where: { $0.id == selectedSkillID }) {
+                selectedSkillID = filteredSkills.first?.id
+            }
+            loadSelectedSkillDocument()
+            if !removed.isEmpty {
+                report("已从技能库移除 \(removed.count) 个技能；已部署的项目文件保持不变")
+            }
+        } catch { skillRemovalError = UserFacingText.error(error) }
+        return removed
+    }
+
+    func restoreHiddenSkills() {
+        libraryError = nil
+        do {
+            try libraryStore.restoreHidden()
+            try reloadLibrary()
+            updateQuery(query)
+            report("已恢复隐藏的来源条目")
+        } catch { libraryError = UserFacingText.error(error) }
+    }
+
+    private func reloadLibrary() throws {
+        snapshot = try baseSnapshot.replacingCatalog(libraryStore.catalog(merging: baseSnapshot.catalog))
+        sourceOrigins = try libraryStore.sourceOrigins()
+        do { snapshot = try snapshot.replacingPresets(presetStore.list(merging: baseSnapshot.presets)) }
+        catch { presetError = "本机预设文件无法读取，请检查文件后重试。" }
+        do {
+            snapshot = try snapshot.replacingTemplates(templateStore.list(merging: baseSnapshot.templates))
+            if !snapshot.templates.contains(where: { $0.id == selectedTemplateID }) {
+                selectedTemplateID = snapshot.templates.first?.id ?? ""
+            }
+            templateError = nil
+        } catch {
+            snapshot = snapshot.replacingTemplates([])
+            templateError = "本机片段库无法读取，请检查数据文件后重试。"
+        }
+        hiddenSkillCount = try libraryStore.hiddenCount()
+        service = try SkillSetService(paths: runtimePaths)
+        updateQuery(query)
     }
 
     var selectedProject: ProjectRecord? {
@@ -115,6 +264,43 @@ final class AppModel {
 
     var selectedTemplate: TemplateRecord? {
         snapshot.templates.first(where: { $0.id == selectedTemplateID })
+    }
+
+    private var templateStore: TemplateStore { TemplateStore(rootURL: runtimePaths.applicationSupportRoot) }
+
+    func matchingTemplates(_ query: String) -> [TemplateRecord] {
+        let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        return snapshot.templates.filter { template in
+            term.isEmpty || [UserFacingText.templateTitle(template), UserFacingText.templatePurpose(template), template.body]
+                .contains { $0.localizedStandardContains(term) }
+        }
+    }
+
+    @discardableResult
+    func saveTemplate(_ draft: TemplateEditorDraft) -> Bool {
+        templateError = nil
+        do {
+            snapshot = try snapshot.replacingTemplates(templateStore.save(draft.record, initial: baseSnapshot.templates))
+            selectedTemplateID = draft.id
+            service = try? SkillSetService(paths: runtimePaths)
+            report("片段已保存；项目更新仍需预览和批准。")
+            return true
+        } catch let error as TemplateStoreError {
+            templateError = error.errorDescription
+        } catch { templateError = UserFacingText.error(error) }
+        return false
+    }
+
+    func removeTemplate(_ template: TemplateRecord) {
+        templateError = nil
+        do {
+            snapshot = try snapshot.replacingTemplates(templateStore.remove(id: template.id, initial: baseSnapshot.templates))
+            selectedTemplateID = snapshot.templates.first?.id ?? ""
+            service = try? SkillSetService(paths: runtimePaths)
+            report("片段已删除；已写入项目的规则保持不变。")
+        } catch let error as TemplateStoreError {
+            templateError = error.errorDescription
+        } catch { templateError = UserFacingText.error(error) }
     }
 
     var blockedCount: Int {
@@ -162,7 +348,7 @@ final class AppModel {
             }
             try reloadProjects(preferredID: registration.id)
             selectedProjectID = registration.id.uuidString
-            report("已登记 \(registration.name)；未修改项目文件")
+            report("已添加 \(registration.name)；未修改项目文件")
             return true
         } catch {
             reportKey(UserFacingText.error(error))
@@ -178,7 +364,7 @@ final class AppModel {
             try draftStore.remove(projectID: id)
             selectedProjectID = ""
             try reloadProjects(preferredID: nil)
-            report("已移除本机登记；项目文件保持不变")
+            report("已从列表移除项目；项目文件保持不变")
             return true
         } catch {
             reportKey(UserFacingText.error(error))
@@ -212,11 +398,16 @@ final class AppModel {
     }
 
     func toggleInstruction(_ template: TemplateRecord) {
+        toggleInstructionID(template.id)
+    }
+
+    func toggleInstructionID(_ id: String) {
         guard let index = projects.firstIndex(where: { $0.id == selectedProjectID }) else { return }
-        if projects[index].fragments.contains(template.id) {
-            projects[index].fragments.removeAll { $0 == template.id }
+        if projects[index].fragments.contains(id) {
+            projects[index].fragments.removeAll { $0 == id }
         } else {
-            projects[index].fragments.append(template.id)
+            guard snapshot.templates.contains(where: { $0.id == id }) else { return }
+            projects[index].fragments.append(id)
             projects[index].fragments.sort()
         }
         persistDraft(for: projects[index])
@@ -232,21 +423,125 @@ final class AppModel {
         persistDraft(for: projects[index])
     }
 
-    func loadPreset(_ preset: PresetRecord, into projectID: String? = nil) {
+    private var presetStore: PresetStore { PresetStore(rootURL: runtimePaths.applicationSupportRoot) }
+
+    func beginNewPreset() {
+        presetError = nil
+        refreshPlugins()
+        presetEditor = PresetEditorDraft()
+    }
+
+    func beginEditingPreset(_ preset: PresetRecord, copy: Bool = false) {
+        presetError = nil
+        refreshPlugins()
+        presetEditor = PresetEditorDraft(preset: preset, copy: copy)
+    }
+
+    @discardableResult
+    func savePreset(_ draft: PresetEditorDraft) -> Bool {
+        presetError = nil
+        let preset = draft.record
+        let validation = PresetDraftPreview(preset: preset, project: selectedProject ?? ProjectRecord.demo[0], snapshot: snapshot)
+        guard validation.unavailableSkillIDs.isEmpty && validation.unavailableInstructionIDs.isEmpty && validation.conflictingSkillIDs.isEmpty else {
+            presetError = "预设包含不可用或同名冲突的技能、规则，请核对后重试"
+            return false
+        }
+        do {
+            let presets = try presetStore.save(preset, initial: baseSnapshot.presets)
+            snapshot = snapshot.replacingPresets(presets)
+            selectedPresetID = preset.id
+            report("预设已保存；可随时用于项目草稿。")
+            return true
+        } catch let error as PresetStoreError {
+            presetError = error.errorDescription
+            return false
+        } catch {
+            presetError = UserFacingText.error(error)
+            return false
+        }
+    }
+
+    func presetPlugins(for projectID: String) -> [PluginInventoryRecord] {
+        guard let service else { return plugins }
+        return (try? service.plugins(projectID: UUID(uuidString: projectID)).records) ?? []
+    }
+
+    func preparePresetPlugin(_ reference: PresetPluginReference, acknowledge: Bool) {
+        guard let service else { report("服务未初始化，无法生成插件计划"); return }
+        preparedPlan = nil
+        do {
+            guard let plugin = presetPlugins(for: selectedProjectID).first(where: {
+                $0.host == reference.host && $0.pluginID == reference.pluginID && $0.manifestDigest == reference.manifestDigest
+            }) else { report("插件版本不可用，请重新扫描并更新预设。"); return }
+            preparedPlan = try service.makePluginLifecyclePlan(
+                projectID: reference.scope == .user ? nil : UUID(uuidString: selectedProjectID),
+                request: PluginLifecycleRequest(host: reference.host, pluginID: reference.pluginID,
+                    action: plugin.installed && plugin.scope == reference.scope.rawValue ? .enable : .install, scope: reference.scope,
+                    expectedManifestDigest: reference.manifestDigest, keepData: true,
+                    acknowledgeExecutableComponents: acknowledge)
+            )
+            planPresented = true
+        } catch { reportKey(UserFacingText.error(error)) }
+    }
+
+    func removePresetComponent(pluginID: String? = nil, mcpID: String? = nil) {
+        guard let index = projects.firstIndex(where: { $0.id == selectedProjectID }),
+              let id = UUID(uuidString: selectedProjectID) else { return }
+        var proposed = projects[index]
+        if let pluginID { proposed.draftPlugins.removeAll { $0.id == pluginID } }
+        if let mcpID { proposed.draftMCPServers.removeAll { $0.presetID == mcpID } }
+        do {
+            _ = try draftStore.save(projectID: id, skillIDs: proposed.draftSkillIDs,
+                instructionIDs: proposed.fragments, agents: canonicalAgentIDs(proposed.agents),
+                plugins: proposed.draftPlugins, mcpServers: proposed.draftMCPServers)
+            projects[index] = proposed
+            report("草稿已保存；尚未写入项目")
+        } catch { reportKey(UserFacingText.error(error)) }
+    }
+
+    @discardableResult
+    func loadPreset(_ preset: PresetRecord, into projectID: String? = nil) -> Bool {
         let targetID = projectID ?? selectedProjectID
-        guard let index = projects.firstIndex(where: { $0.id == targetID }) else { return }
-        let validIDs = Set(snapshot.catalog.entries.filter { !$0.isBlocked }.map(\.id))
-        projects[index].draftSkillIDs = Set(preset.skills).intersection(validIDs)
-        projects[index].fragments = preset.instructionFragments
-        persistDraft(for: projects[index])
-        selectedProjectID = targetID
-        section = .projects
-        report("已载入「\(LocalizedText(stringLiteral: preset.name))」草稿，尚未写入项目")
+        guard let index = projects.firstIndex(where: { $0.id == targetID }),
+              let id = UUID(uuidString: targetID) else {
+            report("请先添加并选择一个项目")
+            return false
+        }
+        let preview = PresetDraftPreview(preset: preset, project: projects[index], snapshot: snapshot, availablePlugins: presetPlugins(for: targetID))
+        guard preview.canLoad else {
+            if let issue = preview.componentIssues.first { reportKey(issue) }
+            else { report("预设包含不可用或同名冲突的技能、规则，请核对后重试") }
+            return false
+        }
+        do {
+            // 先持久化再更新界面，保存失败时保留原草稿和目标选择。
+            let draft = try draftStore.save(
+                projectID: id,
+                skillIDs: preset.skills,
+                instructionIDs: preset.instructionFragments,
+                agents: canonicalAgentIDs(projects[index].agents),
+                plugins: preset.plugins, mcpServers: preset.mcpServers
+            )
+            projects[index].draftSkillIDs = Set(draft.skillIDs)
+            projects[index].fragments = draft.instructionIDs
+            projects[index].draftPlugins = draft.plugins
+            projects[index].draftMCPServers = draft.mcpServers
+            projects[index].pendingChanges = pendingChangeCount(for: projects[index])
+            selectedProjectID = targetID
+            selectedPresetID = preset.id
+            section = .projects
+            if preset.status == "local" { report("已载入「\(preset.name)」草稿，尚未写入项目") }
+            else { report("已载入「\(LocalizedText(stringLiteral: preset.name))」草稿，尚未写入项目") }
+            return true
+        } catch {
+            reportKey(UserFacingText.error(error))
+            return false
+        }
     }
 
     func prepareDeploymentPlan() {
         guard let project = selectedProject, let id = UUID(uuidString: project.id) else {
-            report("先选择一个已登记项目")
+            report("请先添加并选择一个项目")
             return
         }
         guard service != nil else {
@@ -255,7 +550,7 @@ final class AppModel {
         }
         let knownFragments = Set(snapshot.templates.map(\.id))
         guard Set(project.fragments).isSubset(of: knownFragments) else {
-            report("草稿包含未知指令片段，请重新选择预设或模板")
+            report("草稿中有找不到的AGENTS 片段，请重新选择预设或AGENTS 片段")
             return
         }
         isWorking = true
@@ -265,7 +560,8 @@ final class AppModel {
                 projectID: id,
                 skillIDs: project.draftSkillIDs,
                 instructionIDs: project.fragments,
-                agents: canonicalAgentIDs(project.agents)
+                agents: canonicalAgentIDs(project.agents),
+                plugins: project.draftPlugins, mcpServers: project.draftMCPServers
             )
             guard let service else {
                 report("服务未初始化，无法生成部署计划")
@@ -290,7 +586,7 @@ final class AppModel {
     @discardableResult
     func approveAndApplyPreparedPlan() -> Bool {
         guard let prepared = preparedPlan else {
-            report("没有可执行的变更计划")
+            report("没有可用的计划，请先预览变更")
             return false
         }
         isWorking = true
@@ -362,7 +658,53 @@ final class AppModel {
     func refreshMCPStatus(_ server: MCPServerRecord) {
         selectedMCPID = server.id
         refreshMCPConfigurations()
-        report("已重新读取 \(server.name) 的宿主配置；没有启动进程")
+        report("已重新读取 \(server.name) 的 AI 工具配置；没有启动服务")
+    }
+
+    func importedSkillID(preview: SourcePreviewRecord, candidate: SourceSkillCandidate) -> String? {
+        snapshot.catalog.entries.first { entry in
+            guard let origin = sourceOrigins[entry.id] else { return false }
+            return origin.url == preview.canonicalURL && origin.commit == preview.resolvedCommit
+                && origin.path == candidate.path && origin.contentHash == candidate.contentHash
+        }?.id
+    }
+
+    func showLibrarySkill(_ id: String) {
+        query = ""
+        selectedSkillID = id
+        loadSelectedSkillDocument()
+        section = .skills
+    }
+
+    func prepareSourceSkillImport(previewID: UUID, path: String) async -> SourceSkillImportDraft? {
+        guard !isWorking else { return nil }
+        isWorking = true
+        sourceImportError = nil
+        defer { isWorking = false }
+        let paths = runtimePaths
+        do {
+            return try await Task.detached(priority: .userInitiated) {
+                try SkillSetService(paths: paths).sourceSkillImportDraft(previewID: previewID, path: path)
+            }.value
+        } catch { sourceImportError = UserFacingText.error(error); return nil }
+    }
+
+    func importSourceSkill(_ draft: SourceSkillImportDraft) async -> Bool {
+        guard !isWorking else { return false }
+        isWorking = true
+        sourceImportError = nil
+        defer { isWorking = false }
+        let paths = runtimePaths
+        do {
+            let entry = try await Task.detached(priority: .userInitiated) {
+                try SkillSetService(paths: paths).importSourceSkill(draft)
+            }.value
+            try reloadLibrary()
+            query = ""
+            selectedSkillID = entry.id
+            report("已加入技能库 \(entry.slug)；可到项目页选择并预览变更")
+            return true
+        } catch { sourceImportError = UserFacingText.error(error); return false }
     }
 
     func mcpCommandPreview(_ server: MCPServerRecord) -> String {
@@ -377,33 +719,46 @@ final class AppModel {
         report("已展开 \(plugin.name) 的组件清单")
     }
 
-    func previewSource(urlString: String, ref: String? = nil) {
+    func previewSource(urlString: String, ref: String? = nil, replacing replacedID: UUID? = nil) async -> Bool {
         let trimmedURL = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedURL.isEmpty else {
             report("请输入 GitHub 仓库根链接")
-            return
+            return false
         }
-        guard !isWorking else { return }
+        guard !isWorking else { return false }
         isWorking = true
+        defer { isWorking = false }
         report("正在下载并扫描技能，不会运行仓库脚本")
         let previewsRoot = runtimePaths.previewsRoot
         let trimmedRef = ref?.trimmingCharacters(in: .whitespacesAndNewlines)
-        Task {
-            do {
-                let record = try await Task.detached(priority: .userInitiated) {
-                    try SourcePreviewService(previewsRoot: previewsRoot).preview(
-                        urlString: trimmedURL,
-                        ref: trimmedRef?.isEmpty == true ? nil : trimmedRef
-                    )
-                }.value
-                sourcePreviews.removeAll { $0.id == record.id }
-                sourcePreviews.insert(record, at: 0)
-                selectedPreviewID = record.id
-                report("已保存来源预览 \(record.resolvedCommit.prefix(12))；尚未收录或启用")
-            } catch {
-                reportKey(UserFacingText.error(error))
-            }
-            isWorking = false
+        do {
+            let record = try await Task.detached(priority: .userInitiated) {
+                try SourcePreviewService(previewsRoot: previewsRoot).preview(
+                    urlString: trimmedURL,
+                    ref: trimmedRef?.isEmpty == true ? nil : trimmedRef,
+                    replacing: replacedID
+                )
+            }.value
+            sourcePreviews.removeAll { $0.id == record.id || $0.id == replacedID }
+            sourcePreviews.insert(record, at: 0)
+            selectedPreviewID = record.id
+            report("已保存来源预览 \(record.resolvedCommit.prefix(12))；尚未收录或启用")
+            return true
+        } catch {
+            reportKey(UserFacingText.error(error))
+            return false
+        }
+    }
+
+    func removeSourcePreview(_ id: UUID) {
+        guard !isWorking else { return }
+        do {
+            try SourcePreviewStore(rootURL: runtimePaths.previewsRoot).remove(id)
+            sourcePreviews.removeAll { $0.id == id }
+            if selectedPreviewID == id { selectedPreviewID = sourcePreviews.first?.id }
+            report("已删除隔离预览；技能库和项目未改变")
+        } catch {
+            reportKey(UserFacingText.error(error))
         }
     }
 
@@ -437,7 +792,7 @@ final class AppModel {
                         state: server.managed ? "管理器受管" : "仅观察",
                         note: server.managed
                             ? "由栖集写入；修改仍要重新生成并通过本机审批。"
-                            : "现有宿主配置仅观察；同名新增会阻塞，不会静默覆盖。"
+                            : "已有配置；可编辑或删除，批准计划后生效。"
                     )
                 }
             }
@@ -449,13 +804,14 @@ final class AppModel {
         }
     }
 
-    func makeMCPConfigPlan(_ draft: MCPConfigurationDraft) -> Bool {
+    func makeMCPConfigPlan(_ draft: MCPConfigurationDraft, existingServer: MCPObservedServer? = nil,
+                           remove: Bool = false, replaceArguments: Bool = false) -> Bool {
         guard let service else {
             report("服务未初始化，无法生成 MCP 配置计划")
             return false
         }
         let issues = draft.validationIssues()
-        guard issues.isEmpty else {
+        guard remove || issues.isEmpty else {
             report(LocalizedText.joining(issues))
             return false
         }
@@ -464,7 +820,8 @@ final class AppModel {
         do {
             preparedPlan = try service.makeMCPConfigPlan(
                 projectID: UUID(uuidString: selectedProjectID),
-                draft: draft
+                draft: draft, existingServer: existingServer, remove: remove,
+                replaceArguments: replaceArguments
             )
             planPresented = true
             report("已生成 MCP 配置计划；等待本机人工批准")
@@ -474,6 +831,42 @@ final class AppModel {
             reportKey(UserFacingText.error(error))
             return false
         }
+    }
+
+    var selectedMCPObservation: MCPObservedServer? {
+        mcpConfigInspections.flatMap(\.servers).first { $0.id == selectedMCPID }
+    }
+
+    func removeMCPServer(_ server: MCPObservedServer) {
+        let draft = MCPConfigurationDraft(name: server.name, host: server.host, scope: server.scope,
+            transport: server.transport, commandOrURL: server.command)
+        _ = makeMCPConfigPlan(draft, existingServer: server, remove: true)
+    }
+
+    var mcpAccessInstallation: MCPAccessInstallation? {
+        MCPAccessInstallation.detect(bundleURL: Bundle.main.bundleURL, repositoryRoot: runtimePaths.repositoryRoot)
+    }
+
+    func mcpAccessInspection(host: MCPHost) -> MCPConfigurationInspection? {
+        mcpConfigInspections.first { $0.host == host && $0.scope == .user }
+    }
+
+    func refreshAIAccess() {
+        aiAccessError = nil
+        refreshMCPConfigurations()
+        refreshPendingPlans()
+    }
+
+    @discardableResult
+    func prepareAIAccess(host: MCPHost) -> Bool {
+        aiAccessError = nil
+        guard let installation = mcpAccessInstallation else {
+            aiAccessError = "未找到完整的 MCP 程序。请重新构建或安装栖集，再重新检测。"
+            return false
+        }
+        let success = makeMCPConfigPlan(installation.draft(host: host, paths: runtimePaths))
+        if !success { aiAccessError = actionMessage }
+        return success
     }
 
     func refreshPlugins() {
@@ -538,6 +931,7 @@ final class AppModel {
         let registrations = try projectStore.list()
         var records: [ProjectRecord] = []
         var issues: [String: [String]] = [:]
+        var skillObservations: [String: [ProjectSkillObservation]] = [:]
         for registration in registrations {
             let projectURL = URL(fileURLWithPath: registration.canonicalPath, isDirectory: true)
             let inspection: ProjectInspection?
@@ -545,7 +939,8 @@ final class AppModel {
             do {
                 inspection = try ProjectInspector.inspect(
                     projectURL: projectURL,
-                    catalog: snapshot.catalog
+                    catalog: snapshot.catalog,
+                    operationsRoot: runtimePaths.operationsRoot
                 )
                 inspectionFailure = nil
             } catch {
@@ -578,10 +973,13 @@ final class AppModel {
                 agents: Set(agents),
                 fragments: draft?.instructionIDs ?? [],
                 pendingChanges: 0,
-                lockStatus: projectState.status
+                lockStatus: projectState.status,
+                draftPlugins: draft?.plugins ?? [],
+                draftMCPServers: draft?.mcpServers ?? []
             )
             record.pendingChanges = pendingChangeCount(for: record)
             records.append(record)
+            skillObservations[record.id] = inspection?.skillObservations ?? []
             var projectIssues = inspection?.issues ?? []
             if inspectionFailure != nil {
                 projectIssues.append("检查项目目录权限后重新选择项目。")
@@ -592,6 +990,7 @@ final class AppModel {
         }
         projects = records
         projectIssues = issues
+        projectSkillObservations = skillObservations
         refreshPendingPlans()
         if let preferredID, records.contains(where: { $0.id == preferredID.uuidString }) {
             selectedProjectID = preferredID.uuidString
@@ -607,7 +1006,8 @@ final class AppModel {
                 projectID: id,
                 skillIDs: project.draftSkillIDs,
                 instructionIDs: project.fragments,
-                agents: canonicalAgentIDs(project.agents)
+                agents: canonicalAgentIDs(project.agents),
+                plugins: project.draftPlugins, mcpServers: project.draftMCPServers
             )
             if let index = projects.firstIndex(where: { $0.id == project.id }) {
                 projects[index].pendingChanges = pendingChangeCount(for: projects[index])
