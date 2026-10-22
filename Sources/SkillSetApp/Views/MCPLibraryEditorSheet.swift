@@ -15,7 +15,9 @@ struct MCPLibraryEditorSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     AppFormField(L10n.tr("名称")) {
-                        TextField("my-server", text: $entry.name).accessibilityIdentifier("mcp.library.name")
+                        TextField("my-server", text: $entry.name)
+                            .accessibilityLabel(L10n.tr("名称"))
+                            .accessibilityIdentifier("mcp.library.name")
                     }
                     AppPicker(title: L10n.tr("连接方式"), selection: $entry.transport, valueLabel: entry.transport) {
                         Text("stdio").tag("stdio")
@@ -23,17 +25,20 @@ struct MCPLibraryEditorSheet: View {
                     }
                     AppFormField(entry.transport == "stdio" ? L10n.tr("启动命令") : "URL") {
                         TextField(entry.transport == "stdio" ? "/path/to/server" : "https://example.com/mcp", text: $entry.commandOrURL)
+                            .accessibilityLabel(entry.transport == "stdio" ? L10n.tr("启动命令") : "URL")
                             .accessibilityIdentifier("mcp.library.command")
                     }
                     if entry.transport == "stdio" {
                         AppFormField(L10n.tr("参数（每行一个，保留参数内空格）")) {
                             TextField("--option", text: Binding(get: { entry.args.joined(separator: "\n") },
                                 set: { entry.args = $0.components(separatedBy: "\n").filter { !$0.isEmpty } }), axis: .vertical)
+                                .accessibilityLabel(L10n.tr("参数（每行一个，保留参数内空格）"))
                         }
                     }
                     AppFormField(L10n.tr("环境变量名称（逗号分隔）")) {
                         TextField("API_TOKEN", text: Binding(get: { entry.envKeys.joined(separator: ", ") },
                             set: { entry.envKeys = $0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) } }))
+                            .accessibilityLabel(L10n.tr("环境变量名称（逗号分隔）"))
                     }
                 }
             }
