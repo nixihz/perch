@@ -35,7 +35,7 @@ public struct LibrarySkillRecord: Codable, Sendable {
     public let sourceOrigin: SourceSkillOrigin?
 }
 
-private struct LibraryIndex: Codable {
+struct LibraryIndex: Codable {
     var schemaVersion = 1
     var records: [LibrarySkillRecord] = []
     var hiddenIDs: [String] = []
@@ -55,7 +55,7 @@ public struct SkillLibraryStore {
         let index = try load()
         return CatalogDocument(
             schemaVersion: base.schemaVersion, hashAlgorithm: base.hashAlgorithm,
-            entries: (base.entries.filter { !index.hiddenIDs.contains($0.id) } + index.records.map(\.entry))
+            entries: (base.entries.filter { !index.hiddenIDs.contains($0.id) } + index.records.map(\.entry).filter { !index.hiddenIDs.contains($0.id) })
                 .sorted { $0.id < $1.id }
         )
     }
@@ -199,14 +199,14 @@ public struct SkillLibraryStore {
     }
 
     func sourceURL(for entry: SkillEntry, repositoryRoot: URL?) throws -> URL {
-        if entry.sourceId == Self.sourceID { return try packageURL(entry.path) }
+        if entry.sourceId == Self.sourceID || entry.sourceId.hasPrefix("source-") { return try packageURL(entry.path) }
         guard let repositoryRoot else { throw SkillSetServiceError.repositoryNotFound }
         let source = repositoryRoot.appendingPathComponent(entry.path).standardizedFileURL
         try checkPath(source, inside: repositoryRoot)
         return source
     }
 
-    private func packageURL(_ path: String) throws -> URL {
+    func packageURL(_ path: String) throws -> URL {
         let parts = path.split(separator: "/", omittingEmptySubsequences: false)
         guard parts.count == 2, parts[0] == "packages", UUID(uuidString: String(parts[1])) != nil else {
             throw SkillLibraryError.unsafePath
@@ -225,12 +225,12 @@ public struct SkillLibraryStore {
         }
     }
 
-    private func prepareRoot() throws {
+    func prepareRoot() throws {
         try checkPath(rootURL.appendingPathComponent("packages"), inside: rootURL)
         try fileManager.createDirectory(at: rootURL.appendingPathComponent("packages"), withIntermediateDirectories: true)
     }
 
-    private func load() throws -> LibraryIndex {
+    func load() throws -> LibraryIndex {
         let url = rootURL.appendingPathComponent("index.json")
         try checkPath(url, inside: rootURL)
         guard fileManager.fileExists(atPath: url.path) else { return LibraryIndex() }
@@ -242,8 +242,11 @@ public struct SkillLibraryStore {
         }
         for record in index.records {
             let entry = record.entry
-            guard entry.sourceId == Self.sourceID, entry.id == "personal/\(entry.slug)",
-                  entry.slug.range(of: #"^[a-z0-9]+(?:-[a-z0-9]+)*$"#, options: .regularExpression) != nil else {
+            let personal = entry.sourceId == Self.sourceID && entry.id == "personal/\(entry.slug)"
+            let source = entry.sourceId.range(of: #"^source-[0-9a-f]{64}$"#, options: .regularExpression) != nil
+                && entry.id.hasPrefix(entry.sourceId + "/") && entry.id.hasSuffix("/" + entry.slug)
+            guard personal || source,
+                  !entry.slug.isEmpty, !entry.slug.contains("/"), entry.slug != ".", entry.slug != ".." else {
                 throw SkillLibraryError.corrupt
             }
             _ = try packageURL(entry.path)
@@ -251,7 +254,7 @@ public struct SkillLibraryStore {
         return index
     }
 
-    private func write(_ index: LibraryIndex) throws {
+    func write(_ index: LibraryIndex) throws {
         let url = rootURL.appendingPathComponent("index.json")
         try checkPath(url, inside: rootURL)
         let encoder = JSONEncoder()

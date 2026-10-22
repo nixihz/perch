@@ -4,18 +4,89 @@ import Testing
 
 struct ProjectIntegrationTests {
     @Test
+    func deploymentKeepsManagementRecordsOutsideProjectAndPreservesUnrelatedJSON() throws {
+        let fixture = try DeploymentFixture()
+        defer { fixture.cleanup() }
+        let userFile = fixture.project.appendingPathComponent("skillset.json")
+        let userContent = Data("用户自己的文件，不是安装清单".utf8)
+        try userContent.write(to: userFile)
+        let result = try apply(fixture.makePlan(), in: fixture)
+        #expect(Set(try FileManager.default.contentsOfDirectory(atPath: fixture.project.path)) == ["skillset.json", ".agents", "AGENTS.md"])
+        #expect(try Data(contentsOf: userFile) == userContent)
+        #expect(try fixture.stateStore.loadManifest()?.skills == ["workspace/demo"])
+        #expect(try fixture.stateStore.loadLock()?.skills.first?.files.count == 2)
+        #expect(throws: DeploymentError.noChanges) { try fixture.makePlan() }
+        _ = try FileTransactionExecutor(operationsRoot: fixture.operations).rollback(operationID: result.operationID)
+        #expect(try Data(contentsOf: userFile) == userContent)
+        #expect(try fixture.stateStore.loadManifest() == nil)
+        #expect(!FileManager.default.fileExists(atPath: fixture.project.appendingPathComponent("skillset.lock.json").path))
+    }
+
+    @Test
+    func stateDirectorySymlinkReplacementRejectsApplyBeforeWritingProject() throws {
+        let fixture = try DeploymentFixture()
+        defer { fixture.cleanup() }
+        let plan = try fixture.makePlan()
+        let outside = fixture.root.appendingPathComponent("outside")
+        let stateDirectory = fixture.stateStore.directoryURL
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: stateDirectory.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: stateDirectory, withDestinationURL: outside)
+        #expect(throws: FileTransactionError.self) { try apply(plan, in: fixture) }
+        #expect(try FileManager.default.contentsOfDirectory(atPath: fixture.project.path).isEmpty)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: outside.path).isEmpty)
+    }
+
+    @Test
+    func oldDeploymentPlanCannotWriteManagementFilesBackIntoProject() throws {
+        let fixture = try DeploymentFixture()
+        defer { fixture.cleanup() }
+        let current = try fixture.makePlan()
+        let legacy = DeploymentPlan(
+            id: current.id, projectPath: current.projectPath, createdAt: current.createdAt,
+            digest: current.digest,
+            changes: current.changes.map { PlannedChange(action: $0.action, relativePath: $0.relativePath,
+                beforeHash: $0.beforeHash, afterHash: $0.afterHash, unifiedDiff: $0.unifiedDiff) },
+            warnings: current.warnings, metadata: ["planType": "skill-deployment"],
+            ownershipReceipt: current.ownershipReceipt, observations: current.observations
+        )
+        #expect(throws: DeploymentError.invalidPlan) { try apply(legacy, in: fixture) }
+        #expect(try FileManager.default.contentsOfDirectory(atPath: fixture.project.path).isEmpty)
+    }
+
+    @Test
+    func legacyInstallationWithLocalReceiptMovesFutureManagementIntoApplicationState() throws {
+        let fixture = try DeploymentFixture()
+        defer { fixture.cleanup() }
+        _ = try apply(fixture.makePlan(), in: fixture)
+        let manifestData = try Data(contentsOf: fixture.stateStore.manifestURL)
+        let lockData = try Data(contentsOf: fixture.stateStore.lockURL)
+        try manifestData.write(to: fixture.project.appendingPathComponent("skillset.json"))
+        try lockData.write(to: fixture.project.appendingPathComponent("skillset.lock.json"))
+        try FileManager.default.removeItem(at: fixture.stateStore.directoryURL)
+        let migration = try fixture.makePlan(skillIDs: [])
+        #expect(migration.changes.contains { $0.relativePath == ".agents/skills/demo" && $0.action == "remove" })
+        #expect(migration.changes.filter { $0.relativePath.hasPrefix("skillset.") }.allSatisfy { $0.scope == "project-state" })
+        _ = try apply(migration, in: fixture)
+        #expect(try fixture.stateStore.loadManifest()?.skills.isEmpty == true)
+        #expect(!FileManager.default.fileExists(atPath: skillURL(fixture).path))
+        #expect(try Data(contentsOf: fixture.project.appendingPathComponent("skillset.json")) == manifestData)
+        #expect(try Data(contentsOf: fixture.project.appendingPathComponent("skillset.lock.json")) == lockData)
+    }
+
+    @Test
     func deselectingOwnedSkillRemovesItAndRollbackRestoresFilesAndLock() throws {
         let fixture = try DeploymentFixture()
         defer { fixture.cleanup() }
         _ = try apply(fixture.makePlan(), in: fixture)
-        let lockURL = fixture.project.appendingPathComponent("skillset.lock.json")
+        let lockURL = fixture.stateStore.lockURL
         let originalLock = try Data(contentsOf: lockURL)
         let plan = try fixture.makePlan(skillIDs: [])
         #expect(plan.changes.contains { $0.relativePath == ".agents/skills/demo" && $0.action == "remove" })
         #expect(FileManager.default.fileExists(atPath: skillURL(fixture).path))
         let removed = try apply(plan, in: fixture)
         #expect(!FileManager.default.fileExists(atPath: skillURL(fixture).path))
-        #expect(try ProjectLockStore(projectRoot: fixture.project).loadLock()?.skills.isEmpty == true)
+        #expect(try fixture.stateStore.loadLock()?.skills.isEmpty == true)
         _ = try FileTransactionExecutor(operationsRoot: fixture.operations).rollback(operationID: removed.operationID)
         #expect(try String(contentsOf: skillURL(fixture).appendingPathComponent("SKILL.md"), encoding: .utf8) == "# Demo\n")
         let permissions = try FileManager.default.attributesOfItem(atPath: skillURL(fixture).appendingPathComponent("scripts/run.sh").path)
@@ -58,7 +129,7 @@ struct ProjectIntegrationTests {
         let fixture = try DeploymentFixture()
         defer { fixture.cleanup() }
         _ = try apply(fixture.makePlan(), in: fixture)
-        let lockURL = fixture.project.appendingPathComponent("skillset.lock.json")
+        let lockURL = fixture.stateStore.lockURL
         let oldLock = try Data(contentsOf: lockURL)
         try "用户自己的版本\n".write(to: skillURL(fixture).appendingPathComponent("SKILL.md"), atomically: true, encoding: .utf8)
         #expect(throws: DeploymentError.managedSkillDrift(".agents/skills/demo")) {
@@ -106,7 +177,7 @@ struct ProjectIntegrationTests {
         defer { fixture.cleanup() }
         _ = try apply(fixture.makePlan(), in: fixture)
         let plan = try fixture.makePlan(skillIDs: target == "selected" ? ["workspace/demo"] : [], instructionIDs: [])
-        let changed = fixture.project.appendingPathComponent(target == "lock" ? "skillset.lock.json" : ".agents/skills/demo/SKILL.md")
+        let changed = target == "lock" ? fixture.stateStore.lockURL : fixture.project.appendingPathComponent(".agents/skills/demo/SKILL.md")
         try "外部变更".write(to: changed, atomically: true, encoding: .utf8)
         let rules = try Data(contentsOf: fixture.project.appendingPathComponent("AGENTS.md"))
         #expect(throws: FileTransactionError.self) { try apply(plan, in: fixture) }
@@ -119,14 +190,14 @@ struct ProjectIntegrationTests {
         let fixture = try DeploymentFixture()
         defer { fixture.cleanup() }
         let result = try apply(fixture.makePlan(), in: fixture)
-        let lockURL = fixture.project.appendingPathComponent("skillset.lock.json")
+        let lockURL = fixture.stateStore.lockURL
         let lock = try Data(contentsOf: lockURL)
         try "新编辑".write(to: skillURL(fixture).appendingPathComponent("SKILL.md"), atomically: true, encoding: .utf8)
         #expect(throws: FileTransactionError.rollbackConflict(".agents/skills/demo")) {
             try FileTransactionExecutor(operationsRoot: fixture.operations).rollback(operationID: result.operationID)
         }
         #expect(try Data(contentsOf: lockURL) == lock)
-        #expect(try ProjectLockStore(projectRoot: fixture.project).loadManifest()?.skills == ["workspace/demo"])
+        #expect(try fixture.stateStore.loadManifest()?.skills == ["workspace/demo"])
     }
 
     @Test
@@ -173,7 +244,8 @@ struct ProjectIntegrationTests {
     func corruptOrOrphanedLockCannotBeSilentlyReplaced() throws {
         let fixture = try DeploymentFixture()
         defer { fixture.cleanup() }
-        let lock = fixture.project.appendingPathComponent("skillset.lock.json")
+        let lock = fixture.stateStore.lockURL
+        try FileManager.default.createDirectory(at: lock.deletingLastPathComponent(), withIntermediateDirectories: true)
         try "broken".write(to: lock, atomically: true, encoding: .utf8)
         #expect(throws: ProjectLockError.corruptLock(lock.path)) { try fixture.makePlan() }
         #expect(try String(contentsOf: lock, encoding: .utf8) == "broken")
@@ -292,7 +364,7 @@ struct ProjectIntegrationTests {
         let fixture = try DeploymentFixture()
         defer { fixture.cleanup() }
         _ = try apply(fixture.makePlan(), in: fixture)
-        let lockURL = fixture.project.appendingPathComponent("skillset.lock.json")
+        let lockURL = fixture.stateStore.lockURL
         let contents = try Data(contentsOf: lockURL)
         #expect(throws: DeploymentError.noChanges) { try fixture.makePlan() }
         #expect(try Data(contentsOf: lockURL) == contents)

@@ -58,7 +58,7 @@ extension SkillSetService {
         )
     }
 
-    private func sourceForImport(previewID: UUID, path: String) throws -> (
+    func sourceForImport(previewID: UUID, path: String) throws -> (
         source: URL, candidate: SourceSkillCandidate, origin: SourceSkillOrigin,
         analysis: SkillAssetCopyResult, licenses: [String: Data]
     ) {

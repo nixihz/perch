@@ -95,12 +95,15 @@ public struct ApplyServiceResult: Codable, Hashable, Sendable {
 public struct SkillSetService {
     public let paths: SkillSetRuntimePaths
     public let snapshot: AppSnapshot
+    public let globalConfiguration: GlobalConfigurationManager
 
     private let projectStore: ProjectStore
     private let draftStore: ProjectDraftStore
     private let planStore: DeploymentPlanStore
     private let executor: FileTransactionExecutor
     private let pluginLifecycle: PluginLifecycleManager
+    /// 测试夹具可以显式提供技能源；正常运行只从本机技能库读取。
+    private let injectedSkillSourceURLs: [String: URL]
 
     public init(
         paths: SkillSetRuntimePaths = .detect(),
@@ -108,16 +111,32 @@ public struct SkillSetService {
         draftStore: ProjectDraftStore? = nil,
         planStore: DeploymentPlanStore? = nil,
         executor: FileTransactionExecutor? = nil,
-        pluginLifecycleManager: PluginLifecycleManager? = nil
+        pluginLifecycleManager: PluginLifecycleManager? = nil,
+        globalLocations: GlobalConfigurationLocations? = nil,
+        snapshot overrideSnapshot: AppSnapshot? = nil,
+        skillSourceURLs: [String: URL]? = nil
     ) throws {
+        try paths.migrateLegacyState()
         self.paths = paths
-        let base = AppSnapshot.load(repositoryRoot: paths.repositoryRoot)
-        snapshot = try base.replacingCatalog(SkillLibraryStore(rootURL: paths.libraryRoot).catalog(merging: base.catalog))
+        self.globalConfiguration = GlobalConfigurationManager(paths: paths, locations: globalLocations)
+        let repositorySnapshot = AppSnapshot.load(repositoryRoot: paths.repositoryRoot)
+        let base = overrideSnapshot ?? Self.defaultSnapshot(repositorySnapshot: repositorySnapshot)
+        var automaticSources: [String: URL] = [:]
+        if Self.usesRepositoryLibrary, let repositoryRoot = paths.repositoryRoot {
+            automaticSources = Dictionary(uniqueKeysWithValues: repositorySnapshot.catalog.entries.map {
+                ($0.id, repositoryRoot.appendingPathComponent($0.path))
+            })
+        }
+        injectedSkillSourceURLs = automaticSources.merging(skillSourceURLs ?? [:]) { _, explicit in explicit }
+        let localCatalog = try SkillLibraryStore(rootURL: paths.libraryRoot).catalog(merging: base.catalog)
+        let localPresets = try PresetStore(rootURL: paths.applicationSupportRoot).list(merging: base.presets)
+        snapshot = try base.replacingCatalog(localCatalog)
+            .replacingPresets(localPresets)
             .replacingTemplates(TemplateStore(rootURL: paths.applicationSupportRoot).list(merging: base.templates))
         self.projectStore = projectStore ?? ProjectStore(rootURL: paths.applicationSupportRoot)
         self.draftStore = draftStore ?? ProjectDraftStore(rootURL: paths.applicationSupportRoot)
         self.planStore = planStore ?? DeploymentPlanStore(rootURL: paths.plansRoot)
-        self.executor = executor ?? FileTransactionExecutor(operationsRoot: paths.operationsRoot)
+        self.executor = executor ?? FileTransactionExecutor(operationsRoot: paths.operationsRoot, versionsRoot: paths.versionsRoot)
         self.pluginLifecycle = pluginLifecycleManager ?? PluginLifecycleManager(
             planStore: self.planStore,
             stagingRoot: paths.stagingRoot,
@@ -125,14 +144,33 @@ public struct SkillSetService {
         )
     }
 
+    /// 回归夹具显式设置该变量后使用仓库快照；正常启动只接受用户同步进本机技能库的内容。
+    static var usesRepositoryLibrary: Bool {
+        ProcessInfo.processInfo.environment["SKILLSET_REPOSITORY_LIBRARY"] == "1"
+    }
+
+    public static func defaultSnapshot(for paths: SkillSetRuntimePaths) -> AppSnapshot {
+        defaultSnapshot(repositorySnapshot: AppSnapshot.load(repositoryRoot: paths.repositoryRoot))
+    }
+
+    private static func defaultSnapshot(repositorySnapshot: AppSnapshot) -> AppSnapshot {
+        usesRepositoryLibrary ? repositorySnapshot : repositorySnapshot.withoutBundledSkills()
+    }
+
+    /// 本机技能库版本优先，测试注入的仓库快照只在库中没有同名条目时兜底。
+    private func resolvedSkillSources() throws -> [String: URL] {
+        try SkillLibraryStore(rootURL: paths.libraryRoot).sourceURLs()
+            .merging(injectedSkillSourceURLs) { librarySource, _ in librarySource }
+    }
+
     public func projects() throws -> [ProjectServiceSummary] {
         try projectStore.list().map { registration in
             let projectURL = URL(fileURLWithPath: registration.canonicalPath, isDirectory: true)
             let inspection = try ProjectInspector.inspect(
-                projectURL: projectURL, catalog: snapshot.catalog, operationsRoot: executor.operationsRoot
+                projectURL: projectURL, catalog: snapshot.catalog, operationsRoot: executor.operationsRoot, versionsRoot: paths.versionsRoot
             )
             let draft = try draftStore.load(projectID: registration.id)
-            let projectState = ProjectLockStore(projectRoot: projectURL).inspect()
+            let projectState = ProjectLockStore(projectRoot: projectURL, stateRoot: paths.applicationSupportRoot).inspect()
             return ProjectServiceSummary(
                 id: registration.id,
                 name: registration.name,
@@ -151,7 +189,7 @@ public struct SkillSetService {
     }
 
     public func skills(query: String, sourceID: String? = nil, includeBlocked: Bool = true) -> [SkillEntry] {
-        matchingSkills(snapshot.catalog.entries, query: query, sourceID: sourceID)
+        matchingSkills(snapshot.catalog.entries, query: query, sourceID: sourceID, sourceOrigins: (try? SkillLibraryStore(rootURL: paths.libraryRoot).sourceOrigins()) ?? [:])
             .filter { includeBlocked || !$0.isBlocked }
     }
 
@@ -160,11 +198,11 @@ public struct SkillSetService {
         skillIDs: [String],
         instructionIDs: [String],
         agents: [String]? = nil,
-        ruleBlockID: String = "project-rules"
+        ruleBlockID: String = "project-rules",
+        installMethod: SkillInstallMethod = .symlink
     ) throws -> StoredDeploymentPlan {
-        guard let repositoryRoot = paths.repositoryRoot else {
-            throw SkillSetServiceError.repositoryNotFound
-        }
+        let repositoryRoot = paths.applicationSupportRoot
+        try FileManager.default.createDirectory(at: repositoryRoot, withIntermediateDirectories: true)
         guard skillIDs.count <= 200 else {
             throw SkillSetServiceError.tooManySelections(skillIDs.count)
         }
@@ -177,7 +215,7 @@ public struct SkillSetService {
         let resolvedAgents = agents ?? {
             let draft = try? draftStore.load(projectID: projectID)
             let manifest = try? ProjectLockStore(
-                projectRoot: URL(fileURLWithPath: project.canonicalPath, isDirectory: true)
+                projectRoot: URL(fileURLWithPath: project.canonicalPath, isDirectory: true), stateRoot: paths.applicationSupportRoot
             ).loadManifest()
             let candidates = draft?.agents ?? manifest?.agents ?? project.agents
             return candidates.isEmpty ? ["codex"] : candidates
@@ -187,7 +225,8 @@ public struct SkillSetService {
             repositoryRoot: repositoryRoot,
             stagingRoot: paths.stagingRoot,
             operationsRoot: executor.operationsRoot,
-            skillSourceURLs: try SkillLibraryStore(rootURL: paths.libraryRoot).sourceURLs()
+            skillSourceURLs: try resolvedSkillSources(),
+            versionsRoot: paths.versionsRoot
         )
         let plan = try planner.makePlan(
             projectPath: URL(fileURLWithPath: project.canonicalPath, isDirectory: true),
@@ -195,12 +234,58 @@ public struct SkillSetService {
                 skillIDs: skillIDs.sorted(),
                 instructionIDs: instructionIDs,
                 agents: resolvedAgents,
-                ruleBlockID: ruleBlockID
+                ruleBlockID: ruleBlockID,
+                installMethod: installMethod
             ),
             fragments: fragments
         )
         let staging = paths.stagingRoot.appendingPathComponent(plan.id.uuidString, isDirectory: true)
         return try planStore.save(plan: plan, stagingPath: staging.path)
+    }
+
+    public func makeUserSkillPlan(
+        skillIDs: [String], agents: [String], installMethod: SkillInstallMethod = .symlink,
+        adoptExistingSkills: Bool = false,
+        homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
+    ) throws -> StoredDeploymentPlan {
+        guard agents.count == 1, let agent = agents.first,
+              let host = MCPHost(rawValue: agent) else { throw DeploymentError.invalidPlan }
+        let manager = homeDirectory == FileManager.default.homeDirectoryForCurrentUser ? globalConfiguration :
+            GlobalConfigurationManager(paths: paths, locations: GlobalConfigurationLocations(home: homeDirectory, stateRoot: paths.applicationSupportRoot))
+        let inspection = try manager.inspect(host: host)
+        let current = inspection.selection
+        var sources = try resolvedSkillSources()
+        var entries = snapshot.catalog.entries
+        for id in current.skillIDs where !entries.contains(where: { $0.id == id }) {
+            let slug = String(id.split(separator: "/").last ?? "")
+            let target = manager.locations.skillsRoot(host).appendingPathComponent(slug)
+            guard inspection.resources.contains(where: { $0.path == target.path && $0.managed && !$0.modified }) else {
+                throw DeploymentError.managedSkillDrift(target.path)
+            }
+            let analysis = try SkillAssetCopier.analyze(from: target)
+            entries.append(SkillEntry(id: id, slug: slug, declaredName: slug, description: "", declaredVersion: nil,
+                metadataReview: "retained", sourceId: "retained", path: "retained/" + slug, contentHash: analysis.contentHash,
+                fileCount: analysis.files.count, bytes: analysis.bytes, integrity: "snapshotted", issues: [], licenseReview: "required", excludedPaths: []))
+            sources[id] = target
+        }
+        if adoptExistingSkills {
+            let origins = try SkillLibraryStore(rootURL: paths.libraryRoot).sourceOrigins()
+            for entry in entries where skillIDs.contains(entry.id) {
+                let target = manager.locations.skillsRoot(host).appendingPathComponent(entry.slug)
+                if inspection.resources.contains(where: { $0.path == target.path && !$0.managed }) {
+                    let actual = try SkillAssetCopier.analyze(from: target).contentHash
+                    guard actual == entry.contentHash || actual == origins[entry.id]?.contentHash else {
+                        throw DeploymentError.unmanagedSkillConflict(target.path)
+                    }
+                }
+            }
+        }
+        let selection = GlobalConfigurationDraft(skillIDs: Array(Set(current.skillIDs + skillIDs)).sorted(), instructionIDs: current.instructionIDs, installMethod: installMethod)
+        let catalog = CatalogDocument(schemaVersion: 1, hashAlgorithm: snapshot.catalog.hashAlgorithm, entries: entries)
+        return try manager.makeDeploymentPlan(host: host, selection: selection, catalog: catalog,
+            sourceURLs: sources,
+            fragments: Dictionary(uniqueKeysWithValues: snapshot.templates.map { ($0.id, $0.body) }),
+            takeOverExisting: adoptExistingSkills, installMethod: installMethod)
     }
 
     @discardableResult
@@ -249,17 +334,29 @@ public struct SkillSetService {
         guard isInside(staging, root: paths.stagingRoot.standardizedFileURL) else {
             throw SkillSetServiceError.invalidStagingPath(staging.path)
         }
+        if planType == "global-configuration" {
+            try globalConfiguration.validate(plan: record.plan)
+            let calculated = DeploymentPlanner.calculateDigest(
+                projectPath: record.plan.projectPath, changes: record.plan.changes, selectedSkills: [],
+                metadata: record.plan.metadata, observations: record.plan.observations
+            )
+            guard calculated == record.plan.digest else { throw DeploymentPlanStoreError.digestMismatch }
+        }
         if planType == "skill-deployment" {
-            guard record.plan.ownershipReceipt != nil, record.plan.observations != nil else {
+            guard record.plan.ownershipReceipt != nil, record.plan.observations != nil,
+                  record.plan.metadata?["projectStateStorage"] == "application-v1",
+                  record.plan.changes.filter({ $0.scope != "project-state" }).allSatisfy({
+                      ![ProjectLockStore.manifestFileName, ProjectLockStore.lockFileName].contains($0.relativePath)
+                  }) else {
                 // 升级前生成的计划没有归属与读取依赖，不能沿用旧审批绕过新保护。
                 throw DeploymentPlanStoreError.invalidState("需要重新生成包含管理归属的计划")
             }
-            guard let repositoryRoot = paths.repositoryRoot else {
-                throw SkillSetServiceError.repositoryNotFound
-            }
+            let repositoryRoot = paths.applicationSupportRoot
             let stagedLock = staging.appendingPathComponent(ProjectLockStore.lockFileName)
-            let projectLock = URL(fileURLWithPath: record.plan.projectPath, isDirectory: true)
-                .appendingPathComponent(ProjectLockStore.lockFileName)
+            let projectLock = ProjectLockStore(
+                projectRoot: URL(fileURLWithPath: record.plan.projectPath, isDirectory: true),
+                stateRoot: paths.applicationSupportRoot
+            ).lockURL
             let lockURL = fileManagerExists(at: stagedLock) ? stagedLock : projectLock
             guard fileManagerExists(at: lockURL) else {
                 throw ProjectLockError.corruptLock(lockURL.path)
@@ -298,6 +395,13 @@ public struct SkillSetService {
 
     public func operation(_ operationID: UUID) throws -> FileTransactionJournal {
         try executor.loadJournal(operationID)
+    }
+
+    public func makeGlobalPlan(host: MCPHost, selection: GlobalConfigurationDraft, takeOverExisting: Bool = false) throws -> StoredDeploymentPlan {
+        try globalConfiguration.makeDeploymentPlan(host: host, selection: selection, catalog: snapshot.catalog,
+            sourceURLs: SkillLibraryStore(rootURL: paths.libraryRoot).sourceURLs(),
+            fragments: Dictionary(uniqueKeysWithValues: snapshot.templates.map { ($0.id, $0.body) }),
+            takeOverExisting: takeOverExisting, installMethod: selection.installMethod ?? .symlink)
     }
 
     public func operationInspection(_ operationID: UUID) throws -> OperationInspection {
@@ -371,9 +475,14 @@ public struct SkillSetService {
         try SourcePreviewStore(rootURL: paths.previewsRoot).load(id)
     }
 
-    public func previewSource(urlString: String, ref: String? = nil) throws -> SourcePreviewRecord {
-        try SourcePreviewService(previewsRoot: paths.previewsRoot)
-            .preview(urlString: urlString, ref: ref)
+    public func previewSource(urlString: String, ref: String? = nil, replacing replacedID: UUID? = nil) throws -> SourcePreviewRecord {
+        let store = SourcePreviewStore(rootURL: paths.previewsRoot)
+        if let replacedID { _ = try store.load(replacedID) }
+        let record = try SourcePreviewService(previewsRoot: paths.previewsRoot).preview(urlString: urlString, ref: ref)
+        do { try synchronizeSourceLibrary(excluding: replacedID) }
+        catch { try? store.remove(record.id); throw error }
+        if let replacedID { try store.remove(replacedID) }
+        return record
     }
 
     public func plan(_ id: UUID) throws -> StoredDeploymentPlan {
@@ -383,19 +492,18 @@ public struct SkillSetService {
     public func projectState(projectID: UUID) throws -> ProjectStateSnapshot {
         let project = try projectStore.project(id: projectID)
         return ProjectLockStore(
-            projectRoot: URL(fileURLWithPath: project.canonicalPath, isDirectory: true)
+            projectRoot: URL(fileURLWithPath: project.canonicalPath, isDirectory: true), stateRoot: paths.applicationSupportRoot
         ).inspect()
     }
 
     public func verifyProjectObjects(projectID: UUID?) throws -> ObjectStoreVerification {
-        guard let repositoryRoot = paths.repositoryRoot else {
-            throw SkillSetServiceError.repositoryNotFound
-        }
+        let repositoryRoot = paths.applicationSupportRoot
+        try FileManager.default.createDirectory(at: repositoryRoot, withIntermediateDirectories: true)
         let lock: ProjectLockDocument
         if let projectID {
             let project = try projectStore.project(id: projectID)
             guard let loaded = try ProjectLockStore(
-                projectRoot: URL(fileURLWithPath: project.canonicalPath, isDirectory: true)
+                projectRoot: URL(fileURLWithPath: project.canonicalPath, isDirectory: true), stateRoot: paths.applicationSupportRoot
             ).loadLock() else {
                 throw ProjectLockError.corruptLock(ProjectLockStore.lockFileName)
             }
@@ -403,7 +511,7 @@ public struct SkillSetService {
         } else {
             let locks = try projectStore.list().compactMap { registration in
                 try ProjectLockStore(
-                    projectRoot: URL(fileURLWithPath: registration.canonicalPath, isDirectory: true)
+                    projectRoot: URL(fileURLWithPath: registration.canonicalPath, isDirectory: true), stateRoot: paths.applicationSupportRoot
                 ).loadLock()
             }
             guard !locks.isEmpty else {

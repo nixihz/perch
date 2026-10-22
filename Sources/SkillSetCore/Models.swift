@@ -479,6 +479,14 @@ public struct AppSnapshot: Sendable {
         )
     }
 
+    public func withoutBundledSkills() -> AppSnapshot {
+        AppSnapshot(
+            catalog: CatalogDocument(schemaVersion: 1, hashAlgorithm: "sha256:path-content-executable:v1", entries: []),
+            sources: SourceDocument(schemaVersion: 1, capturedOn: "", sources: [], researchOnly: []),
+            presets: presets, templates: templates, matt: matt
+        )
+    }
+
     public func replacingPresets(_ presets: [PresetRecord]) -> AppSnapshot {
         AppSnapshot(catalog: catalog, sources: sources, presets: presets, templates: templates, matt: matt)
     }
@@ -555,10 +563,10 @@ public struct MCPConfigDraft: Hashable, Sendable {
     }
 }
 
-public func matchingSkills(_ entries: [SkillEntry], query: String, sourceID: String? = nil) -> [SkillEntry] {
+public func matchingSkills(_ entries: [SkillEntry], query: String, sourceID: String? = nil, sourceOrigins: [String: SourceSkillOrigin] = [:]) -> [SkillEntry] {
     let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines).localizedLowercase
     return entries.filter { entry in
-        let searchable = "\(entry.id) \(entry.description) \(entry.declaredName)".localizedLowercase
+        let searchable = "\(entry.id) \(entry.slug) \(entry.path) \(entry.description) \(entry.declaredName) \(sourceOrigins[entry.id]?.url ?? "") \(sourceOrigins[entry.id]?.path ?? "")".localizedLowercase
         return (sourceID == nil || entry.sourceId == sourceID) && (normalized.isEmpty || searchable.contains(normalized))
     }
 }

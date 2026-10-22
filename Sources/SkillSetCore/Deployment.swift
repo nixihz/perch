@@ -337,13 +337,15 @@ public enum SkillAssetCopier {
 }
 
 public struct PlannedChange: Codable, Hashable, Sendable {
+    public let scope: String?
     public let action: String
     public let relativePath: String
     public let beforeHash: String?
     public let afterHash: String?
     public let unifiedDiff: String
 
-    public init(action: String, relativePath: String, beforeHash: String?, afterHash: String?, unifiedDiff: String) {
+    public init(action: String, relativePath: String, beforeHash: String?, afterHash: String?, unifiedDiff: String, scope: String? = nil) {
+        self.scope = scope
         self.action = action
         self.relativePath = relativePath
         self.beforeHash = beforeHash
@@ -394,17 +396,23 @@ public struct DeploymentRequest: Hashable, Sendable {
     public var instructionIDs: [String]
     public var agents: [String]
     public var ruleBlockID: String
+    public var adoptExistingSkills: Bool
+    public var installMethod: SkillInstallMethod
 
     public init(
         skillIDs: [String] = [],
         instructionIDs: [String] = [],
         agents: [String] = ["codex"],
-        ruleBlockID: String = "project-rules"
+        ruleBlockID: String = "project-rules",
+        installMethod: SkillInstallMethod = .copy,
+        adoptExistingSkills: Bool = false
     ) {
         self.skillIDs = skillIDs
         self.instructionIDs = instructionIDs
         self.agents = agents
         self.ruleBlockID = ruleBlockID
+        self.adoptExistingSkills = adoptExistingSkills
+        self.installMethod = installMethod
     }
 }
 
@@ -414,6 +422,7 @@ public struct DeploymentPlanner {
     public let repositoryRoot: URL
     public let stagingRoot: URL
     public let operationsRoot: URL?
+    private let versionsRoot: URL?
     private let skillSourceURLs: [String: URL]
 
     private let fileManager: FileManager
@@ -426,6 +435,7 @@ public struct DeploymentPlanner {
         stagingRoot: URL,
         operationsRoot: URL? = nil,
         skillSourceURLs: [String: URL] = [:],
+        versionsRoot: URL? = nil,
         fileManager: FileManager = .default,
         clock: @escaping () -> Date = Date.init,
         idGenerator: @escaping () -> UUID = UUID.init
@@ -434,6 +444,7 @@ public struct DeploymentPlanner {
         self.repositoryRoot = repositoryRoot
         self.stagingRoot = stagingRoot
         self.operationsRoot = operationsRoot
+        self.versionsRoot = versionsRoot
         self.skillSourceURLs = skillSourceURLs
         self.fileManager = fileManager
         self.clock = clock
@@ -447,10 +458,11 @@ public struct DeploymentPlanner {
         fragments: [String: String]
     ) throws -> DeploymentPlan {
         let projectRoot = try validatedProjectRoot(projectPath)
-        let lockStore = ProjectLockStore(projectRoot: projectRoot, fileManager: fileManager)
+        let stateRoot = (operationsRoot ?? stagingRoot).deletingLastPathComponent()
+        let lockStore = ProjectLockStore(projectRoot: projectRoot, stateRoot: stateRoot, fileManager: fileManager)
         // 损坏或孤立的锁不能被当作首次接入，静默重建会丢失原管理信息。
         for name in [ProjectLockStore.manifestFileName, ProjectLockStore.lockFileName] {
-            try ensureSafeTarget(projectRoot.appendingPathComponent(name), root: projectRoot)
+            try ensureSafeTarget(lockStore.directoryURL.appendingPathComponent(name), root: stateRoot)
         }
         let currentManifest = try lockStore.loadManifest()
         let currentLock = try lockStore.loadLock()
@@ -516,11 +528,16 @@ public struct DeploymentPlanner {
         var nextOwnedRules: [String: String] = [:]
         var selectionWarnings: [String] = []
         for name in [ProjectLockStore.manifestFileName, ProjectLockStore.lockFileName] {
-            let url = projectRoot.appendingPathComponent(name)
+            let url = lockStore.directoryURL.appendingPathComponent(name)
             observations.append(PlannedObservation(
                 relativePath: name,
-                contentHash: fileManager.fileExists(atPath: url.path) ? try SkillAssetCopier.sha256(fileAt: url) : nil
+                contentHash: fileManager.fileExists(atPath: url.path) ? try SkillAssetCopier.sha256(fileAt: url) : nil,
+                scope: "project-state"
             ))
+        }
+        for legacyURL in lockStore.legacyRecordURLs {
+            observations.append(PlannedObservation(relativePath: legacyURL.lastPathComponent,
+                contentHash: try SkillAssetCopier.sha256(fileAt: legacyURL)))
         }
         for entry in selected {
             let catalogSource = skillSourceURLs[entry.id] ?? repositoryRoot.appendingPathComponent(entry.path)
@@ -569,32 +586,47 @@ public struct DeploymentPlanner {
             for target in targets {
                 let relativePath = "\(target.skillsRoot)/\(entry.slug)"
                 let destination = stage.appendingPathComponent(relativePath, isDirectory: true)
-                let copy = try SkillAssetCopier.copy(from: source, to: destination, fileManager: fileManager)
-                guard copy.contentHash == materialized.contentHash else {
-                    throw SkillAssetCopyError(path: entry.path, reason: "对象存储与 staging 指纹不一致")
+                let afterHash: String
+                if request.installMethod == .symlink {
+                    guard let versionsRoot else { throw DeploymentError.invalidPlan }
+                    let version = try ManagedSkillLink.prepare(source: source, contentHash: materialized.contentHash, root: versionsRoot)
+                    try fileManager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    try fileManager.createSymbolicLink(at: destination, withDestinationURL: version)
+                    afterHash = try ManagedSkillLink.hash(destination, versionsRoot: versionsRoot)!
+                } else {
+                    let copy = try SkillAssetCopier.copy(from: source, to: destination, fileManager: fileManager)
+                    guard copy.contentHash == materialized.contentHash else { throw DeploymentError.invalidPlan }
+                    afterHash = copy.contentHash
                 }
                 let observedTarget = projectRoot.appendingPathComponent(relativePath, isDirectory: true)
-                try ensureSafeTarget(observedTarget, root: projectRoot)
+                try ensureSafeTarget(observedTarget, root: projectRoot, allowManagedLink: ownedSkills[relativePath] != nil)
                 let beforeHash = try directoryDigest(observedTarget)
                 observations.append(PlannedObservation(relativePath: relativePath, contentHash: beforeHash))
                 if let expected = ownedSkills[relativePath], let beforeHash, beforeHash != expected {
                     throw DeploymentError.managedSkillDrift(relativePath)
                 }
                 if let beforeHash, ownedSkills[relativePath] == nil {
-                    guard beforeHash == copy.contentHash else {
+                    guard beforeHash == materialized.contentHash else {
                         throw DeploymentError.unmanagedSkillConflict(relativePath)
                     }
-                    selectionWarnings.append("\(relativePath)：项目已有相同内容，保留原归属，取消选择不会删除。")
+                    if request.adoptExistingSkills {
+                        nextOwnedSkills[relativePath] = afterHash
+                        selectionWarnings.append("\(relativePath)：将接管同内容的现有目录；原目录先备份。")
+                    } else {
+                        // 未选择迁移时保留现有实体目录，不把它静默转换为链接。
+                        selectionWarnings.append("\(relativePath)：项目已有相同内容，保留原归属，取消选择不会删除。")
+                        continue
+                    }
                 } else {
-                    nextOwnedSkills[relativePath] = copy.contentHash
+                    nextOwnedSkills[relativePath] = afterHash
                 }
-                let action = beforeHash == nil ? "add" : (beforeHash == copy.contentHash ? "noop" : "update")
+                let action = beforeHash == nil ? "add" : (beforeHash == afterHash ? "noop" : "update")
                 changes.append(PlannedChange(
                     action: action,
                     relativePath: relativePath,
                     beforeHash: beforeHash,
-                    afterHash: copy.contentHash,
-                    unifiedDiff: "复制 \(copy.files.count) 个文件到 \(relativePath)"
+                    afterHash: afterHash,
+                    unifiedDiff: "\(request.installMethod == .symlink ? "软链接" : "复制") \(materialized.fileManifest.count) 个文件到 \(relativePath)"
                 ))
             }
             if let restoredSource {
@@ -617,7 +649,7 @@ public struct DeploymentPlanner {
         for (path, expected) in ownedSkills.sorted(by: { $0.key < $1.key }) where !desiredPaths.contains(path) {
             guard allowedOldPaths.contains(path) else { throw DeploymentError.invalidPlan }
             let destination = projectRoot.appendingPathComponent(path)
-            try ensureSafeTarget(destination, root: projectRoot)
+            try ensureSafeTarget(destination, root: projectRoot, allowManagedLink: true)
             let actual = try directoryDigest(destination)
             observations.append(PlannedObservation(relativePath: path, contentHash: actual))
             guard let actual else { continue }
@@ -725,8 +757,8 @@ public struct DeploymentPlanner {
             (ProjectLockStore.manifestFileName, manifest.encodedData, "写入固定 desired 状态"),
             (ProjectLockStore.lockFileName, lock.encodedData, "写入内容修订与文件清单")
         ] {
-            let target = projectRoot.appendingPathComponent(relativePath)
-            try ensureSafeTarget(target, root: projectRoot)
+            let target = lockStore.directoryURL.appendingPathComponent(relativePath)
+            try ensureSafeTarget(target, root: stateRoot)
             let original = fileManager.fileExists(atPath: target.path)
                 ? try Data(contentsOf: target, options: .mappedIfSafe)
                 : nil
@@ -741,7 +773,7 @@ public struct DeploymentPlanner {
                     relativePath: relativePath,
                     beforeHash: beforeHash,
                     afterHash: afterHash,
-                    unifiedDiff: description
+                    unifiedDiff: description, scope: "project-state"
                 ))
             }
         }
@@ -762,7 +794,7 @@ public struct DeploymentPlanner {
             manifestDigest: manifest.digest,
             changes: executableChanges,
             selectedSkills: selected.map { "\($0.id)@\($0.contentHash)" },
-            metadata: ["planType": "skill-deployment"],
+            metadata: ["planType": "skill-deployment", "projectStateStorage": "application-v1"],
             ownershipReceipt: receipt,
             observations: observations
         )
@@ -776,7 +808,7 @@ public struct DeploymentPlanner {
             warnings: selected.map { "\($0.id) 仍处于 \($0.integrity)；许可审查为 \($0.licenseReview)。" }
                 + selectionWarnings
                 + ["对象存储新增 \(objectCount) 个对象，共 \(objectBytes) 字节；项目锁绑定 manifest \(manifest.digest)。"],
-            metadata: ["planType": "skill-deployment"],
+            metadata: ["planType": "skill-deployment", "projectStateStorage": "application-v1"],
             ownershipReceipt: receipt,
             observations: observations
         )
@@ -795,6 +827,7 @@ public struct DeploymentPlanner {
         canonical += "manifest=\(manifestDigest)\n"
         canonical += "skills=\(selectedSkills.sorted().joined(separator: ","))\n"
         for change in changes {
+            if let scope = change.scope { canonical += "scope|\(scope)\n" }
             canonical += "\(change.action)|\(change.relativePath)|\(change.beforeHash ?? "nil")|\(change.afterHash ?? "nil")\n"
         }
         for (key, value) in (metadata ?? [:]).sorted(by: { $0.key < $1.key }) {
@@ -810,6 +843,7 @@ public struct DeploymentPlanner {
             }
         }
         for observation in observations ?? [] {
+            if let scope = observation.scope { canonical += "observe-scope|\(scope)\n" }
             canonical += "observe|\(observation.relativePath)|\(observation.contentHash ?? "nil")\n"
         }
         return SkillAssetCopier.sha256(Data(canonical.utf8))
@@ -824,13 +858,15 @@ public struct DeploymentPlanner {
         return root
     }
 
-    private func ensureSafeTarget(_ target: URL, root: URL) throws {
+    private func ensureSafeTarget(_ target: URL, root: URL, allowManagedLink: Bool = false) throws {
         let relative = target.path.replacingOccurrences(of: root.path, with: "")
         guard !relative.isEmpty, !relative.contains("..") else {
             throw DeploymentError.pathOutsideRoot(target.path)
         }
         if (try? fileManager.destinationOfSymbolicLink(atPath: target.path)) != nil {
-            throw DeploymentError.symlinkDetected(target.path)
+            guard allowManagedLink, try ManagedSkillLink.hash(target, versionsRoot: versionsRoot) != nil else {
+                throw DeploymentError.symlinkDetected(target.path)
+            }
         }
         var cursor = target.deletingLastPathComponent()
         while cursor.path != root.path && cursor.path.hasPrefix(root.path + "/") {
@@ -848,6 +884,7 @@ public struct DeploymentPlanner {
     }
 
     private func directoryDigest(_ url: URL) throws -> String? {
+        if let hash = try ManagedSkillLink.hash(url, versionsRoot: versionsRoot) { return hash }
         var isDirectory: ObjCBool = false
         guard fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
             return nil

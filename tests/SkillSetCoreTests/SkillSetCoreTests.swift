@@ -161,12 +161,14 @@ struct SkillSetCoreTests {
         )
         let scriptPermissions = (scriptAttributes[.posixPermissions] as? NSNumber)?.uint16Value ?? 0
         #expect(scriptPermissions & 0o111 != 0)
-        let inspection = try ProjectInspector.inspect(projectURL: fixture.project, catalog: fixture.catalog)
+        let inspection = try ProjectInspector.inspect(projectURL: fixture.project, catalog: fixture.catalog, operationsRoot: fixture.operations)
         #expect(inspection.observedSkillIDs == ["workspace/demo"])
         #expect(inspection.ruleBody == "只做受管内容")
         #expect(inspection.lockStatus == "valid")
-        #expect(FileManager.default.fileExists(atPath: fixture.project.appendingPathComponent("skillset.json").path))
-        #expect(FileManager.default.fileExists(atPath: fixture.project.appendingPathComponent("skillset.lock.json").path))
+        #expect(!FileManager.default.fileExists(atPath: fixture.project.appendingPathComponent("skillset.json").path))
+        #expect(FileManager.default.fileExists(atPath: fixture.stateStore.manifestURL.path))
+        #expect(!FileManager.default.fileExists(atPath: fixture.project.appendingPathComponent("skillset.lock.json").path))
+        #expect(FileManager.default.fileExists(atPath: fixture.stateStore.lockURL.path))
 
         try "用户新编辑".write(to: deployed, atomically: true, encoding: .utf8)
         #expect(throws: FileTransactionError.rollbackConflict(".agents/skills/demo")) {
@@ -573,7 +575,7 @@ struct SkillSetCoreTests {
         #expect(FileManager.default.fileExists(atPath: fixture.project.appendingPathComponent(".claude/skills/demo/SKILL.md").path))
         #expect(try String(contentsOf: fixture.project.appendingPathComponent("AGENTS.md"), encoding: .utf8).contains("双宿主规则"))
         #expect(try String(contentsOf: fixture.project.appendingPathComponent("CLAUDE.md"), encoding: .utf8).contains("双宿主规则"))
-        let inspection = try ProjectInspector.inspect(projectURL: fixture.project, catalog: fixture.catalog)
+        let inspection = try ProjectInspector.inspect(projectURL: fixture.project, catalog: fixture.catalog, operationsRoot: fixture.operations)
         #expect(inspection.observedSkillIDs == ["workspace/demo"])
         #expect(inspection.ruleBodies.keys.sorted() == ["AGENTS.md", "CLAUDE.md"])
     }
@@ -593,10 +595,10 @@ struct SkillSetCoreTests {
             ruleBlockID: "project-rules"
         )
         try manifest.encodedData.write(
-            to: fixture.project.appendingPathComponent(ProjectLockStore.manifestFileName),
+            to: fixture.stateStore.manifestURL,
             options: .atomic
         )
-        let state = ProjectLockStore(projectRoot: fixture.project).inspect()
+        let state = fixture.stateStore.inspect()
         #expect(state.status == "stale")
         #expect(state.issues.joined().contains("不一致"))
     }
@@ -1364,6 +1366,7 @@ struct DeploymentFixture {
     let staging: URL
     let operations: URL
     let catalog: CatalogDocument
+    var stateStore: ProjectLockStore { ProjectLockStore(projectRoot: project, stateRoot: root) }
 
     init() throws {
         repository = root.appendingPathComponent("repo", isDirectory: true)

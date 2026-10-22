@@ -1,0 +1,269 @@
+import Foundation
+
+extension GlobalConfigurationManager {
+    public func makeDeploymentPlan(
+        host: MCPHost, selection: GlobalConfigurationDraft, catalog: CatalogDocument,
+        sourceURLs: [String: URL], fragments: [String: String], takeOverExisting: Bool = false,
+        installMethod: SkillInstallMethod = .copy
+    ) throws -> StoredDeploymentPlan {
+        guard selection.skillIDs.count <= 200 else { throw SkillSetServiceError.tooManySelections(selection.skillIDs.count) }
+        let current = try loadState(host)
+        var next = current ?? GlobalConfigurationState(host: host,
+            skillsPath: locations.skillsRoot(host).path, rulesPath: locations.rulesURL(host).path,
+            selection: GlobalConfigurationDraft(), managed: [:])
+        next.selection = selection
+        let builder = try GlobalPlanBuilder(manager: self, host: host, action: "deploy")
+        defer { builder.cleanup() }
+        try builder.requireState(current)
+        var desired: Set<String> = []
+        var slugs: Set<String> = []
+        for id in selection.skillIDs {
+            guard let entry = catalog.entries.first(where: { $0.id == id }) else { throw DeploymentError.skillNotFound(id) }
+            guard !entry.isBlocked else { throw DeploymentError.skillBlocked(id) }
+            let target = locations.skillsRoot(host).appendingPathComponent(entry.slug)
+            guard allowedResource(target, host: host), slugs.insert(entry.slug).inserted else { throw DeploymentError.invalidPlan }
+            desired.insert(target.path)
+            let actual = try builder.observe(target)
+            let old = current?.managed[target.path]
+            if let old, actual != old.hash { throw DeploymentError.managedSkillDrift(target.path) }
+            if actual != nil, old == nil, !takeOverExisting {
+                if actual == entry.contentHash { continue }
+                throw DeploymentError.unmanagedSkillConflict(target.path)
+            }
+            let source: URL
+            if let local = sourceURLs[id] { source = local }
+            else if let repository = paths.repositoryRoot { source = repository.appendingPathComponent(entry.path) }
+            else { throw SkillSetServiceError.repositoryNotFound }
+            let destination = builder.staged(target)
+            guard try SkillAssetCopier.analyze(from: source).contentHash == entry.contentHash else { throw DeploymentError.skillSourceChanged(source.path) }
+            let installedHash: String
+            if installMethod == .symlink {
+                let version = try ManagedSkillLink.prepare(source: source, contentHash: entry.contentHash, root: paths.versionsRoot)
+                try fileManager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try fileManager.createSymbolicLink(at: destination, withDestinationURL: version)
+                installedHash = try ManagedSkillLink.hash(destination, versionsRoot: paths.versionsRoot)!
+            } else {
+                let result = try SkillAssetCopier.copy(from: source, to: destination)
+                guard result.contentHash == entry.contentHash else { throw DeploymentError.skillSourceChanged(source.path) }
+                installedHash = result.contentHash
+            }
+            let baseline: UUID?
+            if let old { baseline = old.baselineID }
+            else if actual != nil {
+                let id = UUID()
+                let url = baselineURL(id)
+                try check(url, root: locations.stateRoot)
+                try fileManager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try fileManager.copyItem(at: target, to: url)
+                guard try hash(url) == actual else { throw GlobalConfigurationError.baselineMissing }
+                builder.newBaselines.append(url)
+                baseline = id
+            } else { baseline = nil }
+            next.managed[target.path] = GlobalManagedResource(hash: installedHash, baselineID: baseline,
+                baselineHash: old?.baselineHash ?? actual, originalRules: nil, writtenRules: nil)
+            builder.append(target, before: actual, after: installedHash,
+                summary: actual != nil && old == nil ? "接管全局技能并保留原始备份" : (installMethod == .symlink ? "软链接到栖集固定版本" : "复制全局技能完整包"))
+        }
+
+        let bodies = try selection.instructionIDs.map { id in
+            guard let body = fragments[id] else { throw SkillSetServiceError.unknownInstruction(id) }
+            return body
+        }
+        let body = bodies.joined(separator: "\n\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        let rules = locations.rulesURL(host)
+        if !body.isEmpty {
+            desired.insert(rules.path)
+            _ = try builder.observe(rules)
+            let original = try dataIfPresent(rules)
+            let observedBody = try original.flatMap { try ruleBody($0) }
+            let old = current?.managed[rules.path]
+            if let old, observedBody.map({ SkillAssetCopier.sha256(Data($0.utf8)) }) != old.hash {
+                throw DeploymentError.managedRuleDrift(rules.path)
+            }
+            if old == nil, observedBody != nil, !takeOverExisting {
+                guard observedBody == body else { throw DeploymentError.unmanagedRuleConflict(rules.path) }
+            } else {
+                let text = original.flatMap { String(data: $0, encoding: .utf8) } ?? ""
+                let updated = try ManagedBlocks.upsert(original: text, id: Self.blockID, body: body).content
+                let data = Data(updated.utf8)
+                let baselineRules = old == nil ? original : old?.originalRules
+                let baselineText = baselineRules.flatMap { String(data: $0, encoding: .utf8) } ?? ""
+                // 还原比较基于最初的块外正文；更新前已有的块外编辑同样需要保留。
+                let baselineWritten = try ManagedBlocks.upsert(original: baselineText, id: Self.blockID, body: body).content
+                next.managed[rules.path] = GlobalManagedResource(hash: SkillAssetCopier.sha256(Data(body.utf8)),
+                    baselineID: nil, baselineHash: nil, originalRules: baselineRules,
+                    writtenRules: Data(baselineWritten.utf8))
+                try builder.write(data, to: rules, summary: "更新全局规则，保留标记外内容")
+            }
+        }
+
+        for (path, resource) in current?.managed ?? [:] where !desired.contains(path) {
+            try restore(resource, at: URL(fileURLWithPath: path), host: host, builder: builder)
+            next.managed.removeValue(forKey: path)
+        }
+        guard !builder.changes.isEmpty || current?.selection != next.selection || current?.managed != next.managed else {
+            throw DeploymentError.noChanges
+        }
+        next.revision = UUID()
+        return try builder.finish(state: next)
+    }
+
+    public func makeRestorePlan(host: MCPHost, mode: GlobalRestoreMode) throws -> StoredDeploymentPlan {
+        guard let current = try loadState(host) else { throw DeploymentError.noChanges }
+        let builder = try GlobalPlanBuilder(manager: self, host: host, action: mode.rawValue)
+        defer { builder.cleanup() }
+        try builder.requireState(current)
+        if mode == .baseline {
+            for (path, resource) in current.managed.sorted(by: { $0.key < $1.key }) {
+                try restore(resource, at: URL(fileURLWithPath: path), host: host, builder: builder)
+            }
+        }
+        // 留下独立的空状态修订，让退出管理本身也可撤销且不会误认旧归属。
+        let next = GlobalConfigurationState(host: host, skillsPath: current.skillsPath,
+            rulesPath: current.rulesPath, selection: GlobalConfigurationDraft(), managed: [:])
+        guard !current.managed.isEmpty || !current.selection.skillIDs.isEmpty || !current.selection.instructionIDs.isEmpty else {
+            throw DeploymentError.noChanges
+        }
+        return try builder.finish(state: next)
+    }
+
+    func baselineURL(_ id: UUID) -> URL { locations.stateRoot.appendingPathComponent("global-baselines/\(id.uuidString)") }
+
+    func restore(_ resource: GlobalManagedResource, at target: URL, host: MCPHost, builder: GlobalPlanBuilder) throws {
+        let actual = try builder.observe(target)
+        if target == locations.rulesURL(host) {
+            let current = try dataIfPresent(target)
+            guard let current, try ruleBody(current).map({ SkillAssetCopier.sha256(Data($0.utf8)) }) == resource.hash,
+                  let written = resource.writtenRules else { throw DeploymentError.managedRuleDrift(target.path) }
+            let restored = try GlobalRuleEditing.restore(current: current, written: written, original: resource.originalRules)
+            try builder.write(restored, to: target, summary: "恢复接管前规则，保留后续块外编辑")
+        } else {
+            guard actual == resource.hash else { throw DeploymentError.managedSkillDrift(target.path) }
+            if let id = resource.baselineID {
+                let baseline = baselineURL(id)
+                guard try hash(baseline) == resource.baselineHash, resource.baselineHash != nil else {
+                    throw GlobalConfigurationError.baselineMissing
+                }
+                try fileManager.createDirectory(at: builder.staged(target).deletingLastPathComponent(), withIntermediateDirectories: true)
+                try fileManager.copyItem(at: baseline, to: builder.staged(target))
+                builder.append(target, before: actual, after: resource.baselineHash, summary: "恢复接管前的原始技能包")
+            } else {
+                builder.append(target, before: actual, after: nil, summary: "移除栖集新增的全局技能，保留其他内容")
+            }
+        }
+    }
+}
+
+final class GlobalPlanBuilder {
+    let manager: GlobalConfigurationManager
+    let host: MCPHost
+    let action: String
+    let id = UUID()
+    let root: URL
+    let stage: URL
+    var changes: [PlannedChange] = []
+    var observations: [String: PlannedObservation] = [:]
+    var newBaselines: [URL] = []
+    var saved = false
+
+    init(manager: GlobalConfigurationManager, host: MCPHost, action: String) throws {
+        self.manager = manager
+        self.host = host
+        self.action = action
+        try manager.validateSkillsRoot(host)
+        root = manager.locations.transactionRoot(host)
+        stage = manager.paths.stagingRoot.appendingPathComponent(id.uuidString)
+        try manager.fileManager.createDirectory(at: stage, withIntermediateDirectories: true)
+        _ = try observe(manager.locations.stateURL(host))
+    }
+
+    func staged(_ url: URL) -> URL { stage.appendingPathComponent(manager.relative(url, root: root)) }
+    func requireState(_ state: GlobalConfigurationState?) throws {
+        let path = manager.relative(manager.locations.stateURL(host), root: root)
+        let expected = try state.map { SkillAssetCopier.sha256(try manager.encode($0)) }
+        guard observations[path]?.contentHash == expected else { throw FileTransactionError.staleFile(path) }
+    }
+    @discardableResult
+    func observe(_ url: URL) throws -> String? {
+        try manager.check(url, root: root)
+        let hash = try manager.hash(url)
+        let path = manager.relative(url, root: root)
+        if let previous = observations[path], previous.contentHash != hash { throw FileTransactionError.staleFile(path) }
+        observations[path] = PlannedObservation(relativePath: path, contentHash: hash)
+        return hash
+    }
+    func append(_ url: URL, before: String?, after: String?, summary: String) {
+        guard before != after else { return }
+        changes.append(PlannedChange(action: after == nil ? "remove" : (before == nil ? "add" : "update"),
+            relativePath: manager.relative(url, root: root), beforeHash: before, afterHash: after, unifiedDiff: summary))
+    }
+    func write(_ data: Data?, to url: URL, summary: String) throws {
+        let before = try observe(url)
+        if let data {
+            let target = staged(url)
+            try manager.fileManager.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try data.write(to: target, options: .atomic)
+            if before != nil {
+                let permissions = try manager.fileManager.attributesOfItem(atPath: url.path)[.posixPermissions]
+                if let permissions { try manager.fileManager.setAttributes([.posixPermissions: permissions], ofItemAtPath: target.path) }
+            }
+        }
+        append(url, before: before, after: data.map(SkillAssetCopier.sha256), summary: summary)
+    }
+    func finish(state: GlobalConfigurationState) throws -> StoredDeploymentPlan {
+        try write(manager.encode(state), to: manager.locations.stateURL(host), summary: "保存全局配置与本机管理归属")
+        let metadata = ["planType": "global-configuration", "globalHost": host.rawValue,
+                        "globalAction": action, "globalSkillsRoot": state.skillsPath]
+        let dependencies = observations.values.sorted { $0.relativePath < $1.relativePath }
+        let digest = DeploymentPlanner.calculateDigest(projectPath: root.path, changes: changes,
+            selectedSkills: [], metadata: metadata, observations: dependencies)
+        let plan = DeploymentPlan(id: id, projectPath: root.path, createdAt: Date(), digest: digest,
+            changes: changes, warnings: ["此操作影响当前用户在该 AI 工具中的全部项目。"],
+            metadata: metadata, observations: dependencies)
+        try manager.validate(plan: plan)
+        let stored = try DeploymentPlanStore(rootURL: manager.paths.plansRoot).save(plan: plan, stagingPath: stage.path)
+        saved = true
+        return stored
+    }
+    func cleanup() {
+        if !saved {
+            try? manager.fileManager.removeItem(at: stage)
+            for url in newBaselines { try? manager.fileManager.removeItem(at: url) }
+        }
+    }
+}
+
+enum GlobalRuleEditing {
+    static func restore(current: Data, written: Data, original: Data?) throws -> Data? {
+        if current == written { return original }
+        guard let text = String(data: current, encoding: .utf8),
+              let expected = String(data: written, encoding: .utf8),
+              original == nil || String(data: original!, encoding: .utf8) != nil else { throw GlobalConfigurationError.corruptState }
+        let id = GlobalConfigurationManager.blockID
+        let currentBody = try ManagedBlocks.extract(original: text, id: id)
+        let expectedBody = try ManagedBlocks.extract(original: expected, id: id)
+        guard currentBody == expectedBody else { throw DeploymentError.managedRuleDrift("global-rules") }
+        let originalText = original.flatMap { String(data: $0, encoding: .utf8) } ?? ""
+        // 按原始标记范围替换，保留块外的空白和新增内容。
+        let originalBlock = try blockRange(originalText).map { String(originalText[$0]) } ?? ""
+        if let range = try blockRange(text) {
+            return Data(text.replacingCharacters(in: range, with: originalBlock).utf8)
+        }
+        if originalBlock.isEmpty { return current }
+        return Data((text + (text.isEmpty || text.hasSuffix("\n") ? "" : "\n") + originalBlock).utf8)
+    }
+
+    private static func blockRange(_ text: String) throws -> Range<String.Index>? {
+        let id = GlobalConfigurationManager.blockID
+        guard try ManagedBlocks.extract(original: text, id: id) != nil else { return nil }
+        var start: String.Index?
+        var cursor = text.startIndex
+        for line in text.components(separatedBy: "\n") {
+            let end = text.index(cursor, offsetBy: line.count)
+            if line.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("<!-- skillset:begin id=\(id) schema=") { start = cursor }
+            if line.trimmingCharacters(in: .whitespacesAndNewlines) == ManagedBlocks.endMarker(id: id), let start { return start..<end }
+            cursor = end < text.endIndex ? text.index(after: end) : end
+        }
+        throw GlobalConfigurationError.corruptState
+    }
+}

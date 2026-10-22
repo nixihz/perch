@@ -3,7 +3,7 @@ import XCTest
 @testable import SkillSetCore
 
 final class PackagedLibraryTests: XCTestCase {
-    func testInstalledApplicationUsesWritableSnapshotWithoutChangingBundle() throws {
+    func testInstalledApplicationStartsWithoutImportingBundledSkills() throws {
         let manager = FileManager.default
         let root = manager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? manager.removeItem(at: root) }
@@ -16,16 +16,11 @@ final class PackagedLibraryTests: XCTestCase {
         let paths = SkillSetRuntimePaths.detect(environment: [:],
             executableURL: contents.appendingPathComponent("MacOS/SkillSet"),
             currentDirectoryURL: root, applicationSupportRoot: state)
-        let repository = try XCTUnwrap(paths.repositoryRoot)
-        XCTAssertTrue(repository.path.hasPrefix(state.path + "/"))
-        XCTAssertEqual(try Data(contentsOf: repository.appendingPathComponent("registry/catalog.json")), Data("{}".utf8))
-        // 对象写入留在本机副本；再次启动继续使用同一份副本。
-        try Data("local".utf8).write(to: repository.appendingPathComponent("local-object"))
-        XCTAssertFalse(manager.fileExists(atPath: library.appendingPathComponent("local-object").path))
-        let reopened = SkillSetRuntimePaths.detect(environment: [:],
-            executableURL: contents.appendingPathComponent("Helpers/skillset"),
-            currentDirectoryURL: root, applicationSupportRoot: state)
-        XCTAssertEqual(reopened.repositoryRoot, repository)
-        XCTAssertEqual(try Data(contentsOf: repository.appendingPathComponent("local-object")), Data("local".utf8))
+        XCTAssertNil(paths.repositoryRoot)
+        XCTAssertFalse(manager.fileExists(atPath: state.path), "查找路径不应复制内置技能快照")
+        let service = try SkillSetService(paths: paths)
+        XCTAssertTrue(service.skills(query: "").isEmpty)
+        XCTAssertTrue(service.snapshot.sources.sources.isEmpty)
+        XCTAssertEqual(try Data(contentsOf: library.appendingPathComponent("registry/catalog.json")), Data("{}".utf8))
     }
 }

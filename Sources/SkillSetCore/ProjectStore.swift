@@ -90,9 +90,7 @@ public struct ProjectStore {
     }
 
     public static var defaultRootURL: URL {
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")
-        return support.appendingPathComponent("Skill Set", isDirectory: true)
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".perch", isDirectory: true)
     }
 
     public var registryURL: URL {

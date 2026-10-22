@@ -26,7 +26,7 @@ public enum ProjectLockError: Error, LocalizedError, Equatable, Sendable {
         case let .corruptLock(path):
             return "项目锁无法读取：\(path)"
         case .lockStale:
-            return "skillset.lock.json 与 skillset.json 不一致，需要重新生成计划。"
+            return "本机项目版本记录与安装选择不一致，需要重新生成计划。"
         case let .invalidManifest(reason):
             return "项目清单无效：\(reason)"
         case let .unsupportedAgent(agent):
@@ -317,22 +317,60 @@ public struct ProjectLockStore {
     public static let lockFileName = "skillset.lock.json"
 
     public let projectRoot: URL
+    public let stateRoot: URL
     private let fileManager: FileManager
 
-    public init(projectRoot: URL, fileManager: FileManager = .default) {
+    public init(projectRoot: URL, stateRoot: URL = ProjectStore.defaultRootURL, fileManager: FileManager = .default) {
         self.projectRoot = projectRoot.resolvingSymlinksInPath().standardizedFileURL
+        self.stateRoot = stateRoot.resolvingSymlinksInPath().standardizedFileURL
         self.fileManager = fileManager
     }
 
+    public var directoryURL: URL {
+        let key = SkillAssetCopier.sha256(Data(projectRoot.path.utf8))
+        return stateRoot.appendingPathComponent("project-state/\(key)", isDirectory: true)
+    }
+
     public var manifestURL: URL {
-        projectRoot.appendingPathComponent(Self.manifestFileName)
+        directoryURL.appendingPathComponent(Self.manifestFileName)
     }
 
     public var lockURL: URL {
-        projectRoot.appendingPathComponent(Self.lockFileName)
+        directoryURL.appendingPathComponent(Self.lockFileName)
+    }
+
+    /// 只读取能由本机已完成事务证明归属的旧记录；同名用户文件不会被当成管理记录。
+    public var legacyRecordURLs: [URL] {
+        guard !fileManager.fileExists(atPath: manifestURL.path),
+              !fileManager.fileExists(atPath: lockURL.path) else { return [] }
+        let oldManifest = projectRoot.appendingPathComponent(Self.manifestFileName)
+        let oldLock = projectRoot.appendingPathComponent(Self.lockFileName)
+        guard (try? fileManager.destinationOfSymbolicLink(atPath: oldManifest.path)) == nil,
+              (try? fileManager.destinationOfSymbolicLink(atPath: oldLock.path)) == nil,
+              let manifestData = try? Data(contentsOf: oldManifest),
+              let lockData = try? Data(contentsOf: oldLock),
+              let manifest = try? JSONDecoder().decode(ProjectManifest.self, from: manifestData),
+              let lock = try? JSONDecoder().decode(ProjectLockDocument.self, from: lockData),
+              (try? lock.validate(against: manifest)) != nil else { return [] }
+        let operations = stateRoot.appendingPathComponent("operations")
+        let executor = FileTransactionExecutor(operationsRoot: operations, fileManager: fileManager)
+        let directories = (try? fileManager.contentsOfDirectory(at: operations, includingPropertiesForKeys: nil)) ?? []
+        let lockHash = SkillAssetCopier.sha256(lockData)
+        let hasReceipt = directories.contains { directory in
+            guard let id = UUID(uuidString: directory.lastPathComponent),
+                  let journal = try? executor.loadJournal(id) else { return false }
+            return journal.state == "applied" && journal.projectPath == projectRoot.path
+                && journal.ownershipReceipt?.lockHash == lockHash
+        }
+        return hasReceipt ? [oldManifest, oldLock] : []
+    }
+
+    public var observedLockURL: URL {
+        legacyRecordURLs.last ?? lockURL
     }
 
     public func loadManifest() throws -> ProjectManifest? {
+        let manifestURL = legacyRecordURLs.first ?? self.manifestURL
         guard fileManager.fileExists(atPath: manifestURL.path) else { return nil }
         if (try? fileManager.destinationOfSymbolicLink(atPath: manifestURL.path)) != nil {
             throw ProjectLockError.corruptManifest(manifestURL.path)
@@ -352,6 +390,7 @@ public struct ProjectLockStore {
     }
 
     public func loadLock() throws -> ProjectLockDocument? {
+        let lockURL = observedLockURL
         guard fileManager.fileExists(atPath: lockURL.path) else { return nil }
         if (try? fileManager.destinationOfSymbolicLink(atPath: lockURL.path)) != nil {
             throw ProjectLockError.corruptLock(lockURL.path)
@@ -381,7 +420,7 @@ public struct ProjectLockStore {
                 manifest: nil,
                 lock: nil,
                 status: "absent",
-                issues: ["项目尚无 skillset.json。"]
+                issues: ["项目尚无本机安装记录。"]
             )
         }
 
@@ -401,7 +440,7 @@ public struct ProjectLockStore {
                 manifest: manifest,
                 lock: nil,
                 status: "unlocked",
-                issues: ["skillset.json 已存在，但缺少 skillset.lock.json。"]
+                issues: ["本机安装选择已存在，但缺少版本记录。"]
             )
         }
         do {

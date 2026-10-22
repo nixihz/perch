@@ -46,6 +46,7 @@ public enum ProjectInspector {
         catalog: CatalogDocument,
         ruleBlockID: String = "project-rules",
         operationsRoot: URL? = nil,
+        versionsRoot: URL? = nil,
         fileManager: FileManager = .default
     ) throws -> ProjectInspection {
         let projectRoot = projectURL.resolvingSymlinksInPath().standardizedFileURL
@@ -54,7 +55,7 @@ public enum ProjectInspector {
             throw DeploymentError.projectNotFound(projectRoot.path)
         }
 
-        let state = ProjectLockStore(projectRoot: projectRoot, fileManager: fileManager).inspect()
+        let state = ProjectLockStore(projectRoot: projectRoot, stateRoot: operationsRoot?.deletingLastPathComponent() ?? ProjectStore.defaultRootURL, fileManager: fileManager).inspect()
         var issues = state.status == "valid" || state.status == "absent" ? [] : state.issues
         let targets = try inspectionTargets(state: state, ruleBlockID: ruleBlockID)
         let lockedSkills = state.status == "valid" ? (state.lock?.skills ?? []) : []
@@ -92,11 +93,12 @@ public enum ProjectInspector {
                 let slug = child.lastPathComponent
                 let path = "\(target.skillsRoot)/\(slug)"
                 let owner = ownedSkills[path] == nil ? "existing" : "managed"
-                if (try? fileManager.destinationOfSymbolicLink(atPath: child.path)) != nil {
-                    issues.append("\(target.skillsRoot)/\(slug)：部署目标是软链，不参与受管状态推断。")
+                let isLink = (try? fileManager.destinationOfSymbolicLink(atPath: child.path)) != nil
+                if isLink && ownedSkills[path] == nil {
                     skillObservations.append(ProjectSkillObservation(agent: target.agent, relativePath: path, skillID: nil, ownership: owner, status: "symlink"))
                     continue
                 }
+
                 var childIsDirectory: ObjCBool = false
                 guard fileManager.fileExists(atPath: child.path, isDirectory: &childIsDirectory),
                       childIsDirectory.boolValue else {
@@ -113,7 +115,8 @@ public enum ProjectInspector {
                     let candidates = catalog.entries.filter { $0.slug == slug && !$0.isBlocked }
                     let catalogMatches = candidates.filter { $0.contentHash == actualHash }
                     let matches = lockedMatches.count == 1 ? lockedMatches.map(\.id) : catalogMatches.map(\.id)
-                    let status = ownedSkills[path].map { $0 == actualHash ? "matching" : "drifted" }
+                    let observedHash = isLink ? try ManagedSkillLink.hash(child, versionsRoot: versionsRoot) : actualHash
+                    let status = ownedSkills[path].map { $0 == observedHash ? "matching" : "drifted" }
                         ?? (matches.isEmpty ? "unknown" : "matching")
                     skillObservations.append(ProjectSkillObservation(
                         agent: target.agent, relativePath: path,

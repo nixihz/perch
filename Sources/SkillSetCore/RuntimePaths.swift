@@ -22,11 +22,35 @@ public struct SkillSetRuntimePaths: Sendable {
     }
 
     public var previewsRoot: URL {
-        applicationSupportRoot.appendingPathComponent("previews", isDirectory: true)
+        applicationSupportRoot.appendingPathComponent("cache/sources", isDirectory: true)
     }
 
     public var libraryRoot: URL {
-        applicationSupportRoot.appendingPathComponent("skill-library", isDirectory: true)
+        applicationSupportRoot.appendingPathComponent("skills", isDirectory: true)
+    }
+
+    public var versionsRoot: URL { applicationSupportRoot.appendingPathComponent("versions", isDirectory: true) }
+
+    /// 只复制旧状态，保留原目录供回退；临时目录全部成功后才发布。
+    public func migrateLegacyState(from legacyRoot: URL? = nil) throws {
+        let manager = FileManager.default
+        let legacy = legacyRoot ?? manager.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Skill Set")
+        guard legacyRoot != nil || applicationSupportRoot == ProjectStore.defaultRootURL else { return }
+        guard !manager.fileExists(atPath: applicationSupportRoot.path), manager.fileExists(atPath: legacy.path) else { return }
+        let temporary = applicationSupportRoot.deletingLastPathComponent().appendingPathComponent(".perch-migrate-\(UUID())")
+        defer { try? manager.removeItem(at: temporary) }
+        try manager.copyItem(at: legacy, to: temporary)
+        for (old, new) in [("skill-library", "skills"), ("previews", "cache/sources")] {
+            let source = temporary.appendingPathComponent(old)
+            if manager.fileExists(atPath: source.path) {
+                let destination = temporary.appendingPathComponent(new)
+                try manager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try manager.moveItem(at: source, to: destination)
+            }
+        }
+        // 旧计划绑定旧 staging 绝对路径，升级后必须重新预览；操作历史仍保留。
+        try? manager.removeItem(at: temporary.appendingPathComponent("plans"))
+        try manager.moveItem(at: temporary, to: applicationSupportRoot)
     }
 
     public var repositoryCatalogURL: URL? {
@@ -44,17 +68,6 @@ public struct SkillSetRuntimePaths: Sendable {
             candidates.append(URL(fileURLWithPath: configured, isDirectory: true))
         }
         if let executableURL {
-            // 安装包先使用随包快照；对象存储会写入，因此复制到本机状态目录，避免修改签名资源。
-            let directory = executableURL.deletingLastPathComponent()
-            for library in [
-                directory.appendingPathComponent("SkillSetLibrary"),
-                directory.deletingLastPathComponent().appendingPathComponent("Resources/SkillSetLibrary")
-            ] {
-                if let root = try? preparePackagedLibrary(library, stateRoot: applicationSupportRoot) {
-                    candidates.append(root)
-                    break
-                }
-            }
             candidates.append(executableURL)
         }
         candidates.append(currentDirectoryURL)
@@ -65,23 +78,6 @@ public struct SkillSetRuntimePaths: Sendable {
             }
         }
         return SkillSetRuntimePaths(applicationSupportRoot: applicationSupportRoot, repositoryRoot: nil)
-    }
-
-    private static func preparePackagedLibrary(_ library: URL, stateRoot: URL) throws -> URL? {
-        let revision = try String(contentsOf: library.appendingPathComponent("package-revision"), encoding: .utf8)
-        guard revision.count == 64, revision.allSatisfy({ $0.isHexDigit }) else { return nil }
-        let manager = FileManager.default
-        let parent = stateRoot.appendingPathComponent("bundled-libraries", isDirectory: true)
-        let target = parent.appendingPathComponent(revision, isDirectory: true)
-        if !manager.fileExists(atPath: target.path) {
-            try manager.createDirectory(at: parent, withIntermediateDirectories: true)
-            let temporary = parent.appendingPathComponent(UUID().uuidString, isDirectory: true)
-            defer { try? manager.removeItem(at: temporary) }
-            try manager.copyItem(at: library, to: temporary)
-            do { try manager.moveItem(at: temporary, to: target) }
-            catch { if !manager.fileExists(atPath: target.path) { throw error } }
-        }
-        return target
     }
 
     private static func repositoryRoot(startingAt url: URL) -> URL? {

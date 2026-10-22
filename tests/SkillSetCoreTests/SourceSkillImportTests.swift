@@ -36,9 +36,9 @@ struct SourceSkillImportTests {
             #expect(try String(contentsOf: deployed.appendingPathComponent("_source_licenses/LICENSE"), encoding: .utf8) == "MIT fixture notice\n")
         }
         #expect(!FileManager.default.fileExists(atPath: fixture.executionMarker.path))
-        let lock = try #require(try ProjectLockStore(projectRoot: project).loadLock())
+        let lock = try #require(try ProjectLockStore(projectRoot: project, stateRoot: fixture.paths.applicationSupportRoot).loadLock())
         #expect(lock.skills.first?.contentHash == entry.contentHash)
-        #expect(try SkillObjectStore(repositoryRoot: fixture.paths.repositoryRoot!).verify(lock: lock).checkedObjects > 0)
+        #expect(try SkillObjectStore(repositoryRoot: fixture.paths.applicationSupportRoot).verify(lock: lock).checkedObjects > 0)
     }
 
     @Test func duplicateCanBeRenamedWithoutOverwritingAndEditsKeepOriginalSource() throws {

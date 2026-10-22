@@ -14,10 +14,12 @@ public struct ProjectOwnershipReceipt: Codable, Hashable, Sendable {
 }
 
 public struct PlannedObservation: Codable, Hashable, Sendable {
+    public let scope: String?
     public let relativePath: String
     public let contentHash: String?
 
-    public init(relativePath: String, contentHash: String?) {
+    public init(relativePath: String, contentHash: String?, scope: String? = nil) {
+        self.scope = scope
         self.relativePath = relativePath
         self.contentHash = contentHash
     }
@@ -30,7 +32,7 @@ enum ProjectOwnershipReader {
 
     static func receipt(projectRoot: URL, operationsRoot: URL?, fileManager: FileManager = .default) throws -> ProjectOwnershipReceipt? {
         guard let operationsRoot, fileManager.fileExists(atPath: operationsRoot.path) else { return nil }
-        let lockURL = projectRoot.appendingPathComponent(ProjectLockStore.lockFileName)
+        let lockURL = ProjectLockStore(projectRoot: projectRoot, stateRoot: operationsRoot.deletingLastPathComponent()).observedLockURL
         guard fileManager.fileExists(atPath: lockURL.path) else { return nil }
         let lockHash = try SkillAssetCopier.sha256(fileAt: lockURL)
         let executor = FileTransactionExecutor(operationsRoot: operationsRoot, fileManager: fileManager)

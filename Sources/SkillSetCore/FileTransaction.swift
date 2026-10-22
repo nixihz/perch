@@ -38,6 +38,7 @@ public enum FileTransactionError: Error, LocalizedError, Equatable, Sendable {
 }
 
 public struct FileTransactionStep: Codable, Hashable, Sendable {
+    public let scope: String?
     public let relativePath: String
     public let action: String
     public let beforeHash: String?
@@ -55,8 +56,10 @@ public struct FileTransactionStep: Codable, Hashable, Sendable {
         afterHash: String?,
         state: String,
         temporaryPath: String? = nil,
-        displacedPath: String? = nil
+        displacedPath: String? = nil,
+        scope: String? = nil
     ) {
+        self.scope = scope
         self.relativePath = relativePath
         self.action = action
         self.beforeHash = beforeHash
@@ -78,6 +81,7 @@ public struct FileTransactionJournal: Codable, Hashable, Sendable {
     public var state: String
     public var steps: [FileTransactionStep]
     public let ownershipReceipt: ProjectOwnershipReceipt?
+    public let metadata: [String: String]?
 
     public init(
         operationID: UUID,
@@ -87,7 +91,8 @@ public struct FileTransactionJournal: Codable, Hashable, Sendable {
         createdAt: Date,
         state: String,
         steps: [FileTransactionStep],
-        ownershipReceipt: ProjectOwnershipReceipt? = nil
+        ownershipReceipt: ProjectOwnershipReceipt? = nil,
+        metadata: [String: String]? = nil
     ) {
         self.operationID = operationID
         self.projectPath = projectPath
@@ -97,6 +102,7 @@ public struct FileTransactionJournal: Codable, Hashable, Sendable {
         self.state = state
         self.steps = steps
         self.ownershipReceipt = ownershipReceipt
+        self.metadata = metadata
     }
 }
 
@@ -115,17 +121,20 @@ public struct TransactionResult: Hashable, Sendable {
 /// 只执行已经复核过的 staging 内容；每个目标在写入前重新检查旧 hash。
 public struct FileTransactionExecutor {
     public let operationsRoot: URL
+    private let versionsRoot: URL?
     private let fileManager: FileManager
     private let clock: () -> Date
     private let idGenerator: () -> UUID
 
     public init(
         operationsRoot: URL,
+        versionsRoot: URL? = nil,
         fileManager: FileManager = .default,
         clock: @escaping () -> Date = Date.init,
         idGenerator: @escaping () -> UUID = UUID.init
     ) {
         self.operationsRoot = operationsRoot
+        self.versionsRoot = versionsRoot
         self.fileManager = fileManager
         self.clock = clock
         self.idGenerator = idGenerator
@@ -144,7 +153,7 @@ public struct FileTransactionExecutor {
                 action: $0.action,
                 beforeHash: $0.beforeHash,
                 afterHash: $0.afterHash,
-                state: "pending"
+                state: "pending", scope: $0.scope
             )
         }
         var journal = FileTransactionJournal(
@@ -155,16 +164,18 @@ public struct FileTransactionExecutor {
             createdAt: clock(),
             state: "applying",
             steps: steps,
-            ownershipReceipt: plan.ownershipReceipt
+            ownershipReceipt: plan.ownershipReceipt,
+            metadata: plan.metadata
         )
         try writeJournal(journal)
 
         do {
             for index in steps.indices {
                 let change = plan.changes[index]
-                let destination = projectRoot.appendingPathComponent(change.relativePath)
-                try ensureInsideProject(destination, root: projectRoot)
-                try ensureNoSymlinkInParents(destination, root: projectRoot)
+                let targetRoot = try destinationRoot(scope: change.scope, relativePath: change.relativePath, projectRoot: projectRoot)
+                let destination = targetRoot.appendingPathComponent(change.relativePath)
+                try ensureInsideProject(destination, root: targetRoot)
+                try ensureNoSymlinkInParents(destination, root: targetRoot)
                 try ensureTargetIsNotSymlink(destination)
 
                 let actualHash = try currentContentHash(destination)
@@ -260,7 +271,11 @@ public struct FileTransactionExecutor {
             return TransactionResult(
                 operationID: operationID,
                 journalURL: journalURL(operationID),
-                changedPaths: plan.changes.map(\.relativePath)
+                changedPaths: try plan.changes.map { change in
+                    guard change.scope != nil else { return change.relativePath }
+                    return try destinationRoot(scope: change.scope, relativePath: change.relativePath, projectRoot: projectRoot)
+                        .appendingPathComponent(change.relativePath).path
+                }
             )
         } catch {
             // 失败时尽量恢复本次已写步骤，避免留下半完成的受管目录
@@ -272,7 +287,8 @@ public struct FileTransactionExecutor {
                 createdAt: journal.createdAt,
                 state: "applying",
                 steps: steps,
-                ownershipReceipt: plan.ownershipReceipt
+                ownershipReceipt: plan.ownershipReceipt,
+                metadata: plan.metadata
             )
             var recovered = false
             do {
@@ -327,9 +343,10 @@ public struct FileTransactionExecutor {
 
         // 先检查整次撤销，避免后面的冲突使前面的文件已经被恢复。
         for step in updated.steps where step.state == "applied" || step.state == "restoring" {
-            let destination = projectRoot.appendingPathComponent(step.relativePath)
-            try ensureInsideProject(destination, root: projectRoot)
-            try ensureNoSymlinkInParents(destination, root: projectRoot)
+            let targetRoot = try destinationRoot(scope: step.scope, relativePath: step.relativePath, projectRoot: projectRoot)
+            let destination = targetRoot.appendingPathComponent(step.relativePath)
+            try ensureInsideProject(destination, root: targetRoot)
+            try ensureNoSymlinkInParents(destination, root: targetRoot)
             try ensureTargetIsNotSymlink(destination)
             let current = try currentContentHash(destination)
             let expectedAfter: String? = step.action == "remove" ? nil : step.afterHash
@@ -348,9 +365,10 @@ public struct FileTransactionExecutor {
         try writeJournal(updated)
 
         for step in updated.steps.reversed() where step.state == "applied" || step.state == "restoring" {
-            let destination = projectRoot.appendingPathComponent(step.relativePath)
-            try ensureInsideProject(destination, root: projectRoot)
-            try ensureNoSymlinkInParents(destination, root: projectRoot)
+            let targetRoot = try destinationRoot(scope: step.scope, relativePath: step.relativePath, projectRoot: projectRoot)
+            let destination = targetRoot.appendingPathComponent(step.relativePath)
+            try ensureInsideProject(destination, root: targetRoot)
+            try ensureNoSymlinkInParents(destination, root: targetRoot)
             try ensureTargetIsNotSymlink(destination)
             let current = try currentContentHash(destination)
             if step.state == "restoring", current == step.beforeHash {
@@ -448,6 +466,11 @@ public struct FileTransactionExecutor {
     }
 
     private func validate(plan: DeploymentPlan, stagingRoot: URL, projectRoot: URL) throws {
+        if plan.metadata?["planType"] == "skill-deployment",
+           plan.metadata?["projectStateStorage"] != "application-v1" {
+            throw DeploymentError.invalidPlan
+        }
+
         var isDirectory: ObjCBool = false
         guard fileManager.fileExists(atPath: projectRoot.path, isDirectory: &isDirectory), isDirectory.boolValue else {
             throw FileTransactionError.unsafeDestination(projectRoot.path)
@@ -456,9 +479,10 @@ public struct FileTransactionExecutor {
             throw FileTransactionError.invalidStaging(stagingRoot.path)
         }
         for change in plan.changes {
-            let destination = projectRoot.appendingPathComponent(change.relativePath)
-            try ensureInsideProject(destination, root: projectRoot)
-            try ensureNoSymlinkInParents(destination, root: projectRoot)
+            let targetRoot = try destinationRoot(scope: change.scope, relativePath: change.relativePath, projectRoot: projectRoot)
+            let destination = targetRoot.appendingPathComponent(change.relativePath)
+            try ensureInsideProject(destination, root: targetRoot)
+            try ensureNoSymlinkInParents(destination, root: targetRoot)
             try ensureTargetIsNotSymlink(destination)
             guard try currentContentHash(destination) == change.beforeHash else {
                 throw FileTransactionError.staleFile(change.relativePath)
@@ -479,14 +503,27 @@ public struct FileTransactionExecutor {
             }
         }
         for observation in plan.observations ?? [] {
-            let destination = projectRoot.appendingPathComponent(observation.relativePath)
-            try ensureInsideProject(destination, root: projectRoot)
-            try ensureNoSymlinkInParents(destination, root: projectRoot)
+            let targetRoot = try destinationRoot(scope: observation.scope, relativePath: observation.relativePath, projectRoot: projectRoot)
+            let destination = targetRoot.appendingPathComponent(observation.relativePath)
+            try ensureInsideProject(destination, root: targetRoot)
+            try ensureNoSymlinkInParents(destination, root: targetRoot)
             try ensureTargetIsNotSymlink(destination)
             guard try currentContentHash(destination) == observation.contentHash else {
                 throw FileTransactionError.staleFile(observation.relativePath)
             }
         }
+    }
+
+    private func destinationRoot(scope: String?, relativePath: String, projectRoot: URL) throws -> URL {
+        guard let scope else { return projectRoot }
+        guard scope == "project-state",
+              [ProjectLockStore.manifestFileName, ProjectLockStore.lockFileName].contains(relativePath) else {
+            throw FileTransactionError.unsafeDestination(relativePath)
+        }
+        let stateRoot = operationsRoot.deletingLastPathComponent().resolvingSymlinksInPath().standardizedFileURL
+        let directory = ProjectLockStore(projectRoot: projectRoot, stateRoot: stateRoot).directoryURL
+        try ensureNoSymlinkInParents(directory.appendingPathComponent(relativePath), root: stateRoot)
+        return directory
     }
 
     private func ensureInsideProject(_ url: URL, root: URL) throws {
@@ -514,7 +551,9 @@ public struct FileTransactionExecutor {
 
     private func ensureTargetIsNotSymlink(_ target: URL) throws {
         if (try? fileManager.destinationOfSymbolicLink(atPath: target.path)) != nil {
-            throw FileTransactionError.unsafeDestination(target.path)
+            guard try ManagedSkillLink.hash(target, versionsRoot: versionsRoot) != nil else {
+                throw FileTransactionError.unsafeDestination(target.path)
+            }
         }
     }
 
@@ -562,6 +601,7 @@ public struct FileTransactionExecutor {
     }
 
     private func currentContentHash(_ url: URL) throws -> String? {
+        if let hash = try ManagedSkillLink.hash(url, versionsRoot: versionsRoot) { return hash }
         var isDirectory: ObjCBool = false
         guard fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
             return nil

@@ -219,6 +219,15 @@ public struct SourcePreviewService {
     }
 
     public func preview(urlString: String, ref: String? = nil, replacing replacedID: UUID? = nil) throws -> SourcePreviewRecord {
+        let input = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
+        if input.hasPrefix("/") || input.hasPrefix("~/") || input.hasPrefix("file://") {
+            guard ref?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false else { throw SourcePreviewError.invalidRef(ref!) }
+            let expanded = (input as NSString).expandingTildeInPath
+            guard let local = input.hasPrefix("file://") ? URL(string: input) : URL(fileURLWithPath: expanded, isDirectory: true), local.isFileURL else {
+                throw SourcePreviewError.invalidURL(input)
+            }
+            return try previewLocal(directory: local, replacing: replacedID)
+        }
         let source = try parseSource(urlString)
         let validatedRef = try validateRef(ref)
         let previewID = idGenerator()
@@ -297,6 +306,46 @@ public struct SourcePreviewService {
             return record
         } catch {
             try? fileManager.removeItem(at: previewRoot)
+            throw error
+        }
+    }
+
+    private func previewLocal(directory: URL, replacing replacedID: UUID?) throws -> SourcePreviewRecord {
+        let root = directory.resolvingSymlinksInPath().standardizedFileURL
+        let id = idGenerator()
+        let store = SourcePreviewStore(rootURL: previewsRoot, fileManager: fileManager)
+        if let replacedID { _ = try store.load(replacedID) }
+        let destination = previewsRoot.appendingPathComponent(id.uuidString)
+        let checkout = destination.appendingPathComponent("checkout")
+        guard !checkout.path.hasPrefix(root.path + "/"), checkout.path != root.path else {
+            throw SourcePreviewError.invalidURL(root.path)
+        }
+        try fileManager.createDirectory(at: checkout, withIntermediateDirectories: true)
+        do {
+            // 本地目录也先实体化再扫描；现有 harness 的一级技能链接可复制进缓存。
+            if fileManager.fileExists(atPath: root.appendingPathComponent("SKILL.md").path) {
+                _ = try SkillAssetCopier.copy(from: root, to: checkout.appendingPathComponent(root.lastPathComponent))
+            } else {
+                for child in try fileManager.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isDirectoryKey], options: []) where child.lastPathComponent != ".git" {
+                    var isDirectory: ObjCBool = false
+                    guard fileManager.fileExists(atPath: child.path, isDirectory: &isDirectory) else { continue }
+                    if !isDirectory.boolValue {
+                        guard child.resolvingSymlinksInPath().path == child.path,
+                              try child.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true else { continue }
+                        try fileManager.copyItem(at: child, to: checkout.appendingPathComponent(child.lastPathComponent))
+                        continue
+                    }
+                    _ = try SkillAssetCopier.copy(from: child, to: checkout.appendingPathComponent(child.lastPathComponent))
+                }
+            }
+            let initial = try scan(checkout: checkout, previewID: id, inputURL: root.path, commit: "local")
+            let revision = SkillAssetCopier.sha256(Data(initial.candidates.map { $0.path + "|" + $0.contentHash }.sorted().joined(separator: "\n").utf8))
+            let record = try scan(checkout: checkout, previewID: id, inputURL: root.path, commit: revision)
+            try store.save(record)
+            if let replacedID { try store.remove(replacedID) }
+            return record
+        } catch {
+            try? fileManager.removeItem(at: destination)
             throw error
         }
     }

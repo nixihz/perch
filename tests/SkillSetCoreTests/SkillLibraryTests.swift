@@ -113,9 +113,9 @@ struct SkillLibraryTests {
         _ = try service.apply(planID: record.id, digest: record.plan.digest)
         let installed = project.appendingPathComponent(".agents/skills/demo/SKILL.md")
         #expect(try String(contentsOf: installed, encoding: .utf8).contains("第一版"))
-        let lock = try #require(try ProjectLockStore(projectRoot: project).loadLock())
+        let lock = try #require(try ProjectLockStore(projectRoot: project, stateRoot: fixture.paths.applicationSupportRoot).loadLock())
         #expect(lock.skills.first?.contentHash == entry.contentHash)
-        #expect(try SkillObjectStore(repositoryRoot: fixture.repository).verify(lock: lock).checkedObjects > 0)
+        #expect(try SkillObjectStore(repositoryRoot: fixture.paths.applicationSupportRoot).verify(lock: lock).checkedObjects > 0)
         try fixture.store.remove(entry)
         #expect(try String(contentsOf: installed, encoding: .utf8).contains("第一版"))
     }
