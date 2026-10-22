@@ -529,7 +529,7 @@ final class BDDWorld {
 
     func requestNativeUIPlanApproval() throws {
         guard let nativeUI else { throw BDDWorldError.missingNativeUI }
-        try nativeUI.pressButton("批准并执行")
+        try nativeUI.pressButton("批准并写入项目")
         try nativeUI.waitForConfirmationAlert()
     }
 

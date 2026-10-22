@@ -26,7 +26,6 @@ struct SkillSetCoreTests {
                 contentHash: "abc",
                 fileCount: 1,
                 bytes: 10,
-                wasSymlink: false,
                 integrity: "snapshotted",
                 issues: [],
                 licenseReview: "required",
@@ -44,7 +43,6 @@ struct SkillSetCoreTests {
                 contentHash: "def",
                 fileCount: 1,
                 bytes: 10,
-                wasSymlink: true,
                 integrity: "snapshotted",
                 issues: [],
                 licenseReview: "required",
@@ -198,20 +196,16 @@ struct SkillSetCoreTests {
     }
 
     @Test
-    func deploymentUpdatesAnExistingDirectoryAndRollbackRestoresIt() throws {
+    func deploymentRejectsUnmanagedDirectoryWithoutChangingIt() throws {
         let fixture = try DeploymentFixture()
         defer { fixture.cleanup() }
         let existing = fixture.project.appendingPathComponent(".agents/skills/demo", isDirectory: true)
         try FileManager.default.createDirectory(at: existing, withIntermediateDirectories: true)
         try "旧版本\n".write(to: existing.appendingPathComponent("SKILL.md"), atomically: true, encoding: .utf8)
 
-        let plan = try fixture.makePlan()
-        #expect(plan.changes.first?.action == "update")
-        let executor = FileTransactionExecutor(operationsRoot: fixture.operations)
-        let result = try executor.apply(plan: plan, from: fixture.staging.appendingPathComponent(plan.id.uuidString))
-        #expect(try String(contentsOf: existing.appendingPathComponent("SKILL.md"), encoding: .utf8) == "# Demo\n")
-
-        _ = try executor.rollback(operationID: result.operationID)
+        #expect(throws: DeploymentError.unmanagedSkillConflict(".agents/skills/demo")) {
+            try fixture.makePlan()
+        }
         #expect(try String(contentsOf: existing.appendingPathComponent("SKILL.md"), encoding: .utf8) == "旧版本\n")
         #expect(!FileManager.default.fileExists(atPath: existing.appendingPathComponent("scripts/run.sh").path))
     }
@@ -389,10 +383,27 @@ struct SkillSetCoreTests {
         #expect(parsed.canonicalURL == "https://github.com/mattpocock/skills")
         #expect(parsed.namespace == "mattpocock-skills")
 
+        let enterprise = try service.parseSource("https://git.example.com/team/platform/skills.git")
+        #expect(enterprise.canonicalURL == "https://git.example.com/team/platform/skills")
+        #expect(enterprise.cloneURL == "https://git.example.com/team/platform/skills.git")
+        #expect(enterprise.namespace == "team-platform-skills")
+
+        let custom = try service.parseSource("https://git.xiezhi.xin/iamx/skill-set")
+        #expect(custom.cloneURL == "https://git.xiezhi.xin/iamx/skill-set.git")
+        let ssh = try service.parseSource("ssh://git@git.xiezhi.xin:2222/iamx/skill-set.git")
+        #expect(ssh.cloneURL == "ssh://git@git.xiezhi.xin:2222/iamx/skill-set.git")
+        let scp = try service.parseSource("git@gitlab.com:team/subgroup/skills.git")
+        #expect(scp.cloneURL == "ssh://git@gitlab.com/team/subgroup/skills.git")
+        #expect(throws: SourcePreviewError.self) {
+            try service.parseSource("https://git.example.com/team/../skills")
+        }
+        let shorthand = try service.parseSource("mattpocock/skills")
+        #expect(shorthand.canonicalURL == "https://github.com/mattpocock/skills")
+
         #expect(throws: SourcePreviewError.credentialsInURL) {
             try service.parseSource("https://user:token@github.com/mattpocock/skills")
         }
-        #expect(throws: SourcePreviewError.invalidURL("首版请输入仓库根链接，例如 https://github.com/owner/repo")) {
+        #expect(throws: SourcePreviewError.invalidURL("https://github.com/mattpocock/skills/tree/main/skills")) {
             try service.parseSource("https://github.com/mattpocock/skills/tree/main/skills")
         }
     }
@@ -402,7 +413,7 @@ struct SkillSetCoreTests {
         let service = SourcePreviewService(previewsRoot: FileManager.default.temporaryDirectory)
         for link in [
             "https://user:private-secret@github.com/owner/repo",
-            "https://untrusted.example/private-secret/repo",
+            "file:///private-secret/repo",
             "not-a-repository-private-secret"
         ] {
             do {
@@ -1345,7 +1356,7 @@ struct SkillSetCoreTests {
     }
 }
 
-private struct DeploymentFixture {
+struct DeploymentFixture {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("skillset-deploy-\(UUID().uuidString)", isDirectory: true)
     let operationID = UUID()
     let repository: URL
@@ -1393,7 +1404,6 @@ private struct DeploymentFixture {
             contentHash: expectedHash,
             fileCount: 2,
             bytes: skillData.count + scriptData.count,
-            wasSymlink: false,
             integrity: "snapshotted",
             issues: [],
             licenseReview: "required",
@@ -1406,14 +1416,20 @@ private struct DeploymentFixture {
         try? FileManager.default.removeItem(at: root)
     }
 
-    func makePlan() throws -> DeploymentPlan {
+    func makePlan(
+        skillIDs: [String] = ["workspace/demo"],
+        instructionIDs: [String] = ["base"],
+        agents: [String] = ["codex"],
+        catalogOverride: CatalogDocument? = nil
+    ) throws -> DeploymentPlan {
         try DeploymentPlanner(
-            catalog: catalog,
+            catalog: catalogOverride ?? catalog,
             repositoryRoot: repository,
-            stagingRoot: staging
+            stagingRoot: staging,
+            operationsRoot: operations
         ).makePlan(
             projectPath: project,
-            request: DeploymentRequest(skillIDs: ["workspace/demo"], instructionIDs: ["base"]),
+            request: DeploymentRequest(skillIDs: skillIDs, instructionIDs: instructionIDs, agents: agents),
             fragments: ["base": "只做受管内容"]
         )
     }

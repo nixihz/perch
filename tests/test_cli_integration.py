@@ -114,6 +114,51 @@ class CLIIntegrationTests(unittest.TestCase):
             )
             self.assertGreaterEqual(verified["checkedObjects"], 2)
 
+    def apply_selection(self, state, project_id, skill_ids):
+        plan = json.loads(self.run_cli(
+            state, "plan", project_id, "--skills", ",".join(skill_ids), "--json"
+        ).stdout)
+        self.run_cli(state, "approve", plan["planId"], "--digest", plan["digest"], "--json")
+        return json.loads(self.run_cli(
+            state, "apply", plan["planId"], "--digest", plan["digest"], "--json"
+        ).stdout)
+
+    def test_deselect_removes_only_managed_files_and_rollback_restores_them(self):
+        with tempfile.TemporaryDirectory(prefix="skillset-cli-remove-") as temporary:
+            root = Path(temporary)
+            state, project, project_id = self.bootstrap_project(root)
+            self.apply_selection(state, project_id, ["workspace/stc"])
+            neighbor = project / ".agents/skills/personal/SKILL.md"
+            neighbor.parent.mkdir()
+            neighbor.write_text("项目自己的技能\n", encoding="utf-8")
+            original = (project / ".agents/skills/stc/SKILL.md").read_bytes()
+            inspected = json.loads(self.run_cli(state, "inspect", project_id, "--json").stdout)
+            self.assertEqual(inspected["project"]["skillObservations"][0]["ownership"], "existing")
+            managed = next(item for item in inspected["project"]["skillObservations"]
+                           if item["relativePath"] == ".agents/skills/stc")
+            self.assertEqual(managed["ownership"], "managed")
+            removed = self.apply_selection(state, project_id, [])
+            self.assertFalse((project / ".agents/skills/stc").exists())
+            self.assertEqual(neighbor.read_text(), "项目自己的技能\n")
+            self.assertEqual(json.loads((project / "skillset.lock.json").read_text())["skills"], [])
+            self.run_cli(state, "rollback", removed["operationID"], "--json")
+            self.assertEqual((project / ".agents/skills/stc/SKILL.md").read_bytes(), original)
+            self.assertEqual(neighbor.read_text(), "项目自己的技能\n")
+
+    def test_unmanaged_collision_returns_a_conflict_without_writing(self):
+        with tempfile.TemporaryDirectory(prefix="skillset-cli-collision-") as temporary:
+            state, project, project_id = self.bootstrap_project(Path(temporary))
+            skill = project / ".agents/skills/stc/SKILL.md"
+            skill.parent.mkdir(parents=True)
+            skill.write_text("项目原有的技能\n", encoding="utf-8")
+            rejected = self.run_cli(
+                state, "plan", project_id, "--skills", "workspace/stc", "--json", check=False
+            )
+            self.assertEqual(rejected.returncode, 3)
+            self.assertEqual(json.loads(rejected.stdout)["error"]["code"], "SKILL_TARGET_CONFLICT")
+            self.assertEqual(skill.read_text(), "项目原有的技能\n")
+            self.assertFalse((project / "skillset.json").exists())
+
     def test_mcp_stdio_returns_only_jsonrpc_messages(self):
         with tempfile.TemporaryDirectory(prefix="skillset-mcp-test-") as temporary:
             state = Path(temporary) / "state"

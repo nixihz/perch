@@ -232,6 +232,11 @@ extension Cucumber: @retroactive StepImplementation {
             try nativeUI.pressCommandThree()
         }
 
+        When("按 Command-2") { _, _ in
+            let nativeUI = try XCTUnwrap(try XCTUnwrap(world).nativeUI)
+            try nativeUI.pressCommandTwo()
+        }
+
         When("在原生界面预览变更") { _, _ in
             try XCTUnwrap(world).previewNativeUIPlan()
         }
@@ -244,6 +249,23 @@ extension Cucumber: @retroactive StepImplementation {
             let title = try match.first(\.string)
             let nativeUI = try XCTUnwrap(try XCTUnwrap(world).nativeUI)
             try nativeUI.selectSidebarItem(title)
+        }
+
+        When("在原生界面点击按钮 {string}") { match, _ in
+            let label = try match.first(\.string)
+            let nativeUI = try XCTUnwrap(try XCTUnwrap(world).nativeUI)
+            try nativeUI.pressButton(label)
+        }
+
+        When("在原生界面点击标题文字 {string}") { match, _ in
+            let title = try match.first(\.string)
+            let nativeUI = try XCTUnwrap(try XCTUnwrap(world).nativeUI)
+            try nativeUI.clickDisclosureLabel(title: title, identifier: "skills.details")
+        }
+
+        When("在原生界面点击技能详情标题右侧的空白") { _, _ in
+            let nativeUI = try XCTUnwrap(try XCTUnwrap(world).nativeUI)
+            try nativeUI.clickDisclosureWhitespace(title: "详细信息", identifier: "skills.details")
         }
 
         When("在原生界面搜索 {string}") { match, _ in
@@ -524,7 +546,7 @@ extension Cucumber: @retroactive StepImplementation {
             let current = try XCTUnwrap(world)
             let count = try XCTUnwrap(current.currentPlan).plan.changes.count
             XCTAssertTrue(
-                try XCTUnwrap(current.nativeUI).nonEditableTextContains("\(count) 个受管路径"),
+                try XCTUnwrap(current.nativeUI).nonEditableTextContains("\(count) 项内容"),
                 "二次确认没有说明变更数量"
             )
         }
@@ -584,6 +606,12 @@ extension Cucumber: @retroactive StepImplementation {
         Then("原生界面保存的部署计划为 {int} 个") { match, _ in
             let expected = try match.first(\.int)
             XCTAssertEqual(try XCTUnwrap(world).nativeUIPlanCount(), expected)
+        }
+
+        Then("原生界面登记的项目为 {int} 个") { match, _ in
+            let expected = try match.first(\.int)
+            let nativeUI = try XCTUnwrap(try XCTUnwrap(world).nativeUI)
+            XCTAssertEqual(try ProjectStore(rootURL: nativeUI.applicationSupportRoot).list().count, expected)
         }
 
         Then("原生界面的计划 digest 未改变") { _, _ in

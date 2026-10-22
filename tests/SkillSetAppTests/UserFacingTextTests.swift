@@ -5,6 +5,44 @@ import SkillSetCore
 @testable import SkillSetApp
 
 final class UserFacingTextTests: XCTestCase {
+    @MainActor
+    func testPlanSummariesExplainChangesWithoutRewritingActualDiffsOrPaths() {
+        let previousLanguage = AppPreferences.shared.language
+        AppPreferences.shared.language = .chinese
+        defer { AppPreferences.shared.language = previousLanguage }
+
+        let summaries = PlannedChange(
+            action: "update", relativePath: "AGENTS.md", beforeHash: "old", afterHash: "new",
+            unifiedDiff: "替换受管块 project-rules\n移除未漂移的受管技能 .agents/skills/review；操作备份可用于撤销"
+        )
+        let presented = UserFacingText.planSummary(summaries)
+        XCTAssertTrue(presented.contains("更新栖集维护的规则 project-rules"))
+        XCTAssertTrue(presented.contains(".agents/skills/review"))
+        XCTAssertTrue(presented.contains("操作备份恢复"))
+        XCTAssertFalse(presented.contains("受管"))
+
+        let rawDiff = "--- a/AGENTS.md\n+++ b/AGENTS.md\n-用户原文：受管块\n+用户原文：受管块 100% 保留"
+        let actualChange = PlannedChange(
+            action: "update", relativePath: "AGENTS.md", beforeHash: "old", afterHash: "new",
+            unifiedDiff: rawDiff
+        )
+        XCTAssertEqual(UserFacingText.planSummary(actualChange), rawDiff)
+    }
+
+    func testMCPStatusKeepsOwnershipSeparateFromLoadingAndRejectsUnknownInput() {
+        let managed = UserFacingText.mcpState("管理器受管")
+        let existing = UserFacingText.mcpState("仅观察")
+        XCTAssertTrue(managed.contains("栖集"))
+        XCTAssertFalse(managed.contains("已加载"))
+        XCTAssertTrue(existing.contains("已有配置"))
+        XCTAssertFalse(existing.contains("栖集"))
+
+        let unknown = UserFacingText.mcpState("loaded successfully private-token-123")
+        XCTAssertTrue(unknown.contains("待检查"))
+        XCTAssertFalse(unknown.contains("private-token"))
+        XCTAssertFalse(unknown.contains("已加载"))
+    }
+
     func testSystemErrorsOfferRecoveryWithoutEchoingUnderlyingText() {
         let secret = "private-token-123"
         let denied = NSError(

@@ -6,6 +6,56 @@ import SkillSetCore
 
 @MainActor
 final class NavigationLayoutTests: XCTestCase {
+    func testExistingProjectSkillStatusFitsMinimumWindowAndKeepsLastItemReachable() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("skillset-project-ui-\(UUID().uuidString)")
+        let variables = ["CFFIXED_USER_HOME", "SKILLSET_HOME", "CODEX_HOME"]
+        let saved = ProcessInfo.processInfo.environment
+        for variable in variables { setenv(variable, root.appendingPathComponent(variable).path, 1) }
+        defer {
+            for variable in variables {
+                if let value = saved[variable] { setenv(variable, value, 1) } else { unsetenv(variable) }
+            }
+            try? FileManager.default.removeItem(at: root)
+        }
+        let project = root.appendingPathComponent("project")
+        for index in 0..<24 {
+            let directory = project.appendingPathComponent(".agents/skills/project-skill-\(index)")
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try "# 项目原有技能 \(index)\n".write(to: directory.appendingPathComponent("SKILL.md"), atomically: true, encoding: .utf8)
+        }
+        let model = AppModel(runtimePaths: SkillSetRuntimePaths(applicationSupportRoot: root.appendingPathComponent("state"), repositoryRoot: nil))
+        XCTAssertTrue(model.registerProject(project, name: "已有技能核对"))
+        let projectID = try XCTUnwrap(model.selectedProject?.id)
+        XCTAssertEqual(model.projectSkillObservations[projectID]?.count, 24)
+        XCTAssertTrue(model.projectSkillObservations[projectID]?.allSatisfy { $0.ownership == "existing" } == true)
+        let controller = NSHostingController(rootView: ContentView(model: model))
+        let window = makeWindow(controller, size: NSSize(width: 1080, height: 700))
+        defer { window.close() }
+        for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+            window.appearance = NSAppearance(named: appearance)
+            try await settle(controller.view)
+            XCTAssertLessThanOrEqual(controller.view.fittingSize.height, 701)
+            let sidebar = try sidebarTable(in: controller.view)
+            let detail = try XCTUnwrap(descendants(of: controller.view).compactMap { $0 as? NSScrollView }.first { $0 !== sidebar.enclosingScrollView })
+            assertInsideWindow(detail, window: window, context: "项目技能现状")
+            let document = try XCTUnwrap(detail.documentView)
+            XCTAssertGreaterThan(document.bounds.height, detail.contentView.bounds.height)
+            detail.contentView.scroll(to: NSPoint(x: 0, y: document.bounds.maxY - detail.contentView.bounds.height))
+            detail.reflectScrolledClipView(detail.contentView)
+            XCTAssertEqual(detail.documentVisibleRect.maxY, document.bounds.maxY, accuracy: 1)
+            detail.contentView.scroll(to: .zero)
+            detail.reflectScrolledClipView(detail.contentView)
+            if appearance == .aqua {
+                let bitmap = try XCTUnwrap(controller.view.bitmapImageRepForCachingDisplay(in: controller.view.bounds))
+                controller.view.cacheDisplay(in: controller.view.bounds, to: bitmap)
+                let png = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+                try png.write(to: URL(fileURLWithPath: "/tmp/skillset-project-integration.png"))
+            }
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: project.appendingPathComponent("skillset.json").path))
+        XCTAssertEqual(try String(contentsOf: project.appendingPathComponent(".agents/skills/project-skill-23/SKILL.md"), encoding: .utf8), "# 项目原有技能 23\n")
+    }
+
     func testPageHeaderDoesNotInflateSplitViewMinimumHeight() async throws {
         let controller = NSHostingController(rootView:
             NavigationSplitView {
