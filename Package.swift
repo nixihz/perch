@@ -14,6 +14,7 @@ let package = Package(
         .executable(name: "skillset", targets: ["SkillSetCLI"])
     ],
     dependencies: [
+        .package(url: "https://github.com/sparkle-project/Sparkle.git", exact: "2.10.0"),
         .package(url: "https://github.com/cucumberswift/cucumberswift.git", from: "6.7.0")
     ],
     targets: [
@@ -23,8 +24,12 @@ let package = Package(
         ),
         .executableTarget(
             name: "SkillSetApp",
-            dependencies: ["SkillSetCore"],
-            resources: [.process("Resources")]
+            dependencies: ["SkillSetCore", .product(name: "Sparkle", package: "Sparkle")],
+            resources: [.process("Resources")],
+            linkerSettings: [
+                // SwiftPM 不负责组装 .app，打包后从包内查找更新框架。
+                .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])
+            ]
         ),
         .executableTarget(
             name: "SkillSetCLI",

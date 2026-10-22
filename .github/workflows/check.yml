@@ -30,7 +30,7 @@ jobs:
       - name: Verify catalog snapshots
         run: python scripts/catalog.py verify
       - name: Test catalog and UI localization
-        run: python -m unittest tests.test_catalog tests.test_ui_localization -v
+        run: python -m unittest tests.test_catalog tests.test_ui_localization tests.test_update_packaging -v
       - name: Test kubeconfig manager
         run: |
           command -v kubectl
@@ -47,5 +47,7 @@ jobs:
         run: swift test
       - name: Build CLI and MCP server
         run: swift build --product skillset
+      - name: Package app with Sparkle and verify embedded MCP
+        run: ./script/build_and_run.sh --no-open
       - name: Run CLI and MCP integration tests
         run: python -m unittest tests.test_cli_integration -v
