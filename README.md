@@ -16,14 +16,21 @@ task app
 
 构建结果为 `dist/栖集.app`，Dock 显示“栖集”，英文名为 Perch；Bundle ID、`skillset` CLI 和原数据目录不变。启动后在原生窗口中使用：
 
+首次使用从「项目」开始：添加项目目录，选择 AI 工具，再选择技能和规则，或点「使用预设…」载入常用组合。点击「预览变更」核对目标文件，批准后才会写入。也可以先用空态中的「浏览技能库」「查看预设」了解现有内容。
+
+侧栏按「项目配置」「技能与规则」「AI 工具」分组，菜单栏「前往」提供相同入口与快捷键。详细信息的箭头、标题和整行空白均可展开、收起。
+
 - **项目**：登记本机目录，选择 Skills、agent 和规则片段，生成计划；审阅 digest 后写入 Codex `.agents/skills` / `AGENTS.md` 或 Claude Code `.claude/skills` / `CLAUDE.md`，并生成 `skillset.json` 与 `skillset.lock.json`。
-- **Skills**：按 namespace、来源、内容 hash 和完整性查看 150 条来源化记录。
+- **Skills**：搜索和阅读来源化技能，新增、编辑或移除本地技能；外部快照可“复制并编辑”及隐藏后恢复。本地技能保存在 Application Support 的 `skill-library/`，不会自动启用；选择到项目草稿后仍需生成并批准计划。
 - **MCP Servers**：读取 Codex TOML、Claude 项目与用户 JSON 中的真实连接；生成新增或受管配置计划，人工批准后写入并不启动 MCP 进程。
 - **Plugins**：读取本机 Claude Code / Codex 缓存、Claude 安装索引、Codex 配置和 manifest，展示安装状态、marketplace、revision、组件与 hooks 风险；为本机已发现插件生成 install / update / enable / disable / uninstall 计划。计划批准后才调用固定宿主 CLI，执行前复核状态、执行后回读并记录 operation。
-- **来源 / 预设 / 指令模板**：GitHub 仓库根可联网隔离预览并保存固定 commit；预设只生成项目草稿；规则片段分别写入目标宿主的 `AGENTS.md` / `CLAUDE.md` 受管块。
-- **AI 接入**：真实 `skillset mcp serve --transport stdio` 提供查询、预览和计划；AI 不能自我批准写入。
+- **来源 / 预设 / 规则片段**：GitHub 仓库根可联网预览并保存固定 commit，在技能旁点击“加入技能库…”可审阅正文与文件、修改本机标识并保存完整独立副本；保留附带文件和仓库许可，删除来源预览不影响已导入技能。导入后点击“前往项目”，选择技能、预览变更并批准写入。项目页可直接使用预设，预设页可选择项目或添加本机目录，载入前展示草稿中技能与规则的新增、保留、移除项；预设只生成项目草稿，真实写入仍需预览与批准；规则片段分别写入目标宿主的 `AGENTS.md` / `CLAUDE.md` 受管块。
+- **规则片段**：支持新增、按名称/说明/正文搜索、查看、编辑和删除；修改保存在本机，重启后保留。删除不会改动项目文件；草稿和预设中的失效引用可手动移除。应用到项目仍需预览和批准。
+- **AI 接入**：检查随 App 提供的 MCP 程序与运行资源，分别显示程序、Codex / Claude 用户级配置和宿主加载待验证状态；选择宿主后生成接入计划，本机审阅并批准后才写配置。真实 `skillset mcp serve --transport stdio` 提供查询、预览和计划；AI 不能自我批准写入。
 
 项目写入只发生在用户于计划 sheet 中二次确认后，并经过旧 hash 校验、staging、journal、离线对象核验和回读；CLI 的 `approve` 是显式本机人工动作。MCP 配置写入复用同一审批与事务层；Plugin 生命周期复用计划/审批/operation 模型，但外部宿主命令不伪装成可通用回滚的文件事务。Keychain 不读取，来源脚本、hooks、子模块和 postinstall 不执行。
+
+项目接入现在区分“项目已有”和“栖集管理”：相同内容保留原归属，同路径不同内容与受管内容漂移会阻塞。取消技能或宿主选择会规划移除未漂移的受管技能与规则块，并保存可撤销的备份；块外新增规则保留。旧锁没有本机管理记录时不自动接管，旧版待执行部署计划须重新生成。接入基线、恢复接入前状态和完整退出管理仍待实现，详见[项目接入设计](docs/specs/project-integration.md)。
 
 - 库存来自本仓真实 JSON：11 个自维护 + 139 个外部条目，共 150 条来源化记录。
 - `local-brian/ponytail-review` 的 5 条断链保留为 `blocked`，不猜测修复。
@@ -31,6 +38,8 @@ task app
 - 收录不等于启用；预览结果保存在本机 Application Support，不改变旧发现目录或项目。
 
 ## 本机 CLI 与 MCP
+
+桌面应用已接入 Sparkle 2.10.0，菜单和设置页提供检查更新。当前发布地址和公钥留空，在线更新尚未启用；配置、版本号、Release 打包与后续签名发布步骤见[在线更新说明](docs/sparkle-updates.md)。
 
 ```bash
 swift build --product skillset
@@ -64,7 +73,7 @@ stdio MCP 使用同一服务边界：
 | [架构](docs/specs/architecture.md) | 三种版本、来源解析、锁、宿主适配、部署事务与恢复 |
 | [MCP 与 CLI](docs/specs/mcp.md) | 工具、输入输出、人工审批、错误码和兼容门槛 |
 | [验收](docs/specs/acceptance.md) | M0–M4、失败路径和真实宿主验证 |
-| [BDD](docs/specs/bdd.md) | 中文 Gherkin 场景、执行边界，以及项目部署、来源预览、MCP 配置、Plugin 生命周期与原生 UI 切片；原生 UI 覆盖搜索空态、权限失败、表单和二次确认 |
+| [BDD](docs/specs/bdd.md) | 中文 Gherkin 场景、执行边界，以及项目部署、来源预览、MCP 配置、Plugin 生命周期与原生 UI 切片；原生 UI 覆盖首开任务引导、菜单导航、标题与空白展开、搜索空态、权限失败、表单和二次确认 |
 | [DESIGN.md](DESIGN.md) | 信息架构、字号、色彩、键盘、移动和动效约束 |
 
 ## 目录与版本
@@ -92,6 +101,7 @@ script/build_and_run.sh    构建并启动 dist/栖集.app
 | Skill | 一句话用途 |
 | --- | --- |
 | `skills/brian-working-style` | Brian 的长期协作约定：中文输出、基于真实信息推进任务，并补齐验证和交付文档。 |
+| `skills/cso` | gstack 的安全审计 Skill：基于证据审查代码、依赖、基础设施与 AI/Skill 供应链；v3 需要专用运行程序。[来源与安装依赖](skills/cso/SOURCE.md)。 |
 | `skills/humanizer-zh` | 去除文本中的 AI 生成痕迹（夸大的象征意义、宣传性语言、三段式法则、AI 词汇、公式化收尾等），使其更自然、更像人类书写。 |
 | `skills/kindle-pw2-eink` | 将越狱 Kindle Paperwhite 2 作为可恢复的全屏墨水屏：渲染灰度画面、通过 USB SSH 推送内容，并用 KUAL / FBInk 控制显示。 |
 | `skills/kubeconfig-manager` | 批量导入独立 kubeconfig，统一命名并预览冲突，支持凭据更新、备份恢复和 kubectx 切换。 |

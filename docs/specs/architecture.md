@@ -1,10 +1,12 @@
 # 原生架构与数据契约
 
-状态：Alpha 原生工作流切片（2026-10-21）。项目锁、离线对象、双宿主写入、来源预览、MCP 配置、Plugin 盘点与审批门控生命周期、CLI 与 stdio MCP 已实现；跨进程锁、marketplace 浏览和正式来源收录仍是目标设计。
+状态：Alpha 原生工作流切片（2026-10-22）。项目锁、离线对象、双宿主写入、来源预览与本机技能库导入、MCP 配置、Plugin 盘点与审批门控生命周期、CLI 与 stdio MCP 已实现；跨进程锁、marketplace 浏览和来源自动更新仍是目标设计。
 
 ## 1. 运行形态
 
 产品是 macOS `.app`，由 SwiftPM 构建、由 `script/build_and_run.sh` 生成 bundle 后通过 `/usr/bin/open -n` 启动。没有浏览器页面、WebView、localhost API 或常驻同步守护进程。
+
+CLI 随 App 放在 `Contents/Helpers/skillset`，与其 SwiftPM Core 资源一起打包；开发输出 `dist/skillset` 也携带同级资源。AI 接入页只检测程序和宿主配置，以用户级 MCP 计划连接宿主；不把资源存在、配置存在或 UI 已打开当作宿主已加载的证据。
 
 ```mermaid
 flowchart LR
@@ -30,6 +32,7 @@ Sources/SkillSetCore/
   FileTransaction.swift        staging、hash 门、journal、恢复与回滚
   PlanStore.swift              计划、有效期和人工审批
   ProjectInspection.swift      项目观察、漂移和受管块
+  ProjectOwnership.swift       本机归属收据、锁修订与计划读取依赖
   ProjectLock.swift            项目 manifest、锁文件与目标宿主
   SkillObjectStore.swift       内容寻址对象、核验与恢复
   MCPConfiguration.swift       Codex TOML / Claude JSON 扫描与受管块
@@ -51,6 +54,16 @@ Tests/SkillSetCoreTests/        Swift Testing 行为测试
 ```
 
 应用优先从仓库读取 JSON/Markdown，SwiftPM resources 只作回退；150 条 catalog 保持只读。项目草稿、计划、staging、operation 和来源预览写入 Application Support。所有部署写入经过 `SkillSetService`，UI、CLI 和 MCP 不各自实现安装逻辑。
+
+技能库编辑通过 `SkillLibraryStore` 保存到 Application Support `skill-library/`：`index.json` 记录 `personal/<slug>` 条目与外部隐藏条目，`packages/<uuid>/` 保存完整版本。每次编辑先复制旧包、替换 `SKILL.md`、计算部署同算法指纹，再原子切换索引；失败不修改旧索引或旧版本。删除只移除索引引用，历史包保留，外部条目可恢复隐藏。当前不提供跨进程编辑锁、历史版本恢复 UI 或缓存清理。
+
+`SkillSetService` 初始化时合并仓库 catalog 和本机索引；部署计划从索引解析本地包路径，仍由原计划审批、对象存储和文件事务落地。编辑不写 `registry/catalog.json`、`vendor/`、全局技能或项目配置。`SKILL.md` 编辑只提取 name、description 和 version 供展示，保留原文与未知字段，不宣称完成完整 YAML schema 校验。
+
+原生技能来源页通过列表标题的「＋」打开表单。编辑隔离预览时重新下载并固定版本，新记录保存成功后才移除旧记录；失败清理新隔离区并保留旧记录。删除仅按预览 UUID 移除 Application Support 内的对应目录，不使用记录中的 `workspacePath` 作为删除目标，不改内置来源或 catalog。`requestedRef` 可选字段保存用户填写的分支、标签或提交，兼容不含该字段的旧记录。
+
+来源导入经 `SkillSetService.sourceSkillImportDraft` / `importSourceSkill` 进入本机技能库。目录只从预览 UUID 和已扫描的相对路径推导，不信任 `workspacePath`；拒绝越界、目录软链替换及有完整性问题的候选。审阅和提交分别核对预览指纹与仓库根许可文件摘要，复制后再次验证原始包指纹。包中的 Git 数据不导入；仓库根 LICENSE / LICENCE / COPYING / NOTICE 文件保存在独立的 `_source_licenses` 目录（重名时追加下划线）。索引原子发布前失败会清理新包，既有同标识技能不可覆盖。
+
+导入条目使用 `personal/<slug>`，可在导入表单修改标识；`LibrarySkillRecord.sourceOrigin` 保存仓库、固定 commit、原始相对路径、原始包指纹、许可线索和许可摘要。该可选字段兼容旧索引，本机编辑保留原始来源证据。部署指纹按最终包重新计算，包括保存的许可文件。预览删除或替换后，独立技能包仍可阅读、编辑并通过原部署计划部署；不自动更新已导入技能，不将导入等同于许可审核或项目启用。
 
 ## 3. 共享仓与本机状态
 
@@ -91,7 +104,13 @@ Plugin lifecycle 复用 `DeploymentPlan` / `DeploymentPlanStore`，但执行器�
 
 ### ProjectBinding / PresetRevision
 
-ProjectBinding 以本机 canonical realpath + UUID 注册，包含目标 agent、scope、desired、managed observed 和 inherited observed。两个 Git worktree 可分别注册。PresetRevision 只引用具体 Skill/Plugin/MCP revision 和规则 fragment，不使用 `latest`；应用预设只生成项目草稿。
+ProjectBinding 以本机 canonical realpath + UUID 注册，包含目标 agent、scope、desired、managed observed 和 inherited observed。两个 Git worktree 可分别注册。PresetRevision 的仓库资源文件保持只读，本机 `presets.json` 保存 UI 新建和编辑的组合，初始组合通过同标识本机覆盖编辑；兼容旧版仅含技能与规则的 JSON。插件保存宿主、scope、标识、manifest digest 与可选 source revision，不保存缓存路径；载入与计划时重新解析本机清单并核对摘要。MCP 保存结构化连接草稿（含参数、环境变量名称），不从宿主观察中复制已收起的参数。规则使用现有 fragment，写入 AGENTS.md / CLAUDE.md 受管块。
+
+应用预设只更新项目本机草稿；草稿同时保存 `plugins`、`mcpServers`，旧文档缺字段时读取为空，普通技能/宿主保存保留这两类内容。相同标识下的配置或插件摘要变化在 UI 标为更新。用户随后从项目页分别生成技能与规则部署、MCP 配置、插件生命周期计划；各计划沿用原有审批和执行器，不提供批量批准，不把从草稿移除解释为卸载。用户作用域会影响同宿主全部项目，UI 必须就近说明。
+
+### AGENTS 片段库
+
+本机 `templates.json` 保存用户片段、内置片段的同标识覆盖和删除记录，不改写仓库及 bundled resources。App 与 CLI/MCP 的 snapshot 合并同一片段库；用户输入的名称、说明和正文保留原文，内置名称与说明由界面翻译。保存校验名称、正文大小、重复名称及保留标记；文件损坏时拒绝覆写。删除不改项目和引用，失效引用在编辑界面提供移除入口，部署计划必须拒绝未知片段。既有计划内容与 digest 不因片段库变化而改变。
 
 ### Plan / Operation
 
@@ -115,6 +134,8 @@ applied → rollback-planned → approved → rolled-back / conflict
 5. 回读实际内容和权限，更新 operation（已实现）。
 
 多文件、多目录不宣称原子。中断后的下一次启动先处理 journal；rollback 只恢复仍等于管理器上次写入值的文件，发现用户新编辑立即停止。
+
+取消技能或宿主通过 `remove` 计划执行：校验旧指纹、备份、记录临时移走路径、rename 后确认目标不存在，再逐步写 journal。移除步骤的 `afterHash` 为空；rollback 从备份恢复，不需要伪造空目录 staging。恢复前预检已应用步骤的当前值、备份和恢复临时路径；恢复过程中逐步持久化 `rolling-back` / `restoring` / `rolled-back`，重启后可续办。预检不消除跨进程竞争，完整故障注入仍待补齐。
 
 Plugin 状态机：
 
@@ -142,6 +163,10 @@ observed → planned → approved → applying
 无标记时 plan 提议追加；一对完整标记只替换块；重复、交叉、缺尾或软链目标阻塞。块外 bytes 保留。当前实现可同时部署 Codex `.agents/skills` / `AGENTS.md` 与 Claude `.claude/skills` / `CLAUDE.md`，项目锁记录两个目标。祖先规则、`AGENTS.override.md`、Claude 加载链和会话重载仍是适配器设计。
 
 默认部署为实体 copy；link 只能指向管理器不可变 store。外部来源、项目目标和宿主配置不允许通过任意 symlink 越界。
+
+归属依据是本机已完成 operation 的 `ownershipReceipt`，包含对应锁指纹、逐路径技能指纹和逐规则块正文指纹。锁的可选 `managementRevision` 给每次实际部署分配独立身份，避免同内容的不同部署历史误配收据；无变更时沿用原身份。项目锁和相同内容均不能单独证明归属，旧锁无本机收据时不自动接管或删除。项目计划记录 manifest、锁、所选/待移除路径与规则文件的读取依赖，执行前一起复核；旧版缺失收据与读取依赖的部署计划必须重新生成。
+
+规则只校验受管块正文是否漂移，因此块外新增内容可以在新计划中保留；同标记且无归属的规则块不会被移除，正文不同则阻塞替换。取消宿主或更换受管块 ID 也要规划旧块清理。完整接入与退出管理边界见 [项目接入设计](project-integration.md)。
 
 ## 7. 安全边界
 

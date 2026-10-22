@@ -31,11 +31,19 @@
 | `plugin_lifecycle_plan` | `host`、`pluginId`、`action`、`projectId?`、`scope?`、`manifestDigest?`、`keepData?` | 为已发现的本机插件生成固定宿主命令计划；风险和批准仍留在本机 | false / false / false |
 
 工具数量与名称由 `tools/list` 决定，文档不替代运行时 schema。`sources_preview` 的幂等提示为 false，因为远端 ref 可能移动；保存的记录仍固定 resolved commit。
+
+项目摘要新增 `skillObservations`，逐项记录宿主、项目相对路径、可确定的技能 ID、`managed` / `existing` 归属及内容状态。观察不代表宿主已加载；旧锁缺少本机归属记录时按已有内容处理。`deployment_plan` 会生成取消选择后的受管移除步骤，未受管同路径冲突与受管漂移会阻塞；`SKILL_TARGET_CONFLICT`、`SKILL_MANAGED_DRIFT`、`RULE_TARGET_CONFLICT`、`RULE_MANAGED_DRIFT` 在 CLI 返回退出码 3。升级前缺少归属及读取依赖的待执行技能部署计划须重新生成。
 当前共 14 个工具。`plugin_lifecycle_plan` 不提供“风险确认”参数；安装或更新可能由宿主解析新包，因此 MCP 调用会返回 `PLUGIN_RISK_APPROVAL_REQUIRED`，必须转由本机 UI/CLI 生成计划。
 
 同一 `pluginId` 和 scope 有多个缓存版本时，AI 应先调用 `plugins_list`，再把目标记录的 `manifestDigest` 传给计划工具。缺失摘要返回 `PLUGIN_VERSION_AMBIGUOUS`，不会按目录顺序猜测。
 
 ## 3. 计划与人工授权
+
+AGENTS 片段的新建、编辑和删除只开放在本机 UI，保存到本机 `templates.json`；内置片段按同标识覆盖，删除记录在重启后继续生效。App、CLI 和 MCP 的部署计划共用合并后的片段库，长运行的 stdio 服务需重启以读取片段变更。片段删除不修改项目文件，也不静默移除草稿或预设引用；下次计划遇到失效引用会拒绝并要求重新选择。已经生成的计划保留生成时的内容和 digest，库编辑不改写既有计划；写项目仍需逐份预览和批准。不新增 MCP 片段写入工具。
+
+原生预设的新建与编辑只开放在本机 UI，保存本机组合并载入项目草稿，不新增 MCP 写入工具。插件与 MCP 组件仍分别通过既有计划工具和本机审批处理。
+
+原生技能库的新增、编辑与移除只开放在本机 UI，不新增 MCP 写入工具。`skills_search` 与部署计划在服务初始化时合并本机 `personal` 技能和隐藏条目；长运行的 stdio 服务需重启以载入新索引。技能保存不授予项目写入权限，部署仍须经过下述审批流程。
 
 ```text
 AI 调用 deployment_plan / mcp_config_plan / plugin_lifecycle_plan
@@ -64,15 +72,17 @@ AI 调用 deployment_apply(planId, planDigest)
 
 `sources_preview` 和 CLI `sources preview` 共用 `SourcePreviewService`：
 
-- 只接受 `https://github.com/<owner>/<repo>` 仓库根，拒绝 URL 用户名、密码和未知 host。
+- 接受 HTTPS/SSH Git 仓库 URL、GitHub `owner/repo` 简写及 GitLab 子组等多级路径；拒绝 URL 凭据、查询片段、路径穿越和不受支持的 scheme。
 - clone 使用 `--depth 1 --single-branch --no-recurse-submodules`，关闭 hooks 和 fsmonitor，跳过 LFS smudge。
 - 可选 ref 通过 `git fetch --depth 1 origin <ref>` 和 detached checkout 固定；ref 拒绝控制字符和以 `-` 开头的值。
 - 扫描最多 12,000 个文件、512 MiB；解引用仍位于 checkout 根内的目录软链，越界和循环不跟随。
 - 只读取文本和计算内容指纹，不执行 scripts、hooks、postinstall、子模块或 archive 内容。
-- 候选按 promoted、in-progress、misc、deprecated 分类；许可文件只给迹象，不自动判定合规。
+- 预览记录兼容早期候选分类字段；原生 UI 按实际文件夹展示技能，不把目录名解释为成熟度或启用状态。许可文件只给迹象，不自动判定合规。
 - 预览保存到 Application Support `previews/<uuid>/`，不会修改 `registry/`、`vendor/` 或项目。
 
-正式“收录”和“启用”仍是后续功能，必须分别生成 catalog revision 和项目计划。
+原生 UI 另提供隔离预览的编辑与删除；编辑成功后替换旧预览，读取失败时保留旧记录。此交互没有新增 CLI 命令或 MCP 工具。
+
+原生 UI 已支持把逐项选择的来源技能完整加入本机技能库，保存独立版本和来源证据，不修改仓库 catalog/vendor。导入后通过项目计划选择、批准和写入，收录与项目使用分别操作。CLI / MCP 暂不提供来源导入工具；现有 `skills_search` 可在下一次服务初始化后读到本机导入条目。来源自动更新与共享仓的正式 revision 发布仍待实现。
 
 ## 5. CLI
 
@@ -112,6 +122,10 @@ skillset mcp plan --host codex|claude-code --scope project|user --name NAME --tr
 
 ## 6. 宿主接入
 
+原生 App 的“AI 接入”页检查 MCP 命令及其资源、显示各宿主的用户级配置目标，并提供“生成接入计划”。向导使用绝对命令路径，参数显式绑定与 App 相同的本机状态目录，找到仓库时一并绑定仓库路径；路径包含空格时仍保留独立参数。配置写入复用下述计划与批准流程，不自动安装全局命令，也不自动启动 MCP。页面可直接审阅 MCP 生成的待批准计划；配置存在只显示“宿主加载待验证”，真实宿主加载仍由用户重新加载后核对。
+
+App 内的 CLI 位于 `Contents/Helpers/skillset`，同目录包含 `SkillSet_SkillSetCore.bundle`；不得把 CLI 放在 `Contents/MacOS/skillset`，该路径在大小写不敏感文件系统上会命中 GUI 主程序 `SkillSet`。开发构建另提供 `dist/skillset` 及同级资源包。构建脚本通过 `script/verify_mcp_package.py` 将两种打包命令分别移至仓库外，清除资源覆盖变量，在含空格路径与隔离 state 下验证 initialize / tools/list。只检查文件存在不能替代运行验证。
+
 `mcp plan` 只生成 pending plan。用户在本机 App 或 CLI 批准后，apply 才会写宿主配置；Codex TOML 保留受管块外文本，Claude JSON 保留未知键和其他 server，`env` 只写 `${NAME}` 引用。管理器不会启动 MCP 进程或读取 token。Codex：
 
 ```toml
@@ -142,3 +156,7 @@ Claude 项目 `.mcp.json` 使用等价的 `mcpServers.skillset.command/args` 结
 - 跨进程项目锁、approval handle、idempotency key 和 operation 去重。
 - Plugin marketplace 搜索/浏览、依赖图求解、command-source 逐项确认和跨宿主 enable/update 能力矩阵；当前只操作本机已发现插件。
 - MCP 配置 ownership 漂移检测、OAuth / Keychain 健康检查和真实客户端加载验证。
+
+MCP 发现列表不展示 Codex 内部运行组件 `computer-use`、`node_repl`，也不把 TOML 的环境变量子表当作独立服务。过滤不删除配置，写入计划仍检查所有原始表的同名冲突；普通文档与第三方 MCP 服务继续展示。
+
+原生 MCP 页支持搜索、新增、编辑已有连接和删除。已有连接的编辑与删除是显式选择目标后的本机操作，允许处理非栖集写入的配置，仍须生成并批准文件计划；原 CLI/MCP 新增接口保持同名冲突保护。编辑固定名称、宿主、范围和 transport，保留未知键及凭据字段，参数默认保留、按需替换；暂不提供已有连接重命名、切换 transport 或凭据编辑。多行 TOML 参数替换无法安全处理时拒绝生成计划。删除移除对应 TOML 服务及其子表或 JSON 服务节点，保留其他服务；应用时沿用整文件旧 hash 校验。
