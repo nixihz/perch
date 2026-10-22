@@ -1,0 +1,112 @@
+# 测试与开发环境调用
+
+测试和开发环境使用独立的 `ad_test` / `adpoly_test` registry，通过 OA 用户鉴权，每次调用必须传 `--env 0`。具体 Test/Dev 环境由目标 IP 选择。
+
+## 1. 准备 OA 测试登录
+
+先按[初始化说明](initialization.md)准备 CLI、`SKILL_DIR` 和所需后台的 OpenAPI 规范。
+
+首次使用 OA 测试鉴权前，提示用户核对本机 hosts 映射；缺失时将以下记录加入 macOS/Linux 的 `/etc/hosts` 或 Windows 的 `C:\Windows\System32\drivers\etc\hosts`：
+
+```text
+47.101.50.188  test-work.km.com
+47.101.50.188  test-signin.qimao.com
+47.101.50.188  test-signin.qmniu.com
+47.100.203.244 cdn-oa.qimao.com
+47.101.50.188  cdn-oa-nuxt.qimao.com
+47.117.64.60   user-manage-center.qmniu.com
+```
+
+这些记录用于 OA 登录，会影响同名域名的全部访问。切回生产环境前恢复原有解析，尤其是 `user-manage-center.qmniu.com`。业务 API 的目标 IP 与下文 `Host` 参数用于接口调用，不替代 OA 登录域名的 hosts 映射。
+
+## 2. 同步测试 service
+
+规范已就绪后，按需选择一条命令：
+
+```bash
+apps-cli api sync adpoly_test --from-platform false --schema "$SKILL_DIR/assets/baize-admin-openapi.yaml" --base-url https://adpoly.qmniu.com/api --client-id adpoly-cli
+apps-cli api sync ad_test --from-platform false --schema "$SKILL_DIR/assets/pixiu-admin-openapi.yaml" --base-url https://ad.qmniu.com/api --client-id ad-cli
+```
+
+`--from-platform false` 固化 OA 用户鉴权来源。同步可能打开浏览器进行 OA 授权；保持 CLI 进程运行并等待用户完成登录。同步失败时停止，不把旧 registry 当作刷新成功。
+
+OA 用户会话按 service 独立保存。检查所选 service 的身份：
+
+```bash
+apps-cli api whoami adpoly_test
+apps-cli api whoami ad_test
+```
+
+平台的 `apps-cli whoami` 不能代替这里的 OA 会话检查。会话缺失或失效时，使用所选 service 的 `apps-cli api login <service>` 登录，再用 `api whoami` 确认。
+
+## 3. 选择环境 IP 和业务 Host
+
+以下映射来自 `/opt/workspace/dev-ops/nohost-commerce/rules/`（备份时间 2026-08-24）。该目录可用时，以对应 Rules 的 `host://` 配置为准；不可用时直接使用下表，无需安装 Nohost。维护 skill 时发现映射变更再更新本表。
+
+| service | 后台 | HTTP `Host` |
+| --- | --- | --- |
+| `ad_test` | 七猫广告后台 | `ad.qmniu.com` |
+| `adpoly_test` | 七小猫后台 | `adpoly.qmniu.com` |
+
+| 环境 | 目标 IP |
+| --- | --- |
+| Test-1 | `116.63.199.228` |
+| Test-2 | `122.9.74.246` |
+| Test-3 | `116.63.108.125` |
+| Test-4 | `116.63.107.112` |
+| Test-5 | `116.63.196.29` |
+| Dev-1 | `116.63.106.235` |
+| Dev-2 | `116.63.35.201` |
+
+将目标 IP 写入 `--base-url https://<IP>/api`，并传对应 service 的 `Host`。切换 Test/Dev 环境只需更换目标 IP，业务域名随 service 保持一致；无需为每个编号另建 registry。两个后台虽然指向相同环境 IP，也必须分别使用匹配 OA 应用的业务 Host。
+
+`--env 0` 只设置 URL 的 `env=0` 参数。灰度和预发布 Rules 没有这两个后台域名的 host 映射，需要先取得相应配置，不能套用上表。
+
+## 4. 调用示例
+
+### Test-3：七小猫广告位列表
+
+```bash
+apps-cli api describe adpoly_test AdUnit_AdUnitList
+apps-cli api adpoly_test AdUnit_AdUnitList \
+  --query '{"page":1,"page_size":20}' \
+  --env 0 \
+  --base-url https://116.63.108.125/api \
+  --header 'Host: adpoly.qmniu.com'
+```
+
+### Dev-1：七小猫经营报表
+
+```bash
+apps-cli api describe adpoly_test Report_QueryBusinessReport
+apps-cli api adpoly_test Report_QueryBusinessReport \
+  --query '{"year":2026,"aggregate_type":2}' \
+  --env 0 \
+  --base-url https://116.63.106.235/api \
+  --header 'Host: adpoly.qmniu.com'
+```
+
+### Test-1：七猫广告后台财务日收入
+
+```bash
+apps-cli api describe ad_test Report_AdProfitDailyIncomeList
+apps-cli api ad_test Report_AdProfitDailyIncomeList \
+  --query '{"start_date":"2026-07-01","end_date":"2026-07-03","page":1,"page_size":20}' \
+  --env 0 \
+  --base-url https://116.63.199.228/api \
+  --header 'Host: ad.qmniu.com'
+```
+
+其他接口也先 describe，再按返回的方法和参数构造调用；涉及写入时遵循 [SKILL.md](../SKILL.md) 的授权规则。
+
+## 常见错误
+
+| 现象 | 优先检查 |
+| --- | --- |
+| `access token app_name mismatch` | service、同步时的 client ID 和 HTTP Host 是否属于同一后台，尤其避免给 `adpoly_test` 传 `ad.qmniu.com`。 |
+| `access token invalid or expired: redis: nil` | 目标 IP 是否属于所选测试环境；再检查 OA 会话是否缺失或失效。 |
+| 返回的数据属于另一个 Test/Dev 环境 | 核对 `--base-url` 的 IP；`--env 0` 本身不会选择具体环境。 |
+| OA 浏览器登录失败 | 核对上述 OA hosts 映射与当前 service 的登录状态。 |
+| CLI 成功退出但响应包含业务错误 | 以业务响应判断结果，HTTP 200 也可能包含错误。 |
+
+CLI 对 HTTP 鉴权失败会自动刷新后重试一次。恢复会话或修正配置后最多重试原调用一次；仍失败时停止并报告脱敏错误。自动注入 OA Authorization，不手工复制 token。

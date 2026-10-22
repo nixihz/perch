@@ -1,0 +1,52 @@
+---
+name: admin-api-pixiu
+description: 使用 apps-cli 发现、描述和调用 Pixiu/Baize Admin API，支持初始化、生产 Bot 鉴权、测试 OA 鉴权和按目标 IP 选择 Test/Dev 环境。用于七猫广告后台、七小猫后台的接口查询、报表调用、参数说明和 registry 刷新。
+version: 1.4.12
+metadata:
+  qm_apps:
+    deferred_paths:
+      - assets/pixiu-admin-openapi.yaml
+      - assets/baize-admin-openapi.yaml
+---
+
+# 商业化后台接口 CLI
+
+将本 skill 所在目录记为 `SKILL_DIR`。所有 registry 同步、接口发现和调用都通过 `apps-cli api` 完成。
+
+## 按需阅读
+
+只读取当前任务需要的说明。用户只问能力或基础概念时直接说明，无需登录或调用业务接口；用户只要命令示例时，确认接口参数后给出命令。
+
+| 用户的问题或当前任务 | 参考说明 |
+| --- | --- |
+| 你有什么能力、支持哪些后台、service 和 operationId 是什么 | [能力与基础概念](references/capabilities.md) |
+| 如何初始化、安装 CLI、登录平台、下载规范、刷新 registry | [初始化与缓存](references/initialization.md) |
+| 如何同步或调用生产环境、生产鉴权失败 | [生产环境调用](references/production.md) |
+| 如何同步或调用 Test/Dev 环境、绑定 OA hosts、选择环境 IP、处理测试鉴权错误 | [测试与开发环境调用](references/test-environments.md) |
+
+## 服务与调用规则
+
+| service | 后台      | 环境与鉴权 | 调用参数 |
+| --- |---------| --- | --- |
+| `pixiu` | 七猫广告后台  | 生产，QM Apps Bot | `--env 1` |
+| `baize` | 七小猫联盟后台 | 生产，QM Apps Bot | `--env 1` |
+| `ad_test` | 七猫广告后台  | 测试/开发，OA 用户 | `--env 0` |
+| `adpoly_test` | 七小猫联盟后台 | 测试/开发，OA 用户 | `--env 0` |
+
+测试 service 是独立 registry。`--env` 只设置 URL 的 `env` query 参数；具体 Test/Dev 环境由 `--base-url` 的目标 IP 选择，同时传 service 对应的业务 `Host`。IP 与 Host 映射以[测试与开发环境说明](references/test-environments.md)为准。
+
+## 工作流
+
+1. **确认任务。** 根据用户请求选择后台、环境和操作。调用测试环境前确认具体 Test/Dev 编号；当前上下文已明确时直接复用。
+
+2. **准备 CLI 与 registry。** 执行 `apps-cli version`，按[初始化说明](references/initialization.md)检查缓存。默认复用 registry，仅在缺失、超过 7 天或用户要求刷新时同步。下载规范或调用生产 API 前检查平台登录；测试同步与调用使用独立 OA 会话。同步成功退出且报告 operation 数量后才算完成。
+
+3. **定位接口。** 已知 operationId 时执行 `apps-cli api describe <service> <operationId>`；需要发现接口时执行 `apps-cli api list <service>`。根据 describe 确认 method、path、query 和 requestBody，不猜测接口名称与参数。`list` 和 `describe` 只读本地 registry，已有缓存时无需登录。用户只要求发现或描述接口时，到此完成。
+
+4. **组装调用。** Query 用 `--query`，requestBody 用 `--payload`。生产调用按[生产环境说明](references/production.md)执行；测试调用按[测试与开发环境说明](references/test-environments.md)执行。用户只要命令行示例时，给出命令即可。
+
+5. **执行与确认。** 只读调用可在用户请求范围内直接执行。会改变外部状态的调用，执行前展示 `service、env、目标 IP/Host（测试环境）、method、path、query/payload、预期影响`。用户已有授权覆盖当前操作时按授权范围执行，否则先获得明确确认。
+
+6. **判断结果并处理错误。** 同时检查 CLI 退出状态和响应内容，HTTP 200 也可能包含业务错误。按对应环境说明处理鉴权失败；修正配置或恢复会话后只重试原调用一次，仍失败时停止并报告脱敏错误。CLI 自动管理凭据，不打印 token 或完整 Authorization，也不为排错运行会输出凭据的 `apps-cli bot-token`。
+
+7. **报告结果。** 返回使用的 service、具体环境、operationId 和接口结果；同步或调用失败时指出失败阶段。命令示例与真实执行结果要明确区分，失败或旧缓存不报告为最新成功结果。

@@ -1,0 +1,47 @@
+# 能力与基础概念
+
+## 可以帮用户做什么
+
+通过 `apps-cli` 操作七猫广告后台（Pixiu）与七小猫后台（Baize）的 Admin API，覆盖生产环境和已配置的 Test/Dev 环境。
+
+| 能力 | 用户可以这样提问 |
+| --- | --- |
+| 初始化 CLI、登录、准备接口缓存 | “帮我初始化七小猫 Test-3 的调用环境。” |
+| 根据业务描述查找接口 | “找一个查看广告位列表的接口。” |
+| 解释接口参数和返回结构 | “描述 AdUnit_AdUnitList，告诉我怎么分页。” |
+| 生成可复制的调用命令 | “给我 Test-3 查询广告位列表的命令，我自己执行。” |
+| 实际查询数据或报表 | “帮我查询 Dev-1 七小猫 2026 年的经营报表。” |
+| 调用有权限的写入接口 | “先找到相关接口，说明这次变更的参数和影响。” |
+| 刷新接口缓存 | “刷新 baize 的 registry，看看有没有新增接口。” |
+| 排查调用失败 | “这个请求报 app_name mismatch，帮我检查配置。” |
+
+可调用的接口以当前 OpenAPI/registry 为准，可访问的数据和可执行的操作以当前账号权限为准。生产使用平台托管的 Bot 鉴权，测试与开发使用 OA 用户鉴权；两者身份和权限可能不同。
+
+用户只问能力、描述或命令示例时，提供说明即可。用户要求实际调用时，按 [SKILL.md](../SKILL.md) 的执行规则处理。
+
+## 常见术语
+
+| 名称 | 含义 |
+| --- | --- |
+| service | 本地接口注册名，决定使用哪份 registry 和鉴权配置；四个 service 见 [SKILL.md](../SKILL.md)。 |
+| OpenAPI 规范 | 描述接口方法、路径、参数、请求体与响应结构的文件，随 skill 托管、按需下载。 |
+| registry | `api sync` 从 OpenAPI 生成的本地接口缓存。同步 registry 不会部署后台代码。 |
+| operationId | 接口在规范中的标识，例如 `AdUnit_AdUnitList`；调用前通过 `api describe` 确认。 |
+| `--query` | JSON 格式的 URL 查询参数，例如分页参数。 |
+| `--payload` | JSON 格式的请求体；是否需要、包含哪些字段，以 describe 为准。 |
+| `--env` | 写入 URL 的 `env` 参数。团队约定生产传 `1`，测试与开发传 `0`。 |
+| `--base-url` | 覆盖本次 API 调用的基础地址，测试与开发用它指定环境 IP。 |
+| `--header 'Host: ...'` | 请求到指定 IP 时保留正确的业务后台域名。 |
+
+## 找到接口后怎么调用
+
+以已初始化的七小猫测试 service 为例：
+
+```bash
+apps-cli api list adpoly_test
+apps-cli api describe adpoly_test AdUnit_AdUnitList
+```
+
+`list` 用于找接口，`describe` 用于确认接口。广告位列表示例的查询参数包括 `page`、`page_size`；完整调用见[测试与开发环境说明](test-environments.md)。用户已给出 operationId 时直接 describe，无需先列出全部接口。
+
+首次使用见[初始化说明](initialization.md)；实际调用生产 API 见[生产环境说明](production.md)。本 skill 负责 API 调用，环境发布和数据库操作应使用相应工具或流程。

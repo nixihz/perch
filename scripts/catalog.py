@@ -196,7 +196,7 @@ def build_catalog(repo, source, allowed_roots, copy=False):
                 action = materialize(directory, destination, info, roots) if copy else "planned"
                 report["entries"].append({
                     "id": f"{namespace}/{directory.name}", "sourcePath": str(directory),
-                    "resolvedSourcePath": str(directory.resolve()), "wasSymlink": directory.is_symlink(),
+                    "resolvedSourcePath": str(directory.resolve()),
                     "destination": destination.relative_to(repo).as_posix(), **info,
                 })
             catalog["entries"].append({
@@ -206,7 +206,7 @@ def build_catalog(repo, source, allowed_roots, copy=False):
                 "metadataReview": meta["metadataReview"], "sourceId": namespace,
                 "path": destination.relative_to(repo).as_posix(), "contentHash": info["contentHash"],
                 "fileCount": len(info["files"]), "bytes": info["bytes"],
-                "wasSymlink": directory.is_symlink(), "integrity": "blocked" if info["issues"] else "snapshotted",
+                "integrity": "blocked" if info["issues"] else "snapshotted",
                 "issues": info["issues"], "licenseReview": "required",
                 "excludedPaths": ignored,
             })
@@ -271,7 +271,6 @@ def main():
         write_json(args.output, report)
     print(json.dumps({
         "catalogEntries": len(catalog["entries"]), "externalSkills": len(report["entries"]),
-        "topLevelSymlinks": sum(item["wasSymlink"] for item in report["entries"]),
         "issues": sum(len(item["issues"]) for item in report["entries"]),
         "blockedSkills": [entry["id"] for entry in catalog["entries"] if entry["integrity"] == "blocked"],
         "copiedBytes": sum(item["bytes"] for item in report["entries"]),

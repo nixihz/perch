@@ -1,0 +1,97 @@
+# 初始化与缓存
+
+## 初始化需要做什么
+
+按需完成：准备 CLI → 获取对应后台的 OpenAPI → 同步所选 service → describe 验证接口缓存。只初始化用户需要的后台和环境。
+
+生产 service 的同步与调用见[生产环境说明](production.md)；测试与开发还需要配置 OA 登录域名，见[测试与开发环境说明](test-environments.md)。
+
+下文的 `SKILL_DIR` 指安装后的 `admin-api-pixiu` 目录。Agent 应从当前 skill 文件位置确定它；用户手动执行时，先把示例路径替换为本机实际路径：
+
+```bash
+SKILL_DIR="/path/to/admin-api-pixiu"
+```
+
+命令示例使用 POSIX shell。Windows 上应在可运行 `sh` 的终端中执行下载脚本；OA hosts 文件路径另见测试环境说明。
+
+## 1. 准备 CLI
+
+先检查：
+
+```bash
+apps-cli version
+apps-cli --help
+```
+
+文档命令已按 `apps-cli 0.20.2` 核对。CLI 应支持 `api sync --from-platform`、调用时的 `--base-url` 和 `--header`；旧版缺少这些选项时先升级。
+
+命令不存在时先确认 `npm --version` 可用，说明将全局安装 QM Apps CLI，并按已有授权执行；尚未获授权时先取得同意：
+
+```bash
+npm install -g https://apps.qmniu.com/downloads/apps-cli/latest.tgz
+apps-cli version
+```
+
+已安装的旧版可使用：
+
+```bash
+apps-cli upgrade
+```
+
+npm 也不存在时，报告需要先安装 Node.js/npm，并按当前操作系统引导用户完成，不猜测包管理器。
+
+## 2. 按需检查平台登录
+
+下载规范（包括测试 service 的规范）或调用生产 API 前，执行：
+
+```bash
+apps-cli whoami
+```
+
+服务器应为 `https://apps.qmniu.com`，并显示当前用户 identity 和 authentication。未登录、会话失效或服务器不匹配时，在交互式终端启动：
+
+```bash
+apps-cli login --server https://apps.qmniu.com
+```
+
+CLI 会发起飞书 SSO 浏览器授权。保持进程运行，提示用户在浏览器完成登录和授权；不要提前终止或改用手工 Cookie。命令成功结束后再次执行 `apps-cli whoami`，核对服务器与身份，再报告已登录的 displayName/email。用户取消、登录失败或身份不符合预期时，停止相关操作并报告状态。
+
+本地规范已就绪时，测试同步与调用直接使用 OA 会话。平台 `whoami` 与测试 `api whoami <service>` 检查的是不同会话。
+
+## 3. 准备 OpenAPI 规范
+
+| 后台 | 对应 service | 规范文件 | 下载脚本参数 |
+| --- | --- | --- | --- |
+| 七猫广告后台 | `pixiu` / `ad_test` | `assets/pixiu-admin-openapi.yaml` | `pixiu` |
+| 七小猫后台 | `baize` / `adpoly_test` | `assets/baize-admin-openapi.yaml` | `baize` |
+
+规范是延迟资产，不进入普通安装索引。按需选择一条命令：
+
+```bash
+sh "$SKILL_DIR/scripts/download-openapi.sh" pixiu
+sh "$SKILL_DIR/scripts/download-openapi.sh" baize
+```
+
+已有非空文件时脚本直接复用。文件缺失时，需要平台登录且当前账号拥有该 skill 的访问权。脚本使用 `apps-cli download` 下载 `/skills/admin-api-pixiu/assets/...`，不改用 `curl` 或 `wget`。
+
+用户明确要求刷新接口缓存时，先强制下载所选后台的规范，再按对应环境说明同步 service。例如刷新七小猫规范：
+
+```bash
+sh "$SKILL_DIR/scripts/download-openapi.sh" baize --force
+```
+
+七猫广告后台使用同一脚本的 `pixiu --force`。下载失败时保留原始错误；确因未登录失败时，完成平台登录后只重试一次。
+
+## 4. 同步与检查 registry
+
+默认复用所选 service 的 registry，仅当缺失、修改时间超过 7 天或用户要求刷新时同步。生产同步使用 `--from-platform true`，测试同步使用 `--from-platform false`；完整命令分别见[生产环境](production.md)与[测试环境](test-environments.md)。
+
+缓存默认位于 `<用户主目录>/.apps-cli/api-registry/<service>.json`。可用以下命令检查四个 service 的缓存年龄，无需打印缓存内的内容：
+
+```bash
+node -e "const fs=require('fs'),os=require('os'),path=require('path'); for (const s of ['pixiu','baize','ad_test','adpoly_test']) { const p=path.join(os.homedir(),'.apps-cli','api-registry',s+'.json'); if (!fs.existsSync(p)) console.log(s,'missing'); else console.log(s,Math.floor((Date.now()-fs.statSync(p).mtimeMs)/86400000),'days old'); }"
+```
+
+只有 `api sync` 成功退出并报告已同步的 operation 数量后才算完成。失败时停止该服务流程，保留原 registry；旧缓存可读不代表此次同步成功。
+
+同步后用 `api describe` 确认需要的接口。`api list` 和 `api describe` 只读取本地 registry，已有缓存时无需登录。

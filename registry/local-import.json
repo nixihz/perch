@@ -14,7 +14,6 @@
       "id": "local-brian/002-daily-report",
       "sourcePath": "/opt/case/brian/skills/002-daily-report",
       "resolvedSourcePath": "/opt/case/brian/skills/002-daily-report",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/002-daily-report",
       "files": [
         {
@@ -34,7 +33,6 @@
       "id": "local-brian/admin-api-pixiu",
       "sourcePath": "/opt/case/brian/skills/admin-api-pixiu",
       "resolvedSourcePath": "/opt/case/brian/skills/admin-api-pixiu",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/admin-api-pixiu",
       "files": [
         {
@@ -108,7 +106,6 @@
       "id": "local-brian/agent-browser",
       "sourcePath": "/opt/case/brian/skills/agent-browser",
       "resolvedSourcePath": "/Users/brian/.config/magpie/library/skills/agent-browser",
-      "wasSymlink": true,
       "destination": "vendor/local-brian/agent-browser",
       "files": [
         {
@@ -134,7 +131,6 @@
       "id": "local-brian/ai-trading-bot",
       "sourcePath": "/opt/case/brian/skills/ai-trading-bot",
       "resolvedSourcePath": "/opt/case/brian/skills/ai-trading-bot",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/ai-trading-bot",
       "files": [
         {
@@ -160,7 +156,6 @@
       "id": "local-brian/animate",
       "sourcePath": "/opt/case/brian/skills/animate",
       "resolvedSourcePath": "/Users/brian/.config/magpie/library/skills/animate",
-      "wasSymlink": true,
       "destination": "vendor/local-brian/animate",
       "files": [
         {
@@ -192,7 +187,6 @@
       "id": "local-brian/animate-expo",
       "sourcePath": "/opt/case/brian/skills/animate-expo",
       "resolvedSourcePath": "/Users/brian/.config/magpie/library/skills/animate-expo",
-      "wasSymlink": true,
       "destination": "vendor/local-brian/animate-expo",
       "files": [
         {
@@ -224,7 +218,6 @@
       "id": "local-brian/animation-performance",
       "sourcePath": "/opt/case/brian/skills/animation-performance",
       "resolvedSourcePath": "/Users/brian/.config/magpie/library/skills/animation-performance",
-      "wasSymlink": true,
       "destination": "vendor/local-brian/animation-performance",
       "files": [
         {
@@ -250,7 +243,6 @@
       "id": "local-brian/animation-vocabulary",
       "sourcePath": "/opt/case/brian/skills/animation-vocabulary",
       "resolvedSourcePath": "/Users/brian/.config/magpie/library/skills/animation-vocabulary",
-      "wasSymlink": true,
       "destination": "vendor/local-brian/animation-vocabulary",
       "files": [
         {
@@ -276,7 +268,6 @@
       "id": "local-brian/animejs-animation",
       "sourcePath": "/opt/case/brian/skills/animejs-animation",
       "resolvedSourcePath": "/opt/case/brian/skills/animejs-animation",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/animejs-animation",
       "files": [
         {
@@ -296,7 +287,6 @@
       "id": "local-brian/app-platform-dev",
       "sourcePath": "/opt/case/brian/skills/app-platform-dev",
       "resolvedSourcePath": "/opt/case/brian/skills/app-platform-dev",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/app-platform-dev",
       "files": [
         {
@@ -352,7 +342,6 @@
       "id": "local-brian/apple-design",
       "sourcePath": "/opt/case/brian/skills/apple-design",
       "resolvedSourcePath": "/Users/brian/.config/magpie/library/skills/apple-design",
-      "wasSymlink": true,
       "destination": "vendor/local-brian/apple-design",
       "files": [
         {
@@ -378,7 +367,6 @@
       "id": "local-brian/apps-dev",
       "sourcePath": "/opt/case/brian/skills/apps-dev",
       "resolvedSourcePath": "/opt/case/brian/skills/apps-dev",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/apps-dev",
       "files": [
         {
@@ -404,7 +392,6 @@
       "id": "local-brian/ask-matt",
       "sourcePath": "/opt/case/brian/skills/ask-matt",
       "resolvedSourcePath": "/opt/case/brian/skills/ask-matt",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/ask-matt",
       "files": [
         {
@@ -436,7 +423,6 @@
       "id": "local-brian/ask-sonner",
       "sourcePath": "/opt/case/brian/skills/ask-sonner",
       "resolvedSourcePath": "/Users/brian/.config/magpie/library/skills/ask-sonner",
-      "wasSymlink": true,
       "destination": "vendor/local-brian/ask-sonner",
       "files": [
         {
@@ -468,7 +454,6 @@
       "id": "local-brian/bookmark",
       "sourcePath": "/opt/case/brian/skills/bookmark",
       "resolvedSourcePath": "/opt/case/brian/skills/bookmark",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/bookmark",
       "files": [
         {
@@ -494,7 +479,6 @@
       "id": "local-brian/break-ui",
       "sourcePath": "/opt/case/brian/skills/break-ui",
       "resolvedSourcePath": "/Users/brian/.config/magpie/library/skills/break-ui",
-      "wasSymlink": true,
       "destination": "vendor/local-brian/break-ui",
       "files": [
         {
@@ -526,7 +510,6 @@
       "id": "local-brian/charles-cli",
       "sourcePath": "/opt/case/brian/skills/charles-cli",
       "resolvedSourcePath": "/opt/case/brian/skills/charles-cli",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/charles-cli",
       "files": [
         {
@@ -564,7 +547,6 @@
       "id": "local-brian/code-review",
       "sourcePath": "/opt/case/brian/skills/code-review",
       "resolvedSourcePath": "/opt/case/brian/skills/code-review",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/code-review",
       "files": [
         {
@@ -590,7 +572,6 @@
       "id": "local-brian/codebase-design",
       "sourcePath": "/opt/case/brian/skills/codebase-design",
       "resolvedSourcePath": "/opt/case/brian/skills/codebase-design",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/codebase-design",
       "files": [
         {
@@ -628,7 +609,6 @@
       "id": "local-brian/context7-cli",
       "sourcePath": "/opt/case/brian/skills/context7-cli",
       "resolvedSourcePath": "/opt/case/brian/skills/context7-cli",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/context7-cli",
       "files": [
         {
@@ -666,7 +646,6 @@
       "id": "local-brian/db-dev-standards",
       "sourcePath": "/opt/case/brian/skills/db-dev-standards",
       "resolvedSourcePath": "/opt/case/brian/skills/db-dev-standards",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/db-dev-standards",
       "files": [
         {
@@ -872,7 +851,6 @@
       "id": "local-brian/deploy-test-env",
       "sourcePath": "/opt/case/brian/skills/deploy-test-env",
       "resolvedSourcePath": "/opt/case/brian/skills/deploy-test-env",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/deploy-test-env",
       "files": [
         {
@@ -904,7 +882,6 @@
       "id": "local-brian/design-taste-frontend",
       "sourcePath": "/opt/case/brian/skills/design-taste-frontend",
       "resolvedSourcePath": "/opt/case/brian/skills/design-taste-frontend",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/design-taste-frontend",
       "files": [
         {
@@ -924,7 +901,6 @@
       "id": "local-brian/diagnosing-bugs",
       "sourcePath": "/opt/case/brian/skills/diagnosing-bugs",
       "resolvedSourcePath": "/opt/case/brian/skills/diagnosing-bugs",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/diagnosing-bugs",
       "files": [
         {
@@ -956,7 +932,6 @@
       "id": "local-brian/dogfood",
       "sourcePath": "/opt/case/brian/skills/dogfood",
       "resolvedSourcePath": "/opt/case/brian/skills/dogfood",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/dogfood",
       "files": [
         {
@@ -988,7 +963,6 @@
       "id": "local-brian/domain-modeling",
       "sourcePath": "/opt/case/brian/skills/domain-modeling",
       "resolvedSourcePath": "/Users/brian/.config/magpie/library/skills/domain-modeling",
-      "wasSymlink": true,
       "destination": "vendor/local-brian/domain-modeling",
       "files": [
         {
@@ -1032,7 +1006,6 @@
       "id": "local-brian/dws",
       "sourcePath": "/opt/case/brian/skills/dws",
       "resolvedSourcePath": "/opt/case/brian/skills/dws",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/dws",
       "files": [
         {
@@ -1280,7 +1253,6 @@
       "id": "local-brian/emil-design-eng",
       "sourcePath": "/opt/case/brian/skills/emil-design-eng",
       "resolvedSourcePath": "/Users/brian/.config/magpie/library/skills/emil-design-eng",
-      "wasSymlink": true,
       "destination": "vendor/local-brian/emil-design-eng",
       "files": [
         {
@@ -1306,7 +1278,6 @@
       "id": "local-brian/find-animation-opportunities",
       "sourcePath": "/opt/case/brian/skills/find-animation-opportunities",
       "resolvedSourcePath": "/Users/brian/.config/magpie/library/skills/find-animation-opportunities",
-      "wasSymlink": true,
       "destination": "vendor/local-brian/find-animation-opportunities",
       "files": [
         {
@@ -1332,7 +1303,6 @@
       "id": "local-brian/find-docs",
       "sourcePath": "/opt/case/brian/skills/find-docs",
       "resolvedSourcePath": "/opt/case/brian/skills/find-docs",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/find-docs",
       "files": [
         {
@@ -1352,7 +1322,6 @@
       "id": "local-brian/frontend-design",
       "sourcePath": "/opt/case/brian/skills/frontend-design",
       "resolvedSourcePath": "/opt/case/brian/skills/frontend-design",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/frontend-design",
       "files": [
         {
@@ -1378,7 +1347,6 @@
       "id": "local-brian/generate-image-api",
       "sourcePath": "/opt/case/brian/skills/generate-image-api",
       "resolvedSourcePath": "/opt/case/brian/skills/generate-image-api",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/generate-image-api",
       "files": [
         {
@@ -1412,7 +1380,6 @@
       "id": "local-brian/ghost-admin",
       "sourcePath": "/opt/case/brian/skills/ghost-admin",
       "resolvedSourcePath": "/opt/case/brian/skills/ghost-admin",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/ghost-admin",
       "files": [
         {
@@ -1432,7 +1399,6 @@
       "id": "local-brian/git-clean-merged-branches",
       "sourcePath": "/opt/case/brian/skills/git-clean-merged-branches",
       "resolvedSourcePath": "/opt/case/brian/skills/git-clean-merged-branches",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/git-clean-merged-branches",
       "files": [
         {
@@ -1458,7 +1424,6 @@
       "id": "local-brian/git-commit-push",
       "sourcePath": "/opt/case/brian/skills/git-commit-push",
       "resolvedSourcePath": "/opt/case/brian/skills/git-commit-push",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/git-commit-push",
       "files": [
         {
@@ -1478,7 +1443,6 @@
       "id": "local-brian/graphify",
       "sourcePath": "/opt/case/brian/skills/graphify",
       "resolvedSourcePath": "/opt/case/brian/skills/graphify",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/graphify",
       "files": [
         {
@@ -1498,7 +1462,6 @@
       "id": "local-brian/grill-me",
       "sourcePath": "/opt/case/brian/skills/grill-me",
       "resolvedSourcePath": "/Users/brian/.config/magpie/library/skills/grill-me",
-      "wasSymlink": true,
       "destination": "vendor/local-brian/grill-me",
       "files": [
         {
@@ -1530,7 +1493,6 @@
       "id": "local-brian/grill-with-docs",
       "sourcePath": "/opt/case/brian/skills/grill-with-docs",
       "resolvedSourcePath": "/Users/brian/.config/magpie/library/skills/grill-with-docs",
-      "wasSymlink": true,
       "destination": "vendor/local-brian/grill-with-docs",
       "files": [
         {
@@ -1562,7 +1524,6 @@
       "id": "local-brian/grilling",
       "sourcePath": "/opt/case/brian/skills/grilling",
       "resolvedSourcePath": "/Users/brian/.config/magpie/library/skills/grilling",
-      "wasSymlink": true,
       "destination": "vendor/local-brian/grilling",
       "files": [
         {
@@ -1594,7 +1555,6 @@
       "id": "local-brian/gstack",
       "sourcePath": "/opt/case/brian/skills/gstack",
       "resolvedSourcePath": "/opt/case/brian/skills/gstack",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/gstack",
       "files": [
         {
@@ -1614,7 +1574,6 @@
       "id": "local-brian/handoff",
       "sourcePath": "/opt/case/brian/skills/handoff",
       "resolvedSourcePath": "/Users/brian/.config/magpie/library/skills/handoff",
-      "wasSymlink": true,
       "destination": "vendor/local-brian/handoff",
       "files": [
         {
@@ -1646,7 +1605,6 @@
       "id": "local-brian/hatch-pet",
       "sourcePath": "/opt/case/brian/skills/hatch-pet",
       "resolvedSourcePath": "/opt/case/brian/skills/hatch-pet",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/hatch-pet",
       "files": [
         {
@@ -1786,7 +1744,6 @@
       "id": "local-brian/humanizer-zh",
       "sourcePath": "/opt/case/brian/skills/humanizer-zh",
       "resolvedSourcePath": "/opt/case/brian/skills/humanizer-zh",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/humanizer-zh",
       "files": [
         {
@@ -1842,7 +1799,6 @@
       "id": "local-brian/i-have-adhd",
       "sourcePath": "/opt/case/brian/skills/i-have-adhd",
       "resolvedSourcePath": "/opt/case/brian/skills/i-have-adhd",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/i-have-adhd",
       "files": [
         {
@@ -1880,7 +1836,6 @@
       "id": "local-brian/implement",
       "sourcePath": "/opt/case/brian/skills/implement",
       "resolvedSourcePath": "/opt/case/brian/skills/implement",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/implement",
       "files": [
         {
@@ -1906,7 +1861,6 @@
       "id": "local-brian/implement-spec",
       "sourcePath": "/opt/case/brian/skills/implement-spec",
       "resolvedSourcePath": "/opt/case/brian/skills/implement-spec",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/implement-spec",
       "files": [
         {
@@ -1932,7 +1886,6 @@
       "id": "local-brian/improve-animations",
       "sourcePath": "/opt/case/brian/skills/improve-animations",
       "resolvedSourcePath": "/Users/brian/.config/magpie/library/skills/improve-animations",
-      "wasSymlink": true,
       "destination": "vendor/local-brian/improve-animations",
       "files": [
         {
@@ -1970,7 +1923,6 @@
       "id": "local-brian/improve-codebase-architecture",
       "sourcePath": "/opt/case/brian/skills/improve-codebase-architecture",
       "resolvedSourcePath": "/opt/case/brian/skills/improve-codebase-architecture",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/improve-codebase-architecture",
       "files": [
         {
@@ -2002,7 +1954,6 @@
       "id": "local-brian/keli-apps",
       "sourcePath": "/opt/case/brian/skills/keli-apps",
       "resolvedSourcePath": "/opt/case/brian/skills/keli-apps",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/keli-apps",
       "files": [
         {
@@ -2022,7 +1973,6 @@
       "id": "local-brian/keli-apps-clean-publish",
       "sourcePath": "/opt/case/brian/skills/keli-apps-clean-publish",
       "resolvedSourcePath": "/opt/case/brian/skills/keli-apps-clean-publish",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/keli-apps-clean-publish",
       "files": [
         {
@@ -2056,7 +2006,6 @@
       "id": "local-brian/lark-approval",
       "sourcePath": "/opt/case/brian/skills/lark-approval",
       "resolvedSourcePath": "/opt/case/brian/skills/lark-approval",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/lark-approval",
       "files": [
         {
@@ -2172,7 +2121,6 @@
       "id": "local-brian/lark-apps",
       "sourcePath": "/opt/case/brian/skills/lark-apps",
       "resolvedSourcePath": "/opt/case/brian/skills/lark-apps",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/lark-apps",
       "files": [
         {
@@ -2336,7 +2284,6 @@
       "id": "local-brian/lark-attendance",
       "sourcePath": "/opt/case/brian/skills/lark-attendance",
       "resolvedSourcePath": "/opt/case/brian/skills/lark-attendance",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/lark-attendance",
       "files": [
         {
@@ -2356,7 +2303,6 @@
       "id": "local-brian/lark-base",
       "sourcePath": "/opt/case/brian/skills/lark-base",
       "resolvedSourcePath": "/opt/case/brian/skills/lark-base",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/lark-base",
       "files": [
         {
@@ -2526,7 +2472,6 @@
       "id": "local-brian/lark-calendar",
       "sourcePath": "/opt/case/brian/skills/lark-calendar",
       "resolvedSourcePath": "/opt/case/brian/skills/lark-calendar",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/lark-calendar",
       "files": [
         {
@@ -2606,7 +2551,6 @@
       "id": "local-brian/lark-contact",
       "sourcePath": "/opt/case/brian/skills/lark-contact",
       "resolvedSourcePath": "/opt/case/brian/skills/lark-contact",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/lark-contact",
       "files": [
         {
@@ -2638,7 +2582,6 @@
       "id": "local-brian/lark-doc",
       "sourcePath": "/opt/case/brian/skills/lark-doc",
       "resolvedSourcePath": "/opt/case/brian/skills/lark-doc",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/lark-doc",
       "files": [
         {
@@ -2760,7 +2703,6 @@
       "id": "local-brian/lark-drive",
       "sourcePath": "/opt/case/brian/skills/lark-drive",
       "resolvedSourcePath": "/opt/case/brian/skills/lark-drive",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/lark-drive",
       "files": [
         {
@@ -3020,7 +2962,6 @@
       "id": "local-brian/lark-event",
       "sourcePath": "/opt/case/brian/skills/lark-event",
       "resolvedSourcePath": "/opt/case/brian/skills/lark-event",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/lark-event",
       "files": [
         {
@@ -3070,7 +3011,6 @@
       "id": "local-brian/lark-im",
       "sourcePath": "/opt/case/brian/skills/lark-im",
       "resolvedSourcePath": "/opt/case/brian/skills/lark-im",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/lark-im",
       "files": [
         {
@@ -3438,7 +3378,6 @@
       "id": "local-brian/lark-mail",
       "sourcePath": "/opt/case/brian/skills/lark-mail",
       "resolvedSourcePath": "/opt/case/brian/skills/lark-mail",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/lark-mail",
       "files": [
         {
@@ -3644,7 +3583,6 @@
       "id": "local-brian/lark-markdown",
       "sourcePath": "/opt/case/brian/skills/lark-markdown",
       "resolvedSourcePath": "/opt/case/brian/skills/lark-markdown",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/lark-markdown",
       "files": [
         {
@@ -3694,7 +3632,6 @@
       "id": "local-brian/lark-minutes",
       "sourcePath": "/opt/case/brian/skills/lark-minutes",
       "resolvedSourcePath": "/opt/case/brian/skills/lark-minutes",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/lark-minutes",
       "files": [
         {
@@ -3762,7 +3699,6 @@
       "id": "local-brian/lark-note",
       "sourcePath": "/opt/case/brian/skills/lark-note",
       "resolvedSourcePath": "/opt/case/brian/skills/lark-note",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/lark-note",
       "files": [
         {
@@ -3794,7 +3730,6 @@
       "id": "local-brian/lark-okr",
       "sourcePath": "/opt/case/brian/skills/lark-okr",
       "resolvedSourcePath": "/opt/case/brian/skills/lark-okr",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/lark-okr",
       "files": [
         {
@@ -3916,7 +3851,6 @@
       "id": "local-brian/lark-openapi-explorer",
       "sourcePath": "/opt/case/brian/skills/lark-openapi-explorer",
       "resolvedSourcePath": "/opt/case/brian/skills/lark-openapi-explorer",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/lark-openapi-explorer",
       "files": [
         {
@@ -3936,7 +3870,6 @@
       "id": "local-brian/lark-project-meegle",
       "sourcePath": "/opt/case/brian/skills/lark-project-meegle",
       "resolvedSourcePath": "/opt/case/brian/skills/lark-project-meegle",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/lark-project-meegle",
       "files": [
         {
@@ -3968,7 +3901,6 @@
       "id": "local-brian/lark-shared",
       "sourcePath": "/opt/case/brian/skills/lark-shared",
       "resolvedSourcePath": "/opt/case/brian/skills/lark-shared",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/lark-shared",
       "files": [
         {
@@ -3994,7 +3926,6 @@
       "id": "local-brian/lark-sheets",
       "sourcePath": "/opt/case/brian/skills/lark-sheets",
       "resolvedSourcePath": "/opt/case/brian/skills/lark-sheets",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/lark-sheets",
       "files": [
         {
@@ -4122,7 +4053,6 @@
       "id": "local-brian/lark-skill-maker",
       "sourcePath": "/opt/case/brian/skills/lark-skill-maker",
       "resolvedSourcePath": "/opt/case/brian/skills/lark-skill-maker",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/lark-skill-maker",
       "files": [
         {
@@ -4142,7 +4072,6 @@
       "id": "local-brian/lark-slides",
       "sourcePath": "/opt/case/brian/skills/lark-slides",
       "resolvedSourcePath": "/opt/case/brian/skills/lark-slides",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/lark-slides",
       "files": [
         {
@@ -4336,7 +4265,6 @@
       "id": "local-brian/lark-task",
       "sourcePath": "/opt/case/brian/skills/lark-task",
       "resolvedSourcePath": "/opt/case/brian/skills/lark-task",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/lark-task",
       "files": [
         {
@@ -4458,7 +4386,6 @@
       "id": "local-brian/lark-vc",
       "sourcePath": "/opt/case/brian/skills/lark-vc",
       "resolvedSourcePath": "/opt/case/brian/skills/lark-vc",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/lark-vc",
       "files": [
         {
@@ -4502,7 +4429,6 @@
       "id": "local-brian/lark-vc-agent",
       "sourcePath": "/opt/case/brian/skills/lark-vc-agent",
       "resolvedSourcePath": "/opt/case/brian/skills/lark-vc-agent",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/lark-vc-agent",
       "files": [
         {
@@ -4552,7 +4478,6 @@
       "id": "local-brian/lark-whiteboard",
       "sourcePath": "/opt/case/brian/skills/lark-whiteboard",
       "resolvedSourcePath": "/opt/case/brian/skills/lark-whiteboard",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/lark-whiteboard",
       "files": [
         {
@@ -4746,7 +4671,6 @@
       "id": "local-brian/lark-wiki",
       "sourcePath": "/opt/case/brian/skills/lark-wiki",
       "resolvedSourcePath": "/opt/case/brian/skills/lark-wiki",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/lark-wiki",
       "files": [
         {
@@ -4838,7 +4762,6 @@
       "id": "local-brian/lark-workflow-meeting-summary",
       "sourcePath": "/opt/case/brian/skills/lark-workflow-meeting-summary",
       "resolvedSourcePath": "/opt/case/brian/skills/lark-workflow-meeting-summary",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/lark-workflow-meeting-summary",
       "files": [
         {
@@ -4858,7 +4781,6 @@
       "id": "local-brian/lark-workflow-standup-report",
       "sourcePath": "/opt/case/brian/skills/lark-workflow-standup-report",
       "resolvedSourcePath": "/opt/case/brian/skills/lark-workflow-standup-report",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/lark-workflow-standup-report",
       "files": [
         {
@@ -4878,7 +4800,6 @@
       "id": "local-brian/likec4-dsl",
       "sourcePath": "/opt/case/brian/skills/likec4-dsl",
       "resolvedSourcePath": "/opt/case/brian/skills/likec4-dsl",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/likec4-dsl",
       "files": [
         {
@@ -5000,7 +4921,6 @@
       "id": "local-brian/llm-wiki",
       "sourcePath": "/opt/case/brian/skills/llm-wiki",
       "resolvedSourcePath": "/opt/case/brian/skills/llm-wiki",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/llm-wiki",
       "files": [
         {
@@ -5044,7 +4964,6 @@
       "id": "local-brian/loop-me",
       "sourcePath": "/opt/case/brian/skills/loop-me",
       "resolvedSourcePath": "/opt/case/brian/skills/loop-me",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/loop-me",
       "files": [
         {
@@ -5070,7 +4989,6 @@
       "id": "local-brian/managing-work-tasks",
       "sourcePath": "/opt/case/brian/skills/managing-work-tasks",
       "resolvedSourcePath": "/opt/case/brian/skills/managing-work-tasks",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/managing-work-tasks",
       "files": [
         {
@@ -5090,7 +5008,6 @@
       "id": "local-brian/meegle",
       "sourcePath": "/opt/case/brian/skills/meegle",
       "resolvedSourcePath": "/opt/case/brian/skills/meegle",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/meegle",
       "files": [
         {
@@ -5224,7 +5141,6 @@
       "id": "local-brian/minimax-multimodal-toolkit",
       "sourcePath": "/opt/case/brian/skills/minimax-multimodal-toolkit",
       "resolvedSourcePath": "/opt/case/brian/skills/minimax-multimodal-toolkit",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/minimax-multimodal-toolkit",
       "files": [
         {
@@ -5334,7 +5250,6 @@
       "id": "local-brian/minimax-t2i",
       "sourcePath": "/opt/case/brian/skills/minimax-t2i",
       "resolvedSourcePath": "/opt/case/brian/skills/minimax-t2i",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/minimax-t2i",
       "files": [
         {
@@ -5354,7 +5269,6 @@
       "id": "local-brian/mitmproxy-cli",
       "sourcePath": "/opt/case/brian/skills/mitmproxy-cli",
       "resolvedSourcePath": "/opt/case/brian/skills/mitmproxy-cli",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/mitmproxy-cli",
       "files": [
         {
@@ -5404,7 +5318,6 @@
       "id": "local-brian/mmx-cli",
       "sourcePath": "/opt/case/brian/skills/mmx-cli",
       "resolvedSourcePath": "/opt/case/brian/skills/mmx-cli",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/mmx-cli",
       "files": [
         {
@@ -5424,7 +5337,6 @@
       "id": "local-brian/mobile-native",
       "sourcePath": "/opt/case/brian/skills/mobile-native",
       "resolvedSourcePath": "/Users/brian/.config/magpie/library/skills/mobile-native",
-      "wasSymlink": true,
       "destination": "vendor/local-brian/mobile-native",
       "files": [
         {
@@ -5450,7 +5362,6 @@
       "id": "local-brian/modu-cli",
       "sourcePath": "/opt/case/brian/skills/modu-cli",
       "resolvedSourcePath": "/opt/case/brian/skills/modu-cli",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/modu-cli",
       "files": [
         {
@@ -5548,7 +5459,6 @@
       "id": "local-brian/multica-commerce",
       "sourcePath": "/opt/case/brian/skills/multica-commerce",
       "resolvedSourcePath": "/opt/case/brian/skills/multica-commerce",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/multica-commerce",
       "files": [
         {
@@ -5598,7 +5508,6 @@
       "id": "local-brian/oasis",
       "sourcePath": "/opt/case/brian/skills/oasis",
       "resolvedSourcePath": "/opt/case/brian/skills/oasis",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/oasis",
       "files": [
         {
@@ -5624,7 +5533,6 @@
       "id": "local-brian/open-code-review-delegate",
       "sourcePath": "/opt/case/brian/skills/open-code-review-delegate",
       "resolvedSourcePath": "/opt/case/brian/skills/open-code-review-delegate",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/open-code-review-delegate",
       "files": [
         {
@@ -5644,7 +5552,6 @@
       "id": "local-brian/pdf",
       "sourcePath": "/opt/case/brian/skills/pdf",
       "resolvedSourcePath": "/opt/case/brian/skills/pdf",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/pdf",
       "files": [
         {
@@ -5730,7 +5637,6 @@
       "id": "local-brian/pick-ui-library",
       "sourcePath": "/opt/case/brian/skills/pick-ui-library",
       "resolvedSourcePath": "/Users/brian/.config/magpie/library/skills/pick-ui-library",
-      "wasSymlink": true,
       "destination": "vendor/local-brian/pick-ui-library",
       "files": [
         {
@@ -5756,7 +5662,6 @@
       "id": "local-brian/pixiu-release-doc",
       "sourcePath": "/opt/case/brian/skills/pixiu-release-doc",
       "resolvedSourcePath": "/opt/case/brian/skills/pixiu-release-doc",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/pixiu-release-doc",
       "files": [
         {
@@ -5782,7 +5687,6 @@
       "id": "local-brian/ponytail",
       "sourcePath": "/opt/case/brian/skills/ponytail",
       "resolvedSourcePath": "/opt/case/brian/skills/ponytail",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/ponytail",
       "files": [
         {
@@ -5802,7 +5706,6 @@
       "id": "local-brian/ponytail-audit",
       "sourcePath": "/opt/case/brian/skills/ponytail-audit",
       "resolvedSourcePath": "/opt/case/brian/skills/ponytail-audit",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/ponytail-audit",
       "files": [
         {
@@ -5822,7 +5725,6 @@
       "id": "local-brian/ponytail-debt",
       "sourcePath": "/opt/case/brian/skills/ponytail-debt",
       "resolvedSourcePath": "/opt/case/brian/skills/ponytail-debt",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/ponytail-debt",
       "files": [
         {
@@ -5842,7 +5744,6 @@
       "id": "local-brian/ponytail-gain",
       "sourcePath": "/opt/case/brian/skills/ponytail-gain",
       "resolvedSourcePath": "/opt/case/brian/skills/ponytail-gain",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/ponytail-gain",
       "files": [
         {
@@ -5862,7 +5763,6 @@
       "id": "local-brian/ponytail-help",
       "sourcePath": "/opt/case/brian/skills/ponytail-help",
       "resolvedSourcePath": "/opt/case/brian/skills/ponytail-help",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/ponytail-help",
       "files": [
         {
@@ -5882,7 +5782,6 @@
       "id": "local-brian/ponytail-review",
       "sourcePath": "/opt/case/brian/skills/ponytail-review",
       "resolvedSourcePath": "/opt/case/brian/skills/ponytail-review",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/ponytail-review",
       "files": [
         {
@@ -5923,7 +5822,6 @@
       "id": "local-brian/pr",
       "sourcePath": "/opt/case/brian/skills/pr",
       "resolvedSourcePath": "/opt/case/brian/skills/pr",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/pr",
       "files": [
         {
@@ -5955,7 +5853,6 @@
       "id": "local-brian/prd",
       "sourcePath": "/opt/case/brian/skills/prd",
       "resolvedSourcePath": "/opt/case/brian/skills/prd",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/prd",
       "files": [
         {
@@ -6013,7 +5910,6 @@
       "id": "local-brian/project-guide",
       "sourcePath": "/opt/case/brian/skills/project-guide",
       "resolvedSourcePath": "/opt/case/brian/skills/project-guide",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/project-guide",
       "files": [
         {
@@ -6045,7 +5941,6 @@
       "id": "local-brian/prototype",
       "sourcePath": "/opt/case/brian/skills/prototype",
       "resolvedSourcePath": "/Users/brian/.config/magpie/library/skills/prototype",
-      "wasSymlink": true,
       "destination": "vendor/local-brian/prototype",
       "files": [
         {
@@ -6077,7 +5972,6 @@
       "id": "local-brian/q-front-hooks",
       "sourcePath": "/opt/case/brian/skills/q-front-hooks",
       "resolvedSourcePath": "/opt/case/brian/skills/q-front-hooks",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/q-front-hooks",
       "files": [
         {
@@ -6145,7 +6039,6 @@
       "id": "local-brian/q-front-package-bundling",
       "sourcePath": "/opt/case/brian/skills/q-front-package-bundling",
       "resolvedSourcePath": "/opt/case/brian/skills/q-front-package-bundling",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/q-front-package-bundling",
       "files": [
         {
@@ -6207,7 +6100,6 @@
       "id": "local-brian/q-front-utils-shared",
       "sourcePath": "/opt/case/brian/skills/q-front-utils-shared",
       "resolvedSourcePath": "/opt/case/brian/skills/q-front-utils-shared",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/q-front-utils-shared",
       "files": [
         {
@@ -6263,7 +6155,6 @@
       "id": "local-brian/q-front-vue3-antd-ui",
       "sourcePath": "/opt/case/brian/skills/q-front-vue3-antd-ui",
       "resolvedSourcePath": "/opt/case/brian/skills/q-front-vue3-antd-ui",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/q-front-vue3-antd-ui",
       "files": [
         {
@@ -6325,7 +6216,6 @@
       "id": "local-brian/qimao-apps",
       "sourcePath": "/opt/case/brian/skills/qimao-apps",
       "resolvedSourcePath": "/opt/case/brian/skills/qimao-apps",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/qimao-apps",
       "files": [
         {
@@ -6555,7 +6445,6 @@
       "id": "local-brian/qrspi-cli-workflow",
       "sourcePath": "/opt/case/brian/skills/qrspi-cli-workflow",
       "resolvedSourcePath": "/opt/case/brian/skills/qrspi-cli-workflow",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/qrspi-cli-workflow",
       "files": [
         {
@@ -6581,7 +6470,6 @@
       "id": "local-brian/research",
       "sourcePath": "/opt/case/brian/skills/research",
       "resolvedSourcePath": "/Users/brian/.config/magpie/library/skills/research",
-      "wasSymlink": true,
       "destination": "vendor/local-brian/research",
       "files": [
         {
@@ -6613,7 +6501,6 @@
       "id": "local-brian/retro",
       "sourcePath": "/opt/case/brian/skills/retro",
       "resolvedSourcePath": "/opt/case/brian/skills/retro",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/retro",
       "files": [
         {
@@ -6645,7 +6532,6 @@
       "id": "local-brian/review-animations",
       "sourcePath": "/opt/case/brian/skills/review-animations",
       "resolvedSourcePath": "/Users/brian/.config/magpie/library/skills/review-animations",
-      "wasSymlink": true,
       "destination": "vendor/local-brian/review-animations",
       "files": [
         {
@@ -6677,7 +6563,6 @@
       "id": "local-brian/sentry-cli",
       "sourcePath": "/opt/case/brian/skills/sentry-cli",
       "resolvedSourcePath": "/opt/case/brian/skills/sentry-cli",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/sentry-cli",
       "files": [
         {
@@ -6901,7 +6786,6 @@
       "id": "local-brian/setup-matt-pocock-skills",
       "sourcePath": "/opt/case/brian/skills/setup-matt-pocock-skills",
       "resolvedSourcePath": "/Users/brian/.config/magpie/library/skills/setup-matt-pocock-skills",
-      "wasSymlink": true,
       "destination": "vendor/local-brian/setup-matt-pocock-skills",
       "files": [
         {
@@ -6963,7 +6847,6 @@
       "id": "local-brian/show-user-text",
       "sourcePath": "/opt/case/brian/skills/show-user-text",
       "resolvedSourcePath": "/opt/case/brian/skills/show-user-text",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/show-user-text",
       "files": [
         {
@@ -6983,7 +6866,6 @@
       "id": "local-brian/star-history",
       "sourcePath": "/opt/case/brian/skills/star-history",
       "resolvedSourcePath": "/opt/case/brian/skills/star-history",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/star-history",
       "files": [
         {
@@ -7003,7 +6885,6 @@
       "id": "local-brian/stc",
       "sourcePath": "/opt/case/brian/skills/stc",
       "resolvedSourcePath": "/opt/case/brian/skills/stc",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/stc",
       "files": [
         {
@@ -7023,7 +6904,6 @@
       "id": "local-brian/story-review",
       "sourcePath": "/opt/case/brian/skills/story-review",
       "resolvedSourcePath": "/opt/case/brian/skills/story-review",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/story-review",
       "files": [
         {
@@ -7043,7 +6923,6 @@
       "id": "local-brian/taskfile-generator",
       "sourcePath": "/opt/case/brian/skills/taskfile-generator",
       "resolvedSourcePath": "/opt/case/brian/skills/taskfile-generator",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/taskfile-generator",
       "files": [
         {
@@ -7063,7 +6942,6 @@
       "id": "local-brian/tdd",
       "sourcePath": "/opt/case/brian/skills/tdd",
       "resolvedSourcePath": "/opt/case/brian/skills/tdd",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/tdd",
       "files": [
         {
@@ -7101,7 +6979,6 @@
       "id": "local-brian/teach",
       "sourcePath": "/opt/case/brian/skills/teach",
       "resolvedSourcePath": "/opt/case/brian/skills/teach",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/teach",
       "files": [
         {
@@ -7151,7 +7028,6 @@
       "id": "local-brian/teacher-homework-digest",
       "sourcePath": "/opt/case/brian/skills/teacher-homework-digest",
       "resolvedSourcePath": "/opt/case/brian/skills/teacher-homework-digest",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/teacher-homework-digest",
       "files": [
         {
@@ -7183,7 +7059,6 @@
       "id": "local-brian/tech-plan-fifteen-questions",
       "sourcePath": "/opt/case/brian/skills/tech-plan-fifteen-questions",
       "resolvedSourcePath": "/opt/case/brian/skills/tech-plan-fifteen-questions",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/tech-plan-fifteen-questions",
       "files": [
         {
@@ -7209,7 +7084,6 @@
       "id": "local-brian/to-questionnaire",
       "sourcePath": "/opt/case/brian/skills/to-questionnaire",
       "resolvedSourcePath": "/opt/case/brian/skills/to-questionnaire",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/to-questionnaire",
       "files": [
         {
@@ -7235,7 +7109,6 @@
       "id": "local-brian/to-spec",
       "sourcePath": "/opt/case/brian/skills/to-spec",
       "resolvedSourcePath": "/Users/brian/.config/magpie/library/skills/to-spec",
-      "wasSymlink": true,
       "destination": "vendor/local-brian/to-spec",
       "files": [
         {
@@ -7267,7 +7140,6 @@
       "id": "local-brian/to-tickets",
       "sourcePath": "/opt/case/brian/skills/to-tickets",
       "resolvedSourcePath": "/opt/case/brian/skills/to-tickets",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/to-tickets",
       "files": [
         {
@@ -7293,7 +7165,6 @@
       "id": "local-brian/tokenhubctl",
       "sourcePath": "/opt/case/brian/skills/tokenhubctl",
       "resolvedSourcePath": "/opt/case/brian/skills/tokenhubctl",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/tokenhubctl",
       "files": [
         {
@@ -7331,7 +7202,6 @@
       "id": "local-brian/tomd",
       "sourcePath": "/opt/case/brian/skills/tomd",
       "resolvedSourcePath": "/opt/case/brian/skills/tomd",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/tomd",
       "files": [
         {
@@ -7375,7 +7245,6 @@
       "id": "local-brian/triage",
       "sourcePath": "/opt/case/brian/skills/triage",
       "resolvedSourcePath": "/opt/case/brian/skills/triage",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/triage",
       "files": [
         {
@@ -7413,7 +7282,6 @@
       "id": "local-brian/vscode",
       "sourcePath": "/opt/case/brian/skills/vscode",
       "resolvedSourcePath": "/opt/case/brian/skills/vscode",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/vscode",
       "files": [
         {
@@ -7433,7 +7301,6 @@
       "id": "local-brian/wait-what",
       "sourcePath": "/opt/case/brian/skills/wait-what",
       "resolvedSourcePath": "/opt/case/brian/skills/wait-what",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/wait-what",
       "files": [
         {
@@ -7459,7 +7326,6 @@
       "id": "local-brian/wayfinder",
       "sourcePath": "/opt/case/brian/skills/wayfinder",
       "resolvedSourcePath": "/opt/case/brian/skills/wayfinder",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/wayfinder",
       "files": [
         {
@@ -7485,7 +7351,6 @@
       "id": "local-brian/wemedia-cli",
       "sourcePath": "/opt/case/brian/skills/wemedia-cli",
       "resolvedSourcePath": "/opt/case/brian/skills/wemedia-cli",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/wemedia-cli",
       "files": [
         {
@@ -7517,7 +7382,6 @@
       "id": "local-brian/wizard",
       "sourcePath": "/opt/case/brian/skills/wizard",
       "resolvedSourcePath": "/opt/case/brian/skills/wizard",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/wizard",
       "files": [
         {
@@ -7549,7 +7413,6 @@
       "id": "local-brian/write-swift",
       "sourcePath": "/opt/case/brian/skills/write-swift",
       "resolvedSourcePath": "/Users/brian/.config/magpie/library/skills/write-swift",
-      "wasSymlink": true,
       "destination": "vendor/local-brian/write-swift",
       "files": [
         {
@@ -7575,7 +7438,6 @@
       "id": "local-brian/writing-for-agents",
       "sourcePath": "/opt/case/brian/skills/writing-for-agents",
       "resolvedSourcePath": "/opt/case/brian/skills/writing-for-agents",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/writing-for-agents",
       "files": [
         {
@@ -7607,7 +7469,6 @@
       "id": "local-brian/yuanbao",
       "sourcePath": "/opt/case/brian/skills/yuanbao",
       "resolvedSourcePath": "/opt/case/brian/skills/yuanbao",
-      "wasSymlink": false,
       "destination": "vendor/local-brian/yuanbao",
       "files": [
         {
