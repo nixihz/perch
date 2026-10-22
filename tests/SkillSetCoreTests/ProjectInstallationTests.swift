@@ -3,11 +3,44 @@ import Testing
 @testable import SkillSetCore
 
 struct ProjectInstallationTests {
+    @Test func installationAfterRemovingLastHarnessUsesDefaultTargetAndRejectsExplicitEmptyTargets() throws {
+        let fixture = try InstallationFixture()
+        defer { fixture.cleanup() }
+        let first = try fixture.saveSkill("first")
+        let second = try fixture.saveSkill("second")
+        let service = try SkillSetService(paths: fixture.paths)
+        let initial = try service.makeInstallationPlan(projectID: fixture.registration.id, skillIDs: [first.id], agents: ["codex"])
+        _ = try service.approve(planID: initial.id, digest: initial.plan.digest)
+        _ = try service.apply(planID: initial.id, digest: initial.plan.digest)
+        let removal = try service.makeHarnessPlan(projectID: fixture.registration.id, agent: "codex", selection: nil)
+        _ = try service.approve(planID: removal.id, digest: removal.plan.digest)
+        _ = try service.apply(planID: removal.id, digest: removal.plan.digest)
+        #expect(!FileManager.default.fileExists(atPath: fixture.project.appendingPathComponent(".agents/skills/first").path))
+
+        #expect(throws: ProjectLockError.self) {
+            try service.makeInstallationPlan(projectID: fixture.registration.id, skillIDs: [second.id], agents: [])
+        }
+        #expect(try service.pendingPlans().isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: fixture.project.appendingPathComponent(".agents/skills/second").path))
+
+        let next = try service.makeInstallationPlan(projectID: fixture.registration.id, skillIDs: [second.id])
+        _ = try service.approve(planID: next.id, digest: next.plan.digest)
+        _ = try service.apply(planID: next.id, digest: next.plan.digest)
+        #expect(try String(contentsOf: fixture.project.appendingPathComponent(".agents/skills/second/SKILL.md"), encoding: .utf8).contains("name: second"))
+        #expect(!FileManager.default.fileExists(atPath: fixture.project.appendingPathComponent(".claude/skills/second").path))
+        let manifest = try #require(try ProjectLockStore(projectRoot: fixture.project, stateRoot: fixture.paths.applicationSupportRoot).loadManifest())
+        #expect(manifest.agents == ["codex"])
+        #expect(manifest.selection(for: "codex").skillIDs == [second.id])
+    }
+
     @Test func installsSkillsThenPresetWithoutRemovingExistingSkillsRulesOrHosts() throws {
         let fixture = try InstallationFixture()
         defer { fixture.cleanup() }
         let first = try fixture.saveSkill("first")
         let second = try fixture.saveSkill("second")
+        // 正常用户库从空片段开始，安装测试显式建立自己的规则输入。
+        let rule = TemplateRecord(id: "installation-rule", title: "安装规则", body: "安装后核对当前工具的配置。", purpose: "安装测试夹具", isLocal: true)
+        _ = try TemplateStore(rootURL: fixture.paths.applicationSupportRoot).save(rule, initial: [])
         let service = try SkillSetService(paths: fixture.paths)
         let initial = try service.makeInstallationPlan(projectPath: fixture.project.path, skillIDs: [first.id], agents: ["codex"])
         #expect(throws: DeploymentPlanStoreError.self) {
@@ -17,7 +50,7 @@ struct ProjectInstallationTests {
         _ = try service.approve(planID: initial.id, digest: initial.plan.digest)
         _ = try service.apply(planID: initial.id, digest: initial.plan.digest)
 
-        let preset = PresetRecord(id: "review", name: "审查组合", skills: [second.id], instructionFragments: ["base-zh"])
+        let preset = PresetRecord(id: "review", name: "审查组合", skills: [second.id], instructionFragments: [rule.id])
         _ = try fixture.presets.save(preset, initial: [])
         // 不重启服务，查询与安装都应采用 UI 刚保存的本机预设。
         #expect(try service.presets(query: "审查").map(\.id) == [preset.id])
@@ -28,14 +61,15 @@ struct ProjectInstallationTests {
         let manifest = try #require(try ProjectLockStore(projectRoot: fixture.project, stateRoot: fixture.paths.applicationSupportRoot).loadManifest())
         #expect(manifest.skills == [first.id, second.id])
         #expect(manifest.agents == ["claude-code", "codex"])
-        #expect(manifest.instructions == ["base-zh"])
-        for directory in [".agents", ".claude"] {
-            for slug in ["first", "second"] {
-                let document = try String(contentsOf: fixture.project.appendingPathComponent("\(directory)/skills/\(slug)/SKILL.md"), encoding: .utf8)
-                #expect(document.contains("name: \(slug)"))
-            }
-        }
-        #expect(try String(contentsOf: fixture.project.appendingPathComponent("CLAUDE.md"), encoding: .utf8).contains("skillset:begin"))
+        #expect(manifest.instructions == [rule.id])
+        #expect(try String(contentsOf: fixture.project.appendingPathComponent(".agents/skills/first/SKILL.md"), encoding: .utf8).contains("name: first"))
+        #expect(try String(contentsOf: fixture.project.appendingPathComponent(".claude/skills/second/SKILL.md"), encoding: .utf8).contains("name: second"))
+        #expect(!FileManager.default.fileExists(atPath: fixture.project.appendingPathComponent(".agents/skills/second").path))
+        #expect(!FileManager.default.fileExists(atPath: fixture.project.appendingPathComponent(".claude/skills/first").path))
+        #expect(manifest.selection(for: "codex").instructionIDs.isEmpty)
+        #expect(manifest.selection(for: "claude-code").instructionIDs == [rule.id])
+        #expect(try String(contentsOf: fixture.project.appendingPathComponent("CLAUDE.md"), encoding: .utf8).contains(rule.body))
+        #expect(!FileManager.default.fileExists(atPath: fixture.project.appendingPathComponent("AGENTS.md").path))
     }
 
     @Test func rejectsMissingAmbiguousUnregisteredTargetsAndUnknownPresetsWithoutPlans() throws {

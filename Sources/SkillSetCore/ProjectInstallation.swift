@@ -77,14 +77,29 @@ public extension SkillSetService {
             throw ProjectInstallationError.emptySelection
         }
         let current = try ProjectLockStore(projectRoot: URL(fileURLWithPath: project.canonicalPath), stateRoot: paths.applicationSupportRoot).loadManifest()
-        let selectedAgents = agents ?? current?.agents ?? (project.agents.isEmpty ? ["codex"] : project.agents)
+        let registeredAgents = project.agents.isEmpty ? ["codex"] : project.agents
+        let appliedAgents = current?.agents ?? []
+        let selectedAgents = agents ?? (appliedAgents.isEmpty ? registeredAgents : appliedAgents)
+        guard !selectedAgents.isEmpty else {
+            throw ProjectLockError.invalidManifest("至少选择一个目标 agent")
+        }
         // 保留已有宿主，安装不等同于取消其他宿主的配置。
         let targets = Array(Set((current?.agents ?? []) + selectedAgents)).sorted()
+        var independent = current?.resolvedHarnessSelections ?? [:]
+        for agent in selectedAgents {
+            let existing = independent[agent] ?? ProjectHarnessSelection()
+            independent[agent] = ProjectHarnessSelection(
+                skillIDs: existing.skillIDs + skillIDs + (preset?.skills ?? []),
+                instructionIDs: existing.instructionIDs + (preset?.instructionFragments ?? [])
+            )
+        }
         return try makePlan(
             projectID: project.id,
             skillIDs: Array(Set((current?.skills ?? []) + skillIDs + (preset?.skills ?? []))).sorted(),
             instructionIDs: Array(Set((current?.instructions ?? []) + (preset?.instructionFragments ?? []))).sorted(),
-            agents: targets, ruleBlockID: current?.ruleBlockID ?? "project-rules"
+            agents: targets, ruleBlockID: current?.ruleBlockID ?? "project-rules",
+            harnessSelections: independent,
+            onlyChangingAgent: selectedAgents.count == 1 ? selectedAgents.first : nil
         )
     }
 }

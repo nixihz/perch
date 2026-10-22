@@ -37,25 +37,49 @@ public enum ProjectLockError: Error, LocalizedError, Equatable, Sendable {
     }
 }
 
+/// 单一宿主的期望内容；共享旧格式只在读取时展开，不再让界面编辑互相覆盖。
+public struct ProjectHarnessSelection: Codable, Hashable, Sendable {
+    public var skillIDs: [String]
+    public var instructionIDs: [String]
+
+    public init(skillIDs: [String] = [], instructionIDs: [String] = []) {
+        self.skillIDs = Array(Set(skillIDs)).sorted()
+        self.instructionIDs = Array(Set(instructionIDs)).sorted()
+    }
+}
+
 public struct ProjectManifest: Codable, Hashable, Sendable {
     public let schemaVersion: Int
     public let agents: [String]
     public let skills: [String]
     public let instructions: [String]
     public let ruleBlockID: String
+    public let harnessSelections: [String: ProjectHarnessSelection]?
 
     public init(
         schemaVersion: Int = 1,
         agents: [String],
         skills: [String],
         instructions: [String],
-        ruleBlockID: String = "project-rules"
+        ruleBlockID: String = "project-rules",
+        harnessSelections: [String: ProjectHarnessSelection]? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.agents = Self.normalized(agents)
-        self.skills = Self.normalized(skills)
-        self.instructions = Self.normalized(instructions)
+        self.skills = Self.normalized(harnessSelections.map { $0.values.flatMap(\.skillIDs) } ?? skills)
+        self.instructions = Self.normalized(harnessSelections.map { $0.values.flatMap(\.instructionIDs) } ?? instructions)
         self.ruleBlockID = ruleBlockID
+        self.harnessSelections = harnessSelections
+    }
+
+    public var resolvedHarnessSelections: [String: ProjectHarnessSelection] {
+        harnessSelections ?? Dictionary(uniqueKeysWithValues: agents.map {
+            ($0, ProjectHarnessSelection(skillIDs: skills, instructionIDs: instructions))
+        })
+    }
+
+    public func selection(for agent: String) -> ProjectHarnessSelection {
+        resolvedHarnessSelections[agent] ?? ProjectHarnessSelection()
     }
 
     public var digest: String {
@@ -76,6 +100,13 @@ public struct ProjectManifest: Codable, Hashable, Sendable {
         }
         guard projectRuleBlockIsValid(ruleBlockID) else {
             throw ProjectLockError.invalidManifest("ruleBlockID 无效")
+        }
+        if let harnessSelections {
+            guard Set(harnessSelections.keys) == Set(agents),
+                  Set(harnessSelections.values.flatMap(\.skillIDs)) == Set(skills),
+                  Set(harnessSelections.values.flatMap(\.instructionIDs)) == Set(instructions) else {
+                throw ProjectLockError.invalidManifest("宿主选择与项目汇总不一致")
+            }
         }
         for agent in agents {
             guard AgentDeploymentAdapter.target(for: agent) != nil else {
@@ -136,7 +167,7 @@ public enum AgentDeploymentAdapter {
             }
             targets.append(target)
         }
-        guard !targets.isEmpty else {
+        guard !targets.isEmpty || manifest.harnessSelections?.isEmpty == true else {
             throw ProjectLockError.invalidManifest("至少选择一个目标 agent")
         }
         return targets

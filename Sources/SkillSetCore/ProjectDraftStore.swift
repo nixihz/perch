@@ -20,6 +20,7 @@ public struct ProjectDraft: Codable, Identifiable, Hashable, Sendable {
     public var agents: [String]
     public var plugins: [PresetPluginReference]
     public var mcpServers: [MCPConfigurationDraft]
+    public var harnessSelections: [String: ProjectHarnessSelection]?
     public var updatedAt: Date
 
     public var id: UUID { projectID }
@@ -31,15 +32,17 @@ public struct ProjectDraft: Codable, Identifiable, Hashable, Sendable {
         agents: [String] = ["codex"],
         updatedAt: Date,
         plugins: [PresetPluginReference] = [],
-        mcpServers: [MCPConfigurationDraft] = []
+        mcpServers: [MCPConfigurationDraft] = [],
+        harnessSelections: [String: ProjectHarnessSelection]? = nil
     ) {
         self.projectID = projectID
-        self.skillIDs = skillIDs
-        self.instructionIDs = instructionIDs
+        self.skillIDs = harnessSelections.map { Array(Set($0.values.flatMap(\.skillIDs))).sorted() } ?? skillIDs
+        self.instructionIDs = harnessSelections.map { Array(Set($0.values.flatMap(\.instructionIDs))).sorted() } ?? instructionIDs
         self.agents = agents
         self.updatedAt = updatedAt
         self.plugins = plugins
         self.mcpServers = mcpServers
+        self.harnessSelections = harnessSelections
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -50,6 +53,13 @@ public struct ProjectDraft: Codable, Identifiable, Hashable, Sendable {
         updatedAt = try c.decode(Date.self, forKey: .updatedAt)
         plugins = try c.decodeIfPresent([PresetPluginReference].self, forKey: .plugins) ?? []
         mcpServers = try c.decodeIfPresent([MCPConfigurationDraft].self, forKey: .mcpServers) ?? []
+        harnessSelections = try c.decodeIfPresent([String: ProjectHarnessSelection].self, forKey: .harnessSelections)
+    }
+
+    public var resolvedHarnessSelections: [String: ProjectHarnessSelection] {
+        harnessSelections ?? Dictionary(uniqueKeysWithValues: agents.map {
+            ($0, ProjectHarnessSelection(skillIDs: skillIDs, instructionIDs: instructionIDs))
+        })
     }
 }
 
@@ -90,7 +100,8 @@ public struct ProjectDraftStore {
         instructionIDs: some Sequence<String>,
         agents: some Sequence<String>,
         plugins: [PresetPluginReference]? = nil,
-        mcpServers: [MCPConfigurationDraft]? = nil
+        mcpServers: [MCPConfigurationDraft]? = nil,
+        harnessSelections: [String: ProjectHarnessSelection]? = nil
     ) throws -> ProjectDraft {
         var document = try loadDocument()
         let previous = document.drafts.first { $0.projectID == projectID }
@@ -101,7 +112,8 @@ public struct ProjectDraftStore {
             agents: normalized(agents),
             updatedAt: clock(),
             plugins: plugins ?? previous?.plugins ?? [],
-            mcpServers: mcpServers ?? previous?.mcpServers ?? []
+            mcpServers: mcpServers ?? previous?.mcpServers ?? [],
+            harnessSelections: harnessSelections
         )
         document.drafts.removeAll { $0.projectID == projectID }
         document.drafts.append(draft)

@@ -108,7 +108,9 @@ public enum ProjectInspector {
                 }
                 do {
                     let actualHash = try SkillAssetCopier.analyze(from: child, fileManager: fileManager).contentHash
+                    let hostSkillIDs = Set(state.manifest?.selection(for: target.agent).skillIDs ?? [])
                     let lockedMatches = lockedSkills.filter { skill in
+                        hostSkillIDs.contains(skill.id) &&
                         (skill.id.split(separator: "/").last.map(String.init) ?? "") == slug
                             && skill.contentHash == actualHash
                     }

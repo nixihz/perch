@@ -398,6 +398,7 @@ public struct DeploymentRequest: Hashable, Sendable {
     public var ruleBlockID: String
     public var adoptExistingSkills: Bool
     public var installMethod: SkillInstallMethod
+    public var harnessSelections: [String: ProjectHarnessSelection]?
 
     public init(
         skillIDs: [String] = [],
@@ -405,7 +406,8 @@ public struct DeploymentRequest: Hashable, Sendable {
         agents: [String] = ["codex"],
         ruleBlockID: String = "project-rules",
         installMethod: SkillInstallMethod = .copy,
-        adoptExistingSkills: Bool = false
+        adoptExistingSkills: Bool = false,
+        harnessSelections: [String: ProjectHarnessSelection]? = nil
     ) {
         self.skillIDs = skillIDs
         self.instructionIDs = instructionIDs
@@ -413,6 +415,7 @@ public struct DeploymentRequest: Hashable, Sendable {
         self.ruleBlockID = ruleBlockID
         self.adoptExistingSkills = adoptExistingSkills
         self.installMethod = installMethod
+        self.harnessSelections = harnessSelections
     }
 }
 
@@ -482,7 +485,8 @@ public struct DeploymentPlanner {
             agents: request.agents,
             skills: request.skillIDs,
             instructions: request.instructionIDs,
-            ruleBlockID: request.ruleBlockID
+            ruleBlockID: request.ruleBlockID,
+            harnessSelections: request.harnessSelections
         )
         try manifest.validated()
         let targets = try AgentDeploymentAdapter.targets(for: manifest)
@@ -505,9 +509,11 @@ public struct DeploymentPlanner {
             }
             return entry
         }
-        let duplicateSlugs = Dictionary(grouping: selected, by: \.slug).filter { $0.value.count > 1 }
-        guard duplicateSlugs.isEmpty else {
-            throw DeploymentError.invalidPlan
+        for target in targets {
+            let ids = Set(manifest.selection(for: target.agent).skillIDs)
+            let duplicateSlugs = Dictionary(grouping: selected.filter { ids.contains($0.id) }, by: \.slug)
+                .filter { $0.value.count > 1 }
+            guard duplicateSlugs.isEmpty else { throw DeploymentError.invalidPlan }
         }
 
         var instructionBodies: [(id: String, body: String)] = []
@@ -583,7 +589,7 @@ public struct DeploymentPlanner {
                 files: materialized.fileManifest
             ))
 
-            for target in targets {
+            for target in targets where manifest.selection(for: target.agent).skillIDs.contains(entry.id) {
                 let relativePath = "\(target.skillsRoot)/\(entry.slug)"
                 let destination = stage.appendingPathComponent(relativePath, isDirectory: true)
                 let afterHash: String
@@ -635,9 +641,13 @@ public struct DeploymentPlanner {
         }
 
         // 以受管路径差异处理取消技能和取消宿主，不能按裸名称删除外部内容。
-        let desiredPaths = Set(targets.flatMap { target in selected.map { "\(target.skillsRoot)/\($0.slug)" } })
+        let desiredPaths = Set(targets.flatMap { target in
+            selected.filter { manifest.selection(for: target.agent).skillIDs.contains($0.id) }
+                .map { "\(target.skillsRoot)/\($0.slug)" }
+        })
         let allowedOldPaths = Set((currentLock?.targets ?? []).flatMap { target in
-            (currentLock?.skills ?? []).map { "\(target.skillsRoot)/\($0.id.split(separator: "/").last ?? "")" }
+            (currentLock?.skills ?? []).filter { currentManifest?.selection(for: target.agent).skillIDs.contains($0.id) == true }
+                .map { "\(target.skillsRoot)/\($0.id.split(separator: "/").last ?? "")" }
         })
         for path in allowedOldPaths.sorted() where !desiredPaths.contains(path) && ownedSkills[path] == nil {
             let destination = projectRoot.appendingPathComponent(path)
@@ -665,10 +675,6 @@ public struct DeploymentPlanner {
             throw DeploymentError.invalidPlan
         }
 
-        let instructionBody = instructionBodies
-            .map(\.body)
-            .joined(separator: "\n\n")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
         var lockedInstructions: [LockedInstructionRevision] = []
         for instruction in instructionBodies {
             let data = Data(instruction.body.utf8)
@@ -697,6 +703,9 @@ public struct DeploymentPlanner {
             var updated = original
             var summaries: [String] = []
             let desiredTarget = targets.first { $0.instructionsFile == path }
+            let instructionIDs = Set(desiredTarget.map { manifest.selection(for: $0.agent).instructionIDs } ?? [])
+            let instructionBody = instructionBodies.filter { instructionIDs.contains($0.id) }
+                .map(\.body).joined(separator: "\n\n").trimmingCharacters(in: .whitespacesAndNewlines)
             var blockIDs = Set((currentLock?.targets ?? []).filter { $0.instructionsFile == path }.map(\.ruleBlockID))
             if let desiredTarget { blockIDs.insert(desiredTarget.ruleBlockID) }
             for id in blockIDs.sorted() {

@@ -339,12 +339,14 @@ public struct ProjectRecord: Identifiable, Hashable, Sendable {
     public let id: String
     public let name: String
     public let path: String
-    public let adapter: String
+    public var adapter: String
     public let inherited: String
     public var draftSkillIDs: Set<String>
     public var appliedSkillIDs: Set<String>
     public var agents: Set<String>
     public var fragments: [String]
+    public var editingAgent: String
+    public var harnessSelections: [String: ProjectHarnessSelection]
     public var draftPlugins: [PresetPluginReference]
     public var draftMCPServers: [MCPConfigurationDraft]
     public var pendingChanges: Int
@@ -363,7 +365,9 @@ public struct ProjectRecord: Identifiable, Hashable, Sendable {
         pendingChanges: Int,
         lockStatus: String = "absent",
         draftPlugins: [PresetPluginReference] = [],
-        draftMCPServers: [MCPConfigurationDraft] = []
+        draftMCPServers: [MCPConfigurationDraft] = [],
+        editingAgent: String = "codex",
+        harnessSelections: [String: ProjectHarnessSelection]? = nil
     ) {
         self.id = id
         self.name = name
@@ -374,10 +378,32 @@ public struct ProjectRecord: Identifiable, Hashable, Sendable {
         self.appliedSkillIDs = appliedSkillIDs
         self.agents = agents
         self.fragments = fragments
+        self.editingAgent = editingAgent
+        self.harnessSelections = harnessSelections ?? Dictionary(uniqueKeysWithValues: agents.map {
+            let key = $0 == "Codex" ? "codex" : ($0 == "Claude Code" ? "claude-code" : $0)
+            return (key, ProjectHarnessSelection(skillIDs: Array(draftSkillIDs), instructionIDs: fragments))
+        })
         self.draftPlugins = draftPlugins
         self.draftMCPServers = draftMCPServers
         self.pendingChanges = pendingChanges
         self.lockStatus = lockStatus
+    }
+
+    public var editingAgentName: String { editingAgent == "claude-code" ? "Claude Code" : "Codex" }
+
+    public var allDraftSkillIDs: Set<String> { Set(harnessSelections.values.flatMap(\.skillIDs)) }
+
+    public mutating func selectEditingAgent(_ agent: String) {
+        editingAgent = agent
+        let selection = harnessSelections[agent] ?? ProjectHarnessSelection()
+        draftSkillIDs = Set(selection.skillIDs)
+        fragments = selection.instructionIDs
+    }
+
+    public mutating func updateEditingSelection() {
+        harnessSelections[editingAgent] = ProjectHarnessSelection(skillIDs: Array(draftSkillIDs), instructionIDs: fragments)
+        agents.insert(editingAgentName)
+        adapter = agents.sorted().joined(separator: " · ")
     }
 
     public static let demo: [ProjectRecord] = [

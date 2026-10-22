@@ -5,6 +5,7 @@ public enum SkillSetServiceError: Error, LocalizedError, Equatable, Sendable {
     case invalidStagingPath(String)
     case tooManySelections(Int)
     case unknownInstruction(String)
+    case otherHarnessChanges
 
     public var code: String {
         switch self {
@@ -12,6 +13,7 @@ public enum SkillSetServiceError: Error, LocalizedError, Equatable, Sendable {
         case .invalidStagingPath: "STAGING_INVALID"
         case .tooManySelections: "SELECTION_LIMIT_EXCEEDED"
         case .unknownInstruction: "INSTRUCTION_NOT_FOUND"
+        case .otherHarnessChanges: "HARNESS_SCOPE_CONFLICT"
         }
     }
 
@@ -25,6 +27,8 @@ public enum SkillSetServiceError: Error, LocalizedError, Equatable, Sendable {
             return "一次最多选择 200 个 Skill，当前为 \(count) 个。"
         case let .unknownInstruction(id):
             return "找不到指令片段：\(id)"
+        case .otherHarnessChanges:
+            return "本次变化也会修改另一个 AI 工具，当前计划未生成。请核对共用技能、规则和安装方式；若需共同更新，可通过 CLI 或 MCP 明确选择多个工具生成计划。"
         }
     }
 }
@@ -40,6 +44,7 @@ public struct ProjectServiceSummary: Codable, Identifiable, Hashable, Sendable {
     public let lockStatus: String
     public let issues: [String]
     public let skillObservations: [ProjectSkillObservation]
+    public let harnessSelections: [String: ProjectHarnessSelection]?
 
     public init(
         id: UUID,
@@ -51,7 +56,8 @@ public struct ProjectServiceSummary: Codable, Identifiable, Hashable, Sendable {
         instructionIDs: [String],
         lockStatus: String,
         issues: [String],
-        skillObservations: [ProjectSkillObservation] = []
+        skillObservations: [ProjectSkillObservation] = [],
+        harnessSelections: [String: ProjectHarnessSelection]? = nil
     ) {
         self.id = id
         self.name = name
@@ -63,6 +69,7 @@ public struct ProjectServiceSummary: Codable, Identifiable, Hashable, Sendable {
         self.lockStatus = lockStatus
         self.issues = issues
         self.skillObservations = skillObservations
+        self.harnessSelections = harnessSelections
     }
 }
 
@@ -185,7 +192,8 @@ public struct SkillSetService {
                 issues: projectState.issues + inspection.issues
                     + inspection.ambiguousSlugs.map { "\($0)：来源不唯一。" }
                     + inspection.driftedSlugs.map { "\($0)：内容漂移。" },
-                skillObservations: inspection.skillObservations
+                skillObservations: inspection.skillObservations,
+                harnessSelections: draft?.resolvedHarnessSelections ?? projectState.manifest?.resolvedHarnessSelections
             )
         }
     }
@@ -201,15 +209,19 @@ public struct SkillSetService {
         instructionIDs: [String],
         agents: [String]? = nil,
         ruleBlockID: String = "project-rules",
-        installMethod: SkillInstallMethod = .symlink
+        installMethod: SkillInstallMethod = .symlink,
+        harnessSelections: [String: ProjectHarnessSelection]? = nil,
+        onlyChangingAgent: String? = nil
     ) throws -> StoredDeploymentPlan {
         let repositoryRoot = paths.applicationSupportRoot
         try FileManager.default.createDirectory(at: repositoryRoot, withIntermediateDirectories: true)
-        guard skillIDs.count <= 200 else {
-            throw SkillSetServiceError.tooManySelections(skillIDs.count)
+        let allSkillIDs = harnessSelections.map { Array(Set($0.values.flatMap(\.skillIDs))) } ?? skillIDs
+        let allInstructionIDs = harnessSelections.map { Array(Set($0.values.flatMap(\.instructionIDs))) } ?? instructionIDs
+        guard allSkillIDs.count <= 200 else {
+            throw SkillSetServiceError.tooManySelections(allSkillIDs.count)
         }
         let knownInstructions = Set(snapshot.templates.map(\.id))
-        if let unknown = instructionIDs.first(where: { !knownInstructions.contains($0) }) {
+        if let unknown = allInstructionIDs.first(where: { !knownInstructions.contains($0) }) {
             throw SkillSetServiceError.unknownInstruction(unknown)
         }
         let project = try projectStore.project(id: projectID)
@@ -222,6 +234,24 @@ public struct SkillSetService {
             let candidates = draft?.agents ?? manifest?.agents ?? project.agents
             return candidates.isEmpty ? ["codex"] : candidates
         }()
+        var resolvedSelections = harnessSelections
+        var targetAgents = resolvedAgents
+        var scopedAgent = onlyChangingAgent
+        // 旧 API 仍能编辑指定宿主；已有独立配置不能被一次共享请求悄悄抹平。
+        if resolvedSelections == nil,
+           let current = try ProjectLockStore(projectRoot: URL(fileURLWithPath: project.canonicalPath),
+               stateRoot: paths.applicationSupportRoot).loadManifest() {
+            // 旧共享清单也先按宿主展开，单宿主请求不能被解释为取消其他宿主。
+            var independent = current.resolvedHarnessSelections
+            for agent in resolvedAgents {
+                independent[agent] = ProjectHarnessSelection(skillIDs: skillIDs, instructionIDs: instructionIDs)
+            }
+            resolvedSelections = independent
+            targetAgents = independent.keys.sorted()
+            if scopedAgent == nil, resolvedAgents.count == 1 { scopedAgent = resolvedAgents.first }
+        }
+        let finalSkills = resolvedSelections.map { Set($0.values.flatMap(\.skillIDs)) } ?? Set(skillIDs)
+        guard finalSkills.count <= 200 else { throw SkillSetServiceError.tooManySelections(finalSkills.count) }
         let planner = DeploymentPlanner(
             catalog: snapshot.catalog,
             repositoryRoot: repositoryRoot,
@@ -235,14 +265,39 @@ public struct SkillSetService {
             request: DeploymentRequest(
                 skillIDs: skillIDs.sorted(),
                 instructionIDs: instructionIDs,
-                agents: resolvedAgents,
+                agents: targetAgents,
                 ruleBlockID: ruleBlockID,
-                installMethod: installMethod
+                installMethod: installMethod,
+                harnessSelections: resolvedSelections
             ),
             fragments: fragments
         )
         let staging = paths.stagingRoot.appendingPathComponent(plan.id.uuidString, isDirectory: true)
+        if let scopedAgent, let target = AgentDeploymentAdapter.target(for: scopedAgent),
+           plan.changes.contains(where: {
+               $0.scope != "project-state" && $0.relativePath != target.instructionsFile
+                   && !$0.relativePath.hasPrefix(target.skillsRoot + "/")
+           }) {
+            try FileManager.default.removeItem(at: staging)
+            throw SkillSetServiceError.otherHarnessChanges
+        }
         return try planStore.save(plan: plan, stagingPath: staging.path)
+    }
+
+    /// 只提交一个宿主的编辑；另一宿主沿用已部署选择，不顺带启用未部署草稿。
+    public func makeHarnessPlan(
+        projectID: UUID, agent: String, selection: ProjectHarnessSelection?,
+        installMethod: SkillInstallMethod = .symlink
+    ) throws -> StoredDeploymentPlan {
+        guard AgentDeploymentAdapter.target(for: agent) != nil else { throw ProjectLockError.unsupportedAgent(agent) }
+        let project = try projectStore.project(id: projectID)
+        let current = try ProjectLockStore(projectRoot: URL(fileURLWithPath: project.canonicalPath),
+            stateRoot: paths.applicationSupportRoot).loadManifest()
+        var selections = current?.resolvedHarnessSelections ?? [:]
+        selections[agent] = selection
+        return try makePlan(projectID: projectID, skillIDs: [], instructionIDs: [],
+            agents: selections.keys.sorted(), ruleBlockID: current?.ruleBlockID ?? "project-rules",
+            installMethod: installMethod, harnessSelections: selections, onlyChangingAgent: agent)
     }
 
     public func makeUserSkillPlan(
