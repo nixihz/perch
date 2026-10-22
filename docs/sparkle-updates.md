@@ -20,7 +20,7 @@
 
 ## 配置与构建
 
-公开配置放在 `config/updates.json`。当前发布构建为 `0.0.1 (5)`，保留原 Bundle ID 与 Sparkle 公钥，使用新平台清单地址重新签名、公证；每次正式发包都递增 `build`，同一个构建号不能重发不同内容。此版本是桌面整包版本，与 skill revision、项目锁版本无关。
+公开配置放在 `config/updates.json`。当前发布构建为 `0.0.1 (6)`，保留原 Bundle ID 与 Sparkle 公钥，使用新平台清单地址重新签名、公证；每次正式发包都递增 `build`，同一个构建号不能重发不同内容。此版本是桌面整包版本，与 skill revision、项目锁版本无关。
 
 可直接修改该 JSON，或通过以下环境变量覆盖：
 
@@ -124,3 +124,8 @@ python3 -m unittest tests.test_update_packaging tests.test_ui_localization -v
 - 新平台发布包 24,439,554 字节，完整文件集合与逐文件字节一致；独立临时预览的首页、图片、DMG 和清单共 4 文件核验通过，预览退出后临时数据已清理。使用有效管理员登录执行 `publish --update`，平台 release ID：`4b4ee2af-fd9c-4ced-8cf0-78f6ff30fbbe`；本次未修改平台基础设施或旧 keli.tech 站点。
 - 公网匿名 HTTPS 下载 4 文件与发布目录逐字节一致，线上 DMG 的 Sparkle 验签通过；清单为 build 5 并返回 `Cache-Control: no-cache`。HEAD 返回 200 和正确长度，Range 返回完整文件 200。完整报告：`dist/release-v0.0.1-5/release-verification.json` 与 `public-platform-verification.json`。
 - 待完成：build 4 → build 5 的应用内下载、安装、重启与数据保留验收；本次文件校验不等同于完成安装升级。仍使用旧 keli.tech 清单的客户端须手动安装一次迁移版。
+
+
+2026-10-23 已发布 `0.0.1 (6)`：独立 Harness 配置、MCP 使用入口及配置关系图。App 与 DMG 均通过 Developer ID 签名、公证、装订和 Gatekeeper；公网清单与完整安装包匹配本地字节，官方 Sparkle 验签通过。平台 release ID 为 `8175cd1d-0cd5-4de5-9431-eb90e95b8b59`。源码、tag、校验值、测试及待验收边界见 [build 6 发布记录](releases/perch-0.0.1-6.md)。
+
+平台清单中的 `access: public` 不足以证明匿名公开：实例 `visibility` 也须为 `public`。发版前后必须用不带 Cookie/Token 的 GET 验证 RSS XML 和实际 DMG，拒绝将登录跳转后的 HTML 200 当作成功。本轮已恢复此前误设为 personal 的 Perch 可见性。

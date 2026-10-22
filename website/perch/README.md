@@ -1,6 +1,6 @@
 # 栖集 / Perch 介绍网站
 
-发布平台：`https://app.u1.fan`。公开地址：`https://perch.u1.fan/`。平台挂载入口 `https://app.u1.fan/x/perch/` 会以 308 跳转到该地址，HTTPS 校验已通过。
+发布平台：`https://app.u1.fan`。公开地址：`https://perch.u1.fan/`。平台挂载入口 `https://app.u1.fan/x/perch/` 会跳转到该地址，HTTPS 校验已通过。
 
 部署标识为 `perch`，路由 `/x/perch`，访问模式 `public`。从桌面 build 4 起，官网、下载包与 Sparkle 清单均使用新平台；不再向 keli.tech 发布更新。旧客户端内置旧清单地址，须从新官网手动安装一次迁移版，后续在应用内检查更新。
 
@@ -38,3 +38,5 @@ CLI 的 `--data` 默认为当前目录下的 `data`；不同工作目录会读�
 2026-10-22 再次更新至 `0.0.1 (5)`，release ID 为 `4b4ee2af-fd9c-4ced-8cf0-78f6ff30fbbe`；唯一命名 DMG、官网与签名清单同批发布，匿名公网字节及 Sparkle 验签通过。最新发布目录为 `dist/perch-app-platform-v0.0.1-5/`，本地验收报告见 `dist/release-v0.0.1-5/`。
 
 后续发布从版本管理中的 `index.html` 复制页面、从 `assets/brand/perch-primary.png` 复制品牌图到全新发布目录，再加入本次 Sparkle 输出的 DMG 和 appcast。不要直接打包开发用 `website/perch/dist`：其中可能保留旧下载文件，导致体积超限或混入过期入口。
+
+2026-10-23 已更新至 `0.0.1 (6)`，release ID 为 `8175cd1d-0cd5-4de5-9431-eb90e95b8b59`；匿名首页、清单与完整 DMG 字节及 Sparkle 验签通过。平台当前还单独保存 `visibility`，应与 `manifest.access` 一起核对；本轮发布前已恢复 Perch 的 public 可见性。新 CLI 打包会生成根级 `app-platform-source.json`，验收时将其作为唯一明确允许的生成元数据，核对源码提交与 clean 状态，其余文件集合仍须与来源完全一致。完整验证与未完成项见 [build 6 发布记录](../../docs/releases/perch-0.0.1-6.md)。

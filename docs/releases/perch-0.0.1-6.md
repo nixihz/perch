@@ -29,4 +29,30 @@
 - skills.sh 目录浏览与按需收录，来源身份固定，来源脚本不执行；收录后仍需另行选择项目并批准。
 - 发布包能定位包内技能快照；无变化与错误结果在项目页就近反馈。
 
-验证与发布记录在实际发包、公证和公网验收后补全。
+## 验证与发布
+
+已于 2026-10-23 发布到 [app.u1.fan](https://app.u1.fan/x/perch/)，公开入口为 [perch.u1.fan](https://perch.u1.fan/)。平台 release ID：`8175cd1d-0cd5-4de5-9431-eb90e95b8b59`；上一版 `4b4ee2af-fd9c-4ced-8cf0-78f6ff30fbbe` 保留在平台发布历史中供回滚。
+
+| 批次 | 提交 | 内容 |
+| --- | --- | --- |
+| 1 | `2bc2fa6` | Harness 独立选择、兼容与部署边界 |
+| 2 | `583f44f` | skills.sh 收录、来源身份与包内资源定位 |
+| 3 | `be26bcf` | 配置导航、MCP 路径、原生 UI 与行为回归 |
+| 4 | `5dc9be2` | BDD、隔离夹具及配置体验研究 |
+| 5 | `09be0a4` | build 6 配置、官网源码及发布准备 |
+
+已推送 annotated tag：`perch-harness-independent-20261023` 指向核心里程碑；`perch-v0.0.1-build.6` 指向正式产物源码 `09be0a45a93a782ce653ac5296b8615f7ac05b39`。随后提交的发布记录不改变产物。
+
+完整 Swift 回归：31 个 BDD 场景、399 个步骤（BDD target 406 项），核心 XCTest 11 项、Swift Testing 140 项、应用 XCTest 100 项通过。最后的 MCP 与目录边界改动另跑相关专项：应用 XCTest 45 项、Swift Testing 35 项通过。Python 31 项、Node 5 项及目录指纹、diff 检查通过；所有成功回归均零失败、零跳过。
+
+App 与 CLI 均为 arm64 / x86_64；Developer ID、hardened runtime、递归验签、Apple 公证、装订和 Gatekeeper 检查通过。应用公证 ID：`1e8e9077-05d8-414b-b5c2-45a1ff00051b`；DMG 公证 ID：`cd1ef5db-989f-4c66-a352-f8654733bdb6`。包内与独立 CLI 均通过仓库外 MCP 握手，发现 17 个工具。
+
+[正式 DMG](https://app.u1.fan/x/perch/updates/macos/Perch-0.0.1-6-universal.dmg)：26,174,606 字节，SHA-256：`fd673b819a48977401fc2e2f0b15daa98c7834befac2532301f12e32db7f7bdd`。平台 ZIP 为 24,120,417 字节，低于 25 MiB 上限；完整集合为 5 个来源文件和 1 个经核对的 CLI 源码元数据文件，逐文件字节一致，没有额外文件、符号链接或危险路径。
+
+临时 HTTP 预览和匿名公网首页、品牌图、appcast、DMG 均与发布目录逐字节一致；公网下载再次通过官方 Sparkle Ed25519 验签。清单返回 `Cache-Control: no-cache`，build 为 6；HEAD 返回正确长度。Range 仍返回完整 200，当前不支持分段续传。临时预览已退出并删除临时数据。
+
+发布前发现平台 `manifest.access=public` 但实例 `visibility=personal`，旧版清单被引导登录。已只恢复 Perch 的 `visibility=public`，核对旧版首页、清单及安装包与原发布记录一致后再发布 build 6；未修改其他应用或基础设施。
+
+本机报告保存在 `dist/release-v0.0.1-6/`：`release-verification.json`、`platform-preview-verification.json`、`package-verification.json`、`public-platform-verification.json` 及公证、签名日志。
+
+尚未验收：build 5 → 6 的真实安装、重启与数据保留。Sparkle 2.10 重启使用 NSWorkspace，未传递隔离 HOME；同一 macOS 用户下的临时副本不能保证重启隔离，应在独立图形用户会话或 VM 中验证。公网下载验签不替代该验收。真实用户的点击耗时、理解正确率以及 AI 工具加载状态也不在本次自动化验证结论内。
