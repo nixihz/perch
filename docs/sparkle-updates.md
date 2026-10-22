@@ -1,6 +1,6 @@
 # 栖集在线更新
 
-已接入 Sparkle 2.10.0，参考 `/opt/case/iamx/tod/apple/Sources/MacUpdates.swift` 的单更新器与设置交互。[官网](https://perch.keli.tech/)已发布 `0.0.1 (2)` 安装包及更新清单。客户端已内置独立地址与公钥，完成 Developer ID 签名、Apple 公证、票据装订和真实应用内线上检查；两个正式版本之间的安装升级仍待后续版本验收。
+已接入 Sparkle 2.10.0，参考 `/opt/case/iamx/tod/apple/Sources/MacUpdates.swift` 的单更新器与设置交互。[官网](https://perch.keli.tech/)已发布 `0.0.1 (3)` 安装包及更新清单。客户端已内置独立地址与公钥，完成 Developer ID 签名、Apple 公证、票据装订；build 2 已完成真实应用内线上检查，build 2 → build 3 的安装升级仍待验收。
 
 首次启用的配置：
 
@@ -20,7 +20,7 @@
 
 ## 配置与构建
 
-公开配置放在 `config/updates.json`。当前构建版本为 `0.0.1 (3)`，线上已发布版本为 `0.0.1 (2)`；每次正式发包都递增 `build`，同一个构建号不能重发不同内容。此版本是桌面整包版本，与 skill revision、项目锁版本无关。
+公开配置放在 `config/updates.json`。当前构建与线上已发布版本均为 `0.0.1 (3)`；每次正式发包都递增 `build`，同一个构建号不能重发不同内容。此版本是桌面整包版本，与 skill revision、项目锁版本无关。
 
 可直接修改该 JSON，或通过以下环境变量覆盖：
 
@@ -93,3 +93,10 @@ python3 -m unittest tests.test_update_packaging tests.test_ui_localization -v
 - DMG：`Perch-0.0.1-3-universal.dmg`，24,584,847 字节，SHA-256：`9a1030d9e3a90206f5491b4a65b519f74e774bc28bb867dcca93ea94ac69af9f`。从已装订应用生成的 ZIP：20,896,498 字节，SHA-256：`d834ba3a422cf1eb99f75f50f298ace5e208f1fc4ededf7414de21e15bfc71de`。
 - `script/prepare_sparkle_update.py` 成功生成 `dist/sparkle-release-0.0.1-3/`，包含最终 DMG 与签名清单；`sign_update --verify` 通过，清单绑定 build 3、最低 macOS 14、最终包长度及正式下载地址。清单 SHA-256：`0897d5c170aabb16970924b74cc8372026d7099701842ca87069c48fe6072d8b`。完整报告：`dist/release-v0.0.1-3/release-verification.json`。
 - 本轮仅生成本地更新包，没有上传或替换线上清单；打包前公网清单仍为 build 2。待发布后验收公网字节、build 2 → build 3 下载、安装、重启与数据保留。
+
+2026-10-22 构建 `0.0.1 (3)` 上传验证：
+
+- 通过既有 SSH 发布通道增量上传唯一命名 DMG 与 ZIP，核对服务器 SHA-256 后发布下载路径，再对公网完整下载核对长度和 SHA-256；与上述已公证本地产物一致，公网 DMG 的 Sparkle 签名验证通过。HEAD 返回 200，但不提供 Content-Length；长度按完整 GET 实际字节核验。Range 返回完整文件（200），仍不支持分段续传。报告：`dist/release-v0.0.1-3/public-download-verification.json`。
+- 下载包验证完成后替换清单与官网首页。公网清单字节与本地签名清单一致，build 为 3，返回 `Cache-Control: no-cache`；首页已指向 build 3 的 DMG 和 ZIP。清单报告：`dist/release-v0.0.1-3/public-appcast-verification.json`。
+- 旧清单与首页备份在发布服务器 `perch-release-backups/build-3-20261022T055058Z/`；既有安装包逐一复核 SHA-256，全部保持原样。未修改平台上传上限或访问权限。
+- 待完成：build 2 → build 3 的应用内下载、安装、重启与数据保留验收；本次上传校验不等同于完成安装升级。
