@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -8,6 +9,13 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 CLI = Path(os.environ.get("SKILLSET_CLI", ROOT / ".build/debug/skillset"))
+
+
+def project_state(state, project):
+    registrations = json.loads((state / "projects.json").read_text())["projects"]
+    canonical = next(item["canonicalPath"] for item in registrations if os.path.samefile(item["canonicalPath"], project))
+    key = hashlib.sha256(canonical.encode()).hexdigest()
+    return state / "project-state" / key
 
 
 class CLIIntegrationTests(unittest.TestCase):
@@ -37,6 +45,11 @@ class CLIIntegrationTests(unittest.TestCase):
                 state, "projects", "add", str(project), "--name", "Fixture", "--json"
             ).stdout
         )
+        source = root / "source" / "stc"
+        source.mkdir(parents=True)
+        (source / "SKILL.md").write_text("---\nname: stc\ndescription: CLI installation fixture\n---\nComplete skill body\n", encoding="utf-8")
+        self.run_cli(state, "sources", "preview", str(source.parent), "--json")
+        self.skill_id = json.loads(self.run_cli(state, "skills", "search", "stc", "--json").stdout)["skills"][0]["id"]
         return state, project, added["project"]["id"]
 
     def test_apply_requires_local_approval_then_writes_exact_files(self):
@@ -49,7 +62,7 @@ class CLIIntegrationTests(unittest.TestCase):
                     "plan",
                     project_id,
                     "--skills",
-                    "workspace/stc",
+                    self.skill_id,
                     "--instructions",
                     "base-zh",
                     "--json",
@@ -91,15 +104,17 @@ class CLIIntegrationTests(unittest.TestCase):
                 {
                     ".agents/skills/stc",
                     "AGENTS.md",
-                    "skillset.json",
-                    "skillset.lock.json",
+                    str(project_state(state, project) / "skillset.json"),
+                    str(project_state(state, project) / "skillset.lock.json"),
                 },
             )
             self.assertTrue((project / ".agents/skills/stc/SKILL.md").is_file())
             self.assertIn("skillset:begin id=project-rules", (project / "AGENTS.md").read_text())
-            manifest = json.loads((project / "skillset.json").read_text())
-            lock = json.loads((project / "skillset.lock.json").read_text())
-            self.assertEqual(manifest["skills"], ["workspace/stc"])
+            self.assertEqual({p.name for p in project.iterdir()}, {"README.md", ".agents", "AGENTS.md"})
+            self.assertEqual((project / "README.md").read_text(), "# fixture\n")
+            manifest = json.loads((project_state(state, project) / "skillset.json").read_text())
+            lock = json.loads((project_state(state, project) / "skillset.lock.json").read_text())
+            self.assertEqual(manifest["skills"], [self.skill_id])
             self.assertTrue(lock["manifestDigest"].startswith("sha256:"))
             self.assertTrue(lock["skills"][0]["files"])
             verified = json.loads(
@@ -127,7 +142,7 @@ class CLIIntegrationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="skillset-cli-remove-") as temporary:
             root = Path(temporary)
             state, project, project_id = self.bootstrap_project(root)
-            self.apply_selection(state, project_id, ["workspace/stc"])
+            self.apply_selection(state, project_id, [self.skill_id])
             neighbor = project / ".agents/skills/personal/SKILL.md"
             neighbor.parent.mkdir()
             neighbor.write_text("项目自己的技能\n", encoding="utf-8")
@@ -140,7 +155,7 @@ class CLIIntegrationTests(unittest.TestCase):
             removed = self.apply_selection(state, project_id, [])
             self.assertFalse((project / ".agents/skills/stc").exists())
             self.assertEqual(neighbor.read_text(), "项目自己的技能\n")
-            self.assertEqual(json.loads((project / "skillset.lock.json").read_text())["skills"], [])
+            self.assertEqual(json.loads((project_state(state, project) / "skillset.lock.json").read_text())["skills"], [])
             self.run_cli(state, "rollback", removed["operationID"], "--json")
             self.assertEqual((project / ".agents/skills/stc/SKILL.md").read_bytes(), original)
             self.assertEqual(neighbor.read_text(), "项目自己的技能\n")
@@ -152,7 +167,7 @@ class CLIIntegrationTests(unittest.TestCase):
             skill.parent.mkdir(parents=True)
             skill.write_text("项目原有的技能\n", encoding="utf-8")
             rejected = self.run_cli(
-                state, "plan", project_id, "--skills", "workspace/stc", "--json", check=False
+                state, "plan", project_id, "--skills", self.skill_id, "--json", check=False
             )
             self.assertEqual(rejected.returncode, 3)
             self.assertEqual(json.loads(rejected.stdout)["error"]["code"], "SKILL_TARGET_CONFLICT")
@@ -201,6 +216,9 @@ class CLIIntegrationTests(unittest.TestCase):
                 {tool["name"] for tool in responses[1]["result"]["tools"]},
                 {
                     "projects_list",
+                    "presets_list",
+                    "skills_install",
+                    "presets_install",
                     "skills_search",
                     "sources_list",
                     "sources_preview",
@@ -219,6 +237,7 @@ class CLIIntegrationTests(unittest.TestCase):
             self.assertEqual(
                 responses[2]["result"]["structuredContent"]["previews"], []
             )
+            self.assertEqual(responses[0]["result"]["serverInfo"]["name"], "perch")
             tools = {
                 tool["name"]: tool["annotations"]
                 for tool in responses[1]["result"]["tools"]
@@ -420,7 +439,7 @@ class CLIIntegrationTests(unittest.TestCase):
                     "plan",
                     project_id,
                     "--skills",
-                    "workspace/stc",
+                    self.skill_id,
                     "--instructions",
                     "base-zh",
                     "--agents",
@@ -433,7 +452,7 @@ class CLIIntegrationTests(unittest.TestCase):
             self.assertTrue((project / ".agents/skills/stc/SKILL.md").is_file())
             self.assertTrue((project / ".claude/skills/stc/SKILL.md").is_file())
             self.assertIn("skillset:begin id=project-rules", (project / "CLAUDE.md").read_text())
-            lock = json.loads((project / "skillset.lock.json").read_text())
+            lock = json.loads((project_state(state, project) / "skillset.lock.json").read_text())
             self.assertEqual(
                 {target["agent"] for target in lock["targets"]},
                 {"codex", "claude-code"},

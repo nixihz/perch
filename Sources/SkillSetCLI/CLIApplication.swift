@@ -69,7 +69,7 @@ struct CLIInvocation {
             "blockedEntries": service.snapshot.catalog.entries.filter(\.isBlocked).count,
             "registeredProjects": projects.count,
             "plans": try service.pendingPlans().count,
-            "status": paths.repositoryRoot == nil ? "repository-missing" : "ready"
+            "status": "ready"
         ]
         if json {
             emitJSON(output)
@@ -178,7 +178,7 @@ struct CLIInvocation {
                     print("  \(state)\t\(candidate.id)\t\(candidate.shortHash)\(issue)")
                 }
                 print("隔离区：\(preview.workspacePath)")
-                print("只完成预览，未收录、未启用、未写入项目。")
+                print("已同步到技能库，可搜索；尚未启用或写入项目。")
             }
         case "list":
             let previews = try service.sourcePreviews()
@@ -243,13 +243,17 @@ struct CLIInvocation {
         let instructions = splitList(consumeOption("--instructions", from: &rest) ?? "")
         let agents = splitList(consumeOption("--agents", from: &rest) ?? "")
         let ruleBlock = consumeOption("--rule-block", from: &rest) ?? "project-rules"
+        guard let method = SkillInstallMethod(rawValue: consumeOption("--method", from: &rest) ?? "symlink") else {
+            throw CLIError("--method 只能是 symlink 或 copy。", exitCode: 2)
+        }
         let service = try SkillSetService(paths: paths)
         let record = try service.makePlan(
             projectID: projectID,
             skillIDs: skills,
             instructionIDs: instructions,
             agents: agents.isEmpty ? nil : agents,
-            ruleBlockID: ruleBlock
+            ruleBlockID: ruleBlock,
+            installMethod: method
         )
         if json {
             emitJSON(try planJSON(record))
@@ -258,7 +262,10 @@ struct CLIInvocation {
             print("digest：\(record.plan.digest)")
             print("项目：\(record.plan.projectPath)")
             for change in record.plan.changes {
-                print("  \(change.action)  \(change.relativePath)")
+                let target = change.scope == "project-state"
+                    ? ProjectLockStore(projectRoot: URL(fileURLWithPath: record.plan.projectPath), stateRoot: paths.applicationSupportRoot).directoryURL.appendingPathComponent(change.relativePath).path
+                    : change.relativePath
+                print("  \(change.action)  \(target)")
             }
             print("等待人工批准：skillset approve \(record.id.uuidString)")
         }

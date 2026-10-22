@@ -35,8 +35,8 @@ final class MCPStdioServer {
             write(resultResponse(id: id, result: [
                 "protocolVersion": "2025-11-25",
                 "capabilities": ["tools": ["listChanged": false]],
-                "serverInfo": ["name": "skill-set", "version": "0.1.0"],
-                "instructions": "Skill Set 的来源预览、只读查询和计划生成不会写项目；部署写入必须先在本机 UI 或 CLI 批准同一 plan digest。"
+                "serverInfo": ["name": "perch", "version": "0.1.0"],
+                "instructions": "Perch：用 presets_list 列出预设、skills_search 搜索技能；用 skills_install 或 presets_install 为明确的已登记项目生成追加安装计划。projectPath 必须是调用方当前项目的绝对路径，不能猜测服务工作目录。用户在本机 UI 或 CLI 批准后，再调用 deployment_apply 完成安装。"
             ]))
         case "notifications/initialized", "notifications/cancelled":
             return
@@ -63,6 +63,48 @@ final class MCPStdioServer {
     private func callTool(name: String, arguments: [String: Any]) -> [String: Any] {
         do {
             switch name {
+            case "presets_list":
+                let presets = try service.presets(query: arguments["query"] as? String ?? "")
+                return toolResult(isError: false, text: "找到 \(presets.count) 个预设。",
+                                  structured: ["count": presets.count, "presets": try jsonValue(presets)])
+
+            case "skills_install", "presets_install":
+                let projectID = try optionalUUID(arguments, key: "projectId")
+                let projectPath = arguments["projectPath"] as? String
+                let skillIDs: [String]
+                let presetID: String?
+                if name == "skills_install" {
+                    guard let values = arguments["skillIds"] as? [String], !values.isEmpty else {
+                        throw MCPToolError(code: "INVALID_ARGUMENTS", message: "skills_install 需要非空 skillIds。")
+                    }
+                    skillIDs = values
+                    presetID = nil
+                } else {
+                    guard let value = arguments["presetId"] as? String, !value.isEmpty else {
+                        throw MCPToolError(code: "INVALID_ARGUMENTS", message: "presets_install 需要 presetId。")
+                    }
+                    skillIDs = []
+                    presetID = value
+                }
+                if let value = arguments["agents"], !(value is [String]) {
+                    throw MCPToolError(code: "INVALID_ARGUMENTS", message: "agents 必须是宿主名称数组。")
+                }
+                let agents = arguments["agents"] as? [String]
+                if let agents, agents.isEmpty || agents.contains(where: { !AgentDeploymentAdapter.supportedAgents.contains($0) }) {
+                    throw MCPToolError(code: "INVALID_ARGUMENTS", message: "agents 只能包含 codex、claude-code，且不能为空。")
+                }
+                // 查询时重新载入本机技能库，避免 UI 新增技能后只能重启 MCP 才能安装。
+                let current = try SkillSetService(paths: service.paths)
+                let record = try current.makeInstallationPlan(projectID: projectID, projectPath: projectPath,
+                                                              skillIDs: skillIDs, presetID: presetID, agents: agents)
+                var result = planObject(record)
+                result["status"] = "awaiting-approval"
+                result["nextTool"] = "deployment_apply"
+                result["nextArguments"] = ["planId": record.id.uuidString, "planDigest": record.plan.digest]
+                return toolResult(isError: false,
+                                  text: "已准备项目安装计划；尚未安装。请在栖集审阅批准，再调用 deployment_apply。",
+                                  structured: result)
+
             case "projects_list":
                 let projects = try service.projects()
                 let structured: [String: Any] = ["projects": try jsonValue(projects)]
@@ -72,7 +114,8 @@ final class MCPStdioServer {
                 let query = arguments["query"] as? String ?? ""
                 let sourceID = arguments["sourceId"] as? String
                 let limit = min(max(arguments["limit"] as? Int ?? 50, 1), 200)
-                let entries = Array(service.skills(query: query, sourceID: sourceID).prefix(limit))
+                let current = try SkillSetService(paths: service.paths)
+                let entries = Array(current.skills(query: query, sourceID: sourceID).prefix(limit))
                 return toolResult(
                     isError: false,
                     text: "找到 \(entries.count) 个 Skill。",
@@ -116,12 +159,16 @@ final class MCPStdioServer {
                 let instructionIDs = arguments["instructionIds"] as? [String] ?? []
                 let agents = arguments["agents"] as? [String]
                 let ruleBlockID = arguments["ruleBlockId"] as? String ?? "project-rules"
+                guard let method = SkillInstallMethod(rawValue: arguments["installMethod"] as? String ?? "symlink") else {
+                    throw MCPToolError(code: "INVALID_ARGUMENTS", message: "installMethod 只能是 symlink 或 copy。")
+                }
                 let record = try service.makePlan(
                     projectID: id,
                     skillIDs: skillIDs,
                     instructionIDs: instructionIDs,
                     agents: agents,
-                    ruleBlockID: ruleBlockID
+                    ruleBlockID: ruleBlockID,
+                    installMethod: method
                 )
                 return toolResult(
                     isError: false,
@@ -285,6 +332,15 @@ final class MCPStdioServer {
 
     private var tools: [[String: Any]] {
         [
+            tool(name: "presets_list", description: "列出或搜索可安装的预设，返回标识、版本、技能、规则、插件与 MCP 组件。",
+                 properties: ["query": ["type": "string", "maxLength": 200]], required: [], readOnly: true),
+            tool(name: "skills_install", description: "将所选技能追加安装到当前项目：必须提供已登记项目的 projectId 或绝对路径 projectPath（二选一）。返回待本机批准的安装计划，批准后调用 deployment_apply；保留原有受管技能和规则。",
+                 properties: installationProperties.merging([
+                    "skillIds": ["type": "array", "items": ["type": "string"], "minItems": 1, "maxItems": 200]
+                 ]) { _, new in new }, required: ["skillIds"], readOnly: false, destructive: false, idempotent: false),
+            tool(name: "presets_install", description: "将预设中的技能和规则追加安装到当前项目。必须提供已登记 projectId 或绝对路径 projectPath（二选一）；返回待本机批准的计划，批准后调用 deployment_apply。含插件或 MCP 的混合预设需转本机完整审阅，不会静默跳过组件。",
+                 properties: installationProperties.merging(["presetId": ["type": "string", "minLength": 1]]) { _, new in new },
+                 required: ["presetId"], readOnly: false, destructive: false, idempotent: false),
             tool(
                 name: "projects_list",
                 description: "列出本机已登记项目及其 desired / observed Skills。",
@@ -312,7 +368,7 @@ final class MCPStdioServer {
             ),
             tool(
                 name: "sources_preview",
-                description: "隔离 clone 受信任 GitHub 仓库根并读取候选；不执行脚本，不收录或启用。",
+                description: "同步 Git 仓库或本地目录到栖集缓存并建立技能库搜索索引；不执行脚本或启用技能。",
                 properties: [
                     "url": ["type": "string", "maxLength": 2_048],
                     "ref": ["type": "string", "maxLength": 256]
@@ -343,7 +399,8 @@ final class MCPStdioServer {
                         "minItems": 1,
                         "maxItems": 2
                     ],
-                    "ruleBlockId": ["type": "string"]
+                    "ruleBlockId": ["type": "string"],
+                    "installMethod": ["type": "string", "enum": ["symlink", "copy"]]
                 ],
                 required: ["projectId", "skillIds"],
                 readOnly: false,
@@ -464,6 +521,14 @@ final class MCPStdioServer {
                 "idempotentHint": idempotent,
                 "openWorldHint": openWorld
             ]
+        ]
+    }
+
+    private var installationProperties: [String: Any] {
+        [
+            "projectId": ["type": "string", "format": "uuid"],
+            "projectPath": ["type": "string", "minLength": 1, "description": "调用方当前项目的绝对路径；项目须先在栖集或 CLI 登记。"],
+            "agents": ["type": "array", "items": ["type": "string", "enum": ["codex", "claude-code"]], "minItems": 1, "maxItems": 2]
         ]
     }
 

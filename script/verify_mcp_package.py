@@ -44,8 +44,10 @@ def verify(executable):
             raise RuntimeError("MCP 未按顺序返回握手与工具列表，或 stdout 混入其他输出")
         if responses[0].get("result", {}).get("protocolVersion") != "2025-11-25":
             raise RuntimeError("MCP 握手未返回预期协议")
+        if responses[0].get("result", {}).get("serverInfo", {}).get("name") != "perch":
+            raise RuntimeError("MCP 服务名称不是 perch")
         names = {tool["name"] for tool in responses[1].get("result", {}).get("tools", [])}
-        if not {"skills_search", "projects_list", "deployment_plan", "deployment_apply"} <= names or "approve" in names:
+        if not {"presets_list", "skills_search", "skills_install", "presets_install", "projects_list", "deployment_plan", "deployment_apply"} <= names or "approve" in names:
             raise RuntimeError("MCP 未提供预期工具，或错误暴露批准入口")
         def cli(*arguments, expected=0):
             result = subprocess.run(
@@ -56,10 +58,43 @@ def verify(executable):
                 raise RuntimeError(f'独立部署失败：{result.stdout[:500]} {result.stderr[:500]}')
             return json.loads(result.stdout)
 
+        def mcp_tool(name, arguments):
+            messages = [
+                {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+                {"jsonrpc": "2.0", "method": "notifications/initialized"},
+                {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": name, "arguments": arguments}},
+            ]
+            result = subprocess.run(
+                [str(packaged / 'skillset'), '--state', str(root / 'state'), 'mcp', 'serve', '--transport', 'stdio'],
+                cwd=root, env=environment, input=''.join(json.dumps(message) + '\n' for message in messages),
+                text=True, capture_output=True, timeout=30,
+            )
+            if result.returncode:
+                raise RuntimeError(f'MCP 工具调用失败：{result.stderr[:500]}')
+            responses = [json.loads(line) for line in result.stdout.splitlines()]
+            response = next(item['result'] for item in responses if item.get('id') == 2)
+            if response.get('isError'):
+                raise RuntimeError(f'MCP 工具调用失败：{response}')
+            return response['structuredContent']
+
         project = root / 'project'
         project.mkdir()
         registration = cli('projects', 'add', str(project))['project']
-        plan = cli('plan', registration['id'], '--skills', 'workspace/stc', '--instructions', 'base-zh')
+        # 新本机库从空开始；在隔离 state 显式同步可信快照，不能靠收录隐式启用。
+        cli('sources', 'preview', str(packaged / 'SkillSetLibrary/skills/stc'))
+        found = mcp_tool('skills_search', {'query': 'stc'})['skills']
+        if len(found) != 1:
+            raise RuntimeError('隔离本机库未检索到同步的 stc 技能')
+        skill_id = found[0]['id']
+        fixture = {
+            'schemaVersion': 2, 'id': 'package-check', 'name': '打包验证', 'description': '',
+            'revision': 1, 'skills': [skill_id], 'instructionFragments': ['base-zh'],
+            'plugins': [], 'mcpServers': [], 'mergePolicy': 'explicit-selection', 'status': 'local',
+        }
+        (root / 'state/presets.json').write_text(json.dumps([fixture]))
+        if not any(item['id'] == 'package-check' for item in mcp_tool('presets_list', {})['presets']):
+            raise RuntimeError('MCP 未列出本机预设')
+        plan = mcp_tool('presets_install', {'projectPath': str(project), 'presetId': 'package-check'})
         cli('apply', plan['planId'], '--digest', plan['digest'], expected=4)
         if list(project.iterdir()):
             raise RuntimeError('未批准的计划修改了项目')
