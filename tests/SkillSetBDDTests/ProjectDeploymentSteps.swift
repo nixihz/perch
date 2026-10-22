@@ -59,6 +59,30 @@ extension Cucumber: @retroactive StepImplementation {
             try XCTUnwrap(world).selectAgent(agent)
         }
 
+        Given("宿主 {string} 单独选择技能 {string}") { match, _ in
+            try XCTUnwrap(world).selectHarnessSkill(agent: match[\.string, index: 0], skillID: match[\.string, index: 1])
+        }
+
+        When("生成独立宿主部署计划") { _, _ in
+            try XCTUnwrap(world).makeIndependentHarnessPlan()
+        }
+
+        When("仅预览宿主 {string} 的变更") { match, _ in
+            try XCTUnwrap(world).makeSingleHarnessPlan(match.first(\.string))
+        }
+
+        When("清空宿主 {string} 的技能选择") { match, _ in
+            try XCTUnwrap(world).clearHarness(match.first(\.string))
+        }
+
+        When("记录项目文件 {string} 的内容") { match, _ in
+            try XCTUnwrap(world).recordProjectFile(match.first(\.string))
+        }
+
+        Then("项目文件 {string} 保持已记录的内容") { match, _ in
+            XCTAssertTrue(try XCTUnwrap(world).recordedProjectFileUnchanged(match.first(\.string)))
+        }
+
         Given("项目文件 {string} 内容为 {string}") { match, _ in
             let path = match[\.string, index: 0]
             let content = match[\.string, index: 1]
@@ -274,6 +298,10 @@ extension Cucumber: @retroactive StepImplementation {
             try nativeUI.setText(fieldMatching: "搜索技能", to: query)
         }
 
+        When("在原生界面展开 {string}") { match, _ in
+            try XCTUnwrap(world?.nativeUI).expandDisclosure(match.first(\.string))
+        }
+
         When("在原生界面打开 MCP 配置表单") { _, _ in
             let nativeUI = try XCTUnwrap(try XCTUnwrap(world).nativeUI)
             try nativeUI.pressButton("添加 MCP 服务")
@@ -464,6 +492,15 @@ extension Cucumber: @retroactive StepImplementation {
             )
         }
 
+        Then("原生界面显示展开入口 {string}") { match, _ in
+            let title = try match.first(\.string)
+            try XCTUnwrap(world?.nativeUI).waitForDisclosure(title)
+        }
+
+        Then("原生界面尚未写入 Codex MCP 配置") { _, _ in
+            XCTAssertFalse(try XCTUnwrap(world?.nativeUI).hasCodexMCPConfiguration())
+        }
+
         Then("原生界面显示文案 {string}") { match, _ in
             let expected = try match.first(\.string)
             let nativeUI = try XCTUnwrap(try XCTUnwrap(world).nativeUI)
@@ -584,6 +621,7 @@ extension Cucumber: @retroactive StepImplementation {
 
         Then("原生界面已关闭变更计划 sheet") { _, _ in
             let nativeUI = try XCTUnwrap(try XCTUnwrap(world).nativeUI)
+            try nativeUI.waitForNoSheet()
             XCTAssertFalse(try nativeUI.sheetPresent())
         }
 

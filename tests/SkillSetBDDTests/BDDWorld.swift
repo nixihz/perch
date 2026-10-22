@@ -85,6 +85,8 @@ final class BDDWorld {
     private var uiPlanDigestBeforeCancel: String?
     private var nativeUIPreparesRiskyPlugin = false
     private var restrictedProjectPaths: [URL] = []
+    private var harnessSelections: [String: ProjectHarnessSelection] = [:]
+    private var recordedProjectFiles: [String: Data] = [:]
 
     init(fileManager: FileManager = .default) throws {
         self.fileManager = fileManager
@@ -125,6 +127,37 @@ final class BDDWorld {
 
     func selectAgent(_ agent: String) {
         selectedAgent = agent
+    }
+
+    func selectHarnessSkill(agent: String, skillID: String) {
+        harnessSelections[agent] = ProjectHarnessSelection(skillIDs: [skillID])
+    }
+
+    func clearHarness(_ agent: String) {
+        harnessSelections[agent] = ProjectHarnessSelection()
+    }
+
+    func makeIndependentHarnessPlan() throws {
+        guard let projectID, let service else { throw BDDWorldError.missingProject }
+        currentPlan = try service.makePlan(projectID: projectID, skillIDs: [], instructionIDs: [],
+            agents: harnessSelections.keys.sorted(), harnessSelections: harnessSelections)
+        lastError = nil
+    }
+
+    func makeSingleHarnessPlan(_ agent: String) throws {
+        guard let projectID, let service else { throw BDDWorldError.missingProject }
+        currentPlan = try service.makeHarnessPlan(projectID: projectID, agent: agent, selection: harnessSelections[agent])
+        lastError = nil
+    }
+
+    func recordProjectFile(_ path: String) throws {
+        guard let projectURL else { throw BDDWorldError.missingProject }
+        recordedProjectFiles[path] = try Data(contentsOf: projectURL.appendingPathComponent(path))
+    }
+
+    func recordedProjectFileUnchanged(_ path: String) throws -> Bool {
+        guard let projectURL, let original = recordedProjectFiles[path] else { throw BDDWorldError.missingProjectSnapshot }
+        return try Data(contentsOf: projectURL.appendingPathComponent(path)) == original
     }
 
     func prepareNativeUIPluginFixture() {

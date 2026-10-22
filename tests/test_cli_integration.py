@@ -37,6 +37,16 @@ class CLIIntegrationTests(unittest.TestCase):
 
     def bootstrap_project(self, root):
         state = root / "state"
+        state.mkdir()
+        # 所需片段由场景自己创建，避免依赖应用是否附带默认内容。
+        (state / "templates.json").write_text(json.dumps({
+            "schemaVersion": 1,
+            "records": [{
+                "id": "base-zh", "title": "测试中文协作规则",
+                "body": "始终使用中文回复。\n", "purpose": "CLI 安装测试", "isLocal": True,
+            }],
+            "deletedIDs": [],
+        }), encoding="utf-8")
         project = root / "project"
         project.mkdir()
         (project / "README.md").write_text("# fixture\n", encoding="utf-8")
@@ -110,6 +120,7 @@ class CLIIntegrationTests(unittest.TestCase):
             )
             self.assertTrue((project / ".agents/skills/stc/SKILL.md").is_file())
             self.assertIn("skillset:begin id=project-rules", (project / "AGENTS.md").read_text())
+            self.assertIn("始终使用中文回复。", (project / "AGENTS.md").read_text())
             self.assertEqual({p.name for p in project.iterdir()}, {"README.md", ".agents", "AGENTS.md"})
             self.assertEqual((project / "README.md").read_text(), "# fixture\n")
             manifest = json.loads((project_state(state, project) / "skillset.json").read_text())
@@ -452,6 +463,7 @@ class CLIIntegrationTests(unittest.TestCase):
             self.assertTrue((project / ".agents/skills/stc/SKILL.md").is_file())
             self.assertTrue((project / ".claude/skills/stc/SKILL.md").is_file())
             self.assertIn("skillset:begin id=project-rules", (project / "CLAUDE.md").read_text())
+            self.assertIn("始终使用中文回复。", (project / "CLAUDE.md").read_text())
             lock = json.loads((project_state(state, project) / "skillset.lock.json").read_text())
             self.assertEqual(
                 {target["agent"] for target in lock["targets"]},

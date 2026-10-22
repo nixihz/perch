@@ -33,6 +33,15 @@ class MCPInstallationTests(unittest.TestCase):
             entry.update(id=f"personal/{slug}", sourceId="personal", path=package)
             records.append({"entry": entry})
         (self.state / "skills/index.json").write_text(json.dumps({"schemaVersion": 1, "records": records, "hiddenIDs": []}))
+        # 预设引用本机片段，测试不能依赖应用附带的默认片段。
+        (self.state / "templates.json").write_text(json.dumps({
+            "schemaVersion": 1,
+            "records": [{
+                "id": "base-zh", "title": "测试中文协作规则",
+                "body": "始终使用中文回复。\n", "purpose": "MCP 安装测试", "isLocal": True,
+            }],
+            "deletedIDs": [],
+        }), encoding="utf-8")
         preset = json.loads((ROOT / "presets/personal-base.json").read_text())
         preset.update(id="local-review", name="本机审查预设", skills=["personal/project-guide"], instructionFragments=["base-zh"])
         (self.state / "presets.json").write_text(json.dumps([preset]))
@@ -92,6 +101,7 @@ class MCPInstallationTests(unittest.TestCase):
         self.assertEqual((self.project / ".agents/skills/stc/SKILL.md").read_bytes(), original)
         self.assertEqual((self.project / ".agents/skills/project-guide/SKILL.md").read_bytes(), (ROOT / "skills/project-guide/SKILL.md").read_bytes())
         self.assertIn("skillset:begin", (self.project / "AGENTS.md").read_text())
+        self.assertIn("始终使用中文回复。", (self.project / "AGENTS.md").read_text())
         self.assertEqual({p.name for p in self.project.iterdir()}, {".agents", "AGENTS.md"})
         registration = json.loads((self.state / "projects.json").read_text())["projects"][0]
         key = hashlib.sha256(registration["canonicalPath"].encode()).hexdigest()

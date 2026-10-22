@@ -77,6 +77,7 @@ private final class NativeUILaunchResult: @unchecked Sendable {
 @MainActor
 final class NativeUIHarness {
     let applicationSupportRoot: URL
+    private let codexConfigurationURL: URL
 
     static var canRunInCurrentEnvironment: Bool {
         ProcessInfo.processInfo.environment["CI"] != "true" && AXIsProcessTrusted()
@@ -103,6 +104,7 @@ final class NativeUIHarness {
         let uiRoot = temporaryRoot.appendingPathComponent("native-ui", isDirectory: true)
         let home = uiRoot.appendingPathComponent("home", isDirectory: true)
         let codex = uiRoot.appendingPathComponent("codex", isDirectory: true)
+        codexConfigurationURL = codex.appendingPathComponent("config.toml")
         applicationSupportRoot = home.appendingPathComponent(".perch", isDirectory: true)
         try FileManager.default.createDirectory(
             at: applicationSupportRoot,
@@ -174,6 +176,10 @@ final class NativeUIHarness {
         !nodes().filter {
             $0.role == kAXWindowRole as String
         }.isEmpty
+    }
+
+    func hasCodexMCPConfiguration() -> Bool {
+        FileManager.default.fileExists(atPath: codexConfigurationURL.path)
     }
 
     func hasStaticText(_ text: String) throws -> Bool {
@@ -639,7 +645,7 @@ final class NativeUIHarness {
     }
 
     func previewDeploymentPlan() throws {
-        try pressButton("预览变更")
+        try pressButton(identifier: "projects.previewChanges")
         try waitUntil("变更计划 sheet 出现") {
             try self.sheetPresent()
         }
@@ -647,6 +653,10 @@ final class NativeUIHarness {
 
     func sheetPresent() throws -> Bool {
         nodes().contains { $0.role == kAXSheetRole as String }
+    }
+
+    func waitForNoSheet() throws {
+        try waitUntil("关闭审阅窗口") { try !self.sheetPresent() }
     }
 
     func confirmationAlertPresent() throws -> Bool {
@@ -671,6 +681,26 @@ final class NativeUIHarness {
     func waitForStaticText(_ text: String) throws {
         try waitUntil("出现文案 \(text)") {
             try self.hasStaticText(text)
+        }
+    }
+
+    func waitForDisclosure(_ title: String) throws {
+        try waitUntil("出现展开入口 \(title)") {
+            self.disclosureNode(title: title, identifier: "plan.safety", in: self.nodes()) != nil
+        }
+    }
+
+    func expandDisclosure(_ title: String) throws {
+        try waitForDisclosure(title)
+        guard let node = disclosureNode(title: title, identifier: "plan.details", in: nodes()) else {
+            throw NativeUIHarnessError.elementNotFound(title)
+        }
+        if ["1", "true"].contains(node.value.lowercased()) { return }
+        let result = AXUIElementPerformAction(node.element, kAXPressAction as CFString)
+        guard result == .success else { throw NativeUIHarnessError.accessibilityFailure(result, "展开 \(title)") }
+        try waitUntil("展开 \(title)") {
+            guard let updated = self.disclosureNode(title: title, identifier: "plan.details", in: self.nodes()) else { return false }
+            return ["1", "true"].contains(updated.value.lowercased())
         }
     }
 
