@@ -55,6 +55,9 @@ enum UserFacingText {
                 return L10n.text(action.displayName) + ": " + summary.dropFirst(prefix.count)
             }
         }
+        if let match = summary.wholeMatch(of: /^(Codex|Claude Code) · (用户|项目)：保留或写入 \[(.*)\]；移除 \[(.*)\]$/) {
+            return L10n.tr("\(match.1) · \(LocalizedText(stringLiteral: String(match.2)))：保留或写入 [\(match.3)]；移除 [\(match.4)]")
+        }
         if let match = summary.wholeMatch(of: /^(新增|更新|删除) (Codex|Claude Code) (项目|用户) MCP Server (.+)$/) {
             return "\(L10n.text(String(match.1))) \(match.2) \(L10n.text(String(match.3))) \(L10n.text("MCP 服务")) \(match.4)"
         }
@@ -69,6 +72,10 @@ enum UserFacingText {
             ?? (error as? ProjectLockError)?.code
         if let code {
             switch code {
+            case "PLUGIN_SOURCE_CHANGED":
+                return "插件内容在扫描后已改变，请重新扫描并选择后再收录。"
+            case "PLUGIN_SOURCE_COLLECTED":
+                return "相同插件内容已经收录，请重新扫描查看来源记录。"
             case "GLOBAL_STATE_CORRUPT":
                 return "全局管理记录无法核验，请检查操作历史和本机数据；已有文件保持不变。"
             case "GLOBAL_BASELINE_MISSING":
@@ -145,6 +152,14 @@ enum UserFacingText {
                 return "仓库超过预览大小限制，请换一个较小的仓库。"
             case "SOURCE_PREVIEW_CORRUPT":
                 return "保存的来源预览无法读取，请重新预览仓库。"
+            case "MCP_LIBRARY_DUPLICATE":
+                return "配置库或入库选择中存在同名服务，请调整名称或只选一个候选。"
+            case "MCP_LIBRARY_SELECTION_MISSING":
+                return "所选 MCP 服务已从配置库删除，请移除引用后重新预览。"
+            case "MCP_LIBRARY_SCAN_CHANGED":
+                return "MCP 配置在扫描后已改变，请重新扫描并选择后再入库。"
+            case "MCP_LIBRARY_CONNECTION_MODIFIED":
+                return "配置库写入的 MCP 服务已被修改或移除，请在「已有连接」中核对并保留改动。"
             case "MCP_CONFIG_CONFLICT", "MCP_CONFIG_NOT_OWNED":
                 return "已有同名 MCP 服务不属于本应用，请换一个名称，或先在原工具中处理。"
             case "MCP_CONFIG_CORRUPT", "MCP_CONFIG_ROOT_MISSING":
@@ -295,6 +310,8 @@ enum UserFacingText {
             if text.contains("保留宿主") { return "卸载后仍会保留插件数据。" }
             if text.contains("重启会话") { return "可能需要重启 AI 工具的会话；配置更新不代表当前会话已加载。" }
             if text.contains("副作用") { return "停用或卸载不能撤销脚本已经造成的改动。" }
+            if text == "只更新当前项目的 MCP 配置；全局连接仍可能生效。" { return "只更新当前项目的 MCP 配置；全局连接仍可能生效。" }
+            if text == "取消勾选只移除本配置库写入且未被修改的服务。" { return "取消勾选只移除本配置库写入且未被修改的服务。" }
             if text.contains("环境变量") { return "只写入环境变量引用，不读取或复制密钥值。" }
             if text.hasPrefix("Claude JSON") { return "保留其他配置项，但配置项的排列顺序可能改变。" }
             if text.hasPrefix("Codex TOML") { return "只修改本应用管理的配置部分，保留其他文本和注释。" }

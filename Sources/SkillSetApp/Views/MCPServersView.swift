@@ -1,13 +1,12 @@
 import SwiftUI
 import SkillSetCore
 
-struct MCPServersView: View {
+struct MCPObservedServersView: View {
     @Bindable var model: AppModel
     @State private var configPresented = false
     @State private var editingServer: MCPObservedServer?
     @State private var deletingServer: MCPObservedServer?
     @State private var query = ""
-    @FocusState private var searchFocused: Bool
 
     private var filteredServers: [MCPServerRecord] {
         let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -37,7 +36,7 @@ struct MCPServersView: View {
                 } label: {
                     Label(L10n.tr("添加 MCP 服务"), systemImage: "plus")
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(AppButtonStyle(kind: .primary))
                 .tint(AppColor.accent)
             }
             HStack(alignment: .top, spacing: AppLayout.columnSpacing) {
@@ -75,23 +74,8 @@ struct MCPServersView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text(L10n.tr("已发现的服务"))
                     .font(AppFont.heading)
-                HStack {
-                    Button { searchFocused = true } label: { Image(systemName: "magnifyingglass") }
-                        .buttonStyle(.plain)
-                        .keyboardShortcut("f", modifiers: .command)
-                        .accessibilityLabel(L10n.tr("搜索 MCP 服务"))
-                    TextField(L10n.tr("搜索名称、工具或路径"), text: $query)
-                        .textFieldStyle(.plain)
-                        .focused($searchFocused)
-                        .accessibilityIdentifier("mcp.search")
-                    if !query.isEmpty {
-                        Button { query = "" } label: { Image(systemName: "xmark.circle.fill") }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel(L10n.tr("清空搜索"))
-                    }
-                }
-                .padding(8)
-                .background(.background, in: RoundedRectangle(cornerRadius: 8))
+                AppSearchField(query: $query, prompt: L10n.tr("搜索名称、工具或路径"),
+                               label: L10n.tr("搜索 MCP 服务"), identifier: "mcp.search")
                 if filteredServers.isEmpty {
                     Text(query.isEmpty ? L10n.tr("还没有 MCP 服务。点击「添加 MCP 服务」开始配置。") : L10n.tr("没有匹配的 MCP 服务，请调整搜索条件。"))
                         .font(AppFont.secondary)
@@ -198,7 +182,7 @@ struct MCPServersView: View {
                                 Button(L10n.tr("重新扫描")) {
                                     model.refreshMCPStatus(server)
                                 }
-                                .buttonStyle(.borderedProminent)
+                                .buttonStyle(AppButtonStyle(kind: .primary))
                                 .tint(AppColor.accent)
                                 if let observed = model.selectedMCPObservation {
                                     Button(L10n.tr("编辑…")) {
@@ -256,54 +240,68 @@ struct MCPConfigSheet: View {
                 Spacer()
                 StatusBadge(text: L10n.tr("计划模式"), tone: .warning)
             }
-            Form {
-                TextField(L10n.tr("名称"), text: $draft.name)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    AppFormField(L10n.tr("名称")) {
+                        TextField("my-server", text: $draft.name)
+                            .accessibilityLabel(L10n.tr("名称"))
+                            .accessibilityIdentifier("mcp.config.name")
+                            .disabled(existingServer != nil)
+                    }
+                    HStack(alignment: .top, spacing: 12) {
+                        AppPicker(title: L10n.tr("AI 工具"), selection: $draft.host, valueLabel: draft.host.displayName) {
+                            ForEach(MCPHost.allCases) { host in
+                                Text(host.displayName).tag(host)
+                            }
+                        }
+                        .accessibilityIdentifier("mcp.config.host")
+                        .disabled(existingServer != nil)
+                        .onChange(of: draft.host) {
+                            if draft.host == .codex { draft.scope = .user }
+                        }
+                        AppPicker(title: L10n.tr("使用范围"), selection: $draft.scope, valueLabel: L10n.text(draft.scope.displayName)) {
+                            if draft.host == .claudeCode { Text(L10n.tr("项目")).tag(MCPConfigurationScope.project) }
+                            Text(L10n.tr("用户")).tag(MCPConfigurationScope.user)
+                        }
+                        .accessibilityIdentifier("mcp.config.scope")
+                        .disabled(existingServer != nil)
+                    }
+                    AppPicker(title: L10n.tr("连接方式"), selection: $draft.transport, valueLabel: draft.transport) {
+                        Text("stdio").tag("stdio")
+                        Text("streamable-http").tag("streamable-http")
+                    }
+                    .accessibilityIdentifier("mcp.config.transport")
                     .disabled(existingServer != nil)
-                Picker(L10n.tr("AI 工具"), selection: $draft.host) {
-                    ForEach(MCPHost.allCases) { host in
-                        Text(host.displayName).tag(host)
+                    AppFormField(draft.transport == "stdio" ? L10n.tr("启动命令") : "URL") {
+                        TextField(draft.transport == "stdio" ? "/path/to/server" : "https://example.com/mcp", text: $draft.commandOrURL)
+                            .accessibilityLabel(draft.transport == "stdio" ? L10n.tr("启动命令") : "URL")
+                            .accessibilityIdentifier("mcp.config.command")
+                    }
+                    if existingServer != nil {
+                        Toggle(L10n.tr("替换启动参数"), isOn: $replaceArguments)
+                        Text(L10n.tr("默认保留现有参数、环境变量和其他配置；开启替换后，空参数表示清空。"))
+                            .font(AppFont.secondary)
+                    }
+                    if existingServer == nil || replaceArguments {
+                        AppFormField(L10n.tr("参数（每行一个，保留参数内空格）")) {
+                            TextField("--option", text: Binding(
+                                get: { draft.args.joined(separator: "\n") },
+                                set: { draft.args = $0.components(separatedBy: "\n").filter { !$0.isEmpty } }
+                            ), axis: .vertical)
+                            .accessibilityLabel(L10n.tr("参数（每行一个，保留参数内空格）"))
+                        }
+                    }
+                    if existingServer == nil {
+                        AppFormField(L10n.tr("环境变量名称（逗号分隔）")) {
+                            TextField("API_TOKEN", text: Binding(
+                                get: { draft.envKeys.joined(separator: ", ") },
+                                set: { draft.envKeys = $0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty } }
+                            ))
+                            .accessibilityLabel(L10n.tr("环境变量名称（逗号分隔）"))
+                        }
                     }
                 }
-                .disabled(existingServer != nil)
-                .onChange(of: draft.host) {
-                    if draft.host == .codex {
-                        draft.scope = .user
-                    }
-                }
-                Picker(L10n.tr("使用范围"), selection: $draft.scope) {
-                    if draft.host == .claudeCode {
-                        Text(L10n.tr("项目")).tag(MCPConfigurationScope.project)
-                    }
-                    Text(L10n.tr("用户")).tag(MCPConfigurationScope.user)
-                }
-                .disabled(existingServer != nil)
-                Picker(L10n.tr("连接方式"), selection: $draft.transport) {
-                    Text("stdio").tag("stdio")
-                    Text("streamable-http").tag("streamable-http")
-                }
-                .disabled(existingServer != nil)
-                TextField(
-                    draft.transport == "stdio" ? L10n.tr("启动命令") : "URL",
-                    text: $draft.commandOrURL
-                )
-                if existingServer != nil {
-                    Toggle(L10n.tr("替换启动参数"), isOn: $replaceArguments)
-                    Text(L10n.tr("默认保留现有参数、环境变量和其他配置；开启替换后，空参数表示清空。"))
-                        .font(AppFont.secondary)
-                }
-                if existingServer == nil || replaceArguments {
-                    TextField(L10n.tr("参数（每行一个，保留参数内空格）"), text: Binding(
-                        get: { draft.args.joined(separator: "\n") },
-                        set: { draft.args = $0.components(separatedBy: "\n").filter { !$0.isEmpty } }
-                    ), axis: .vertical)
-                }
-                if existingServer == nil {
-                    TextField(L10n.tr("环境变量名称（逗号分隔）"), text: Binding(
-                        get: { draft.envKeys.joined(separator: ", ") },
-                        set: { draft.envKeys = $0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty } }
-                    ))
-                }
-
+                .padding(2)
             }
             if showValidation && !draft.validationIssues().isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
@@ -336,10 +334,11 @@ struct MCPConfigSheet: View {
                         dismiss()
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(AppButtonStyle(kind: .primary))
                 .tint(AppColor.accent)
             }
         }
+        .appControls()
         .padding(26)
         .frame(width: 600, height: 620)
     }

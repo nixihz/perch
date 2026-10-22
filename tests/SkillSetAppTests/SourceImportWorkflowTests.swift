@@ -117,7 +117,7 @@ final class SourceImportWorkflowTests: XCTestCase {
             let body = Data("---\nname: existing\ndescription: local\n---\n# Existing".utf8)
             try body.write(to: skill.appendingPathComponent("SKILL.md"))
             let controller = NSHostingController(rootView: InstalledSkillScanSheet(model: model))
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 780, height: 580), styleMask: [.titled], backing: .buffered, defer: false)
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 780, height: 680), styleMask: [.titled], backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
             window.contentViewController = controller
             window.orderFront(nil)
@@ -127,7 +127,7 @@ final class SourceImportWorkflowTests: XCTestCase {
                 try await Task.sleep(for: .milliseconds(120))
                 controller.view.layoutSubtreeIfNeeded()
                 XCTAssertLessThanOrEqual(controller.view.fittingSize.width, 781)
-                XCTAssertLessThanOrEqual(controller.view.fittingSize.height, 581)
+                XCTAssertLessThanOrEqual(controller.view.fittingSize.height, 681)
             }
             XCTAssertEqual(try Data(contentsOf: skill.appendingPathComponent("SKILL.md")), body)
             XCTAssertNil(try? FileManager.default.destinationOfSymbolicLink(atPath: skill.path))

@@ -27,6 +27,8 @@ enum AppColor {
     static let ink = adaptive(light: 0x302B26, dark: 0xF1E9DF)
     static let surface = adaptive(light: 0xFFFDFA, dark: 0x2B2927)
     static let border = adaptive(light: 0xE3DDD5, dark: 0x47413C)
+    static let controlSurface = adaptive(light: 0xFFFFFF, dark: 0x242220)
+    static let controlHover = adaptive(light: 0xF6F1EB, dark: 0x36312D)
     static let positive = adaptive(light: 0x2D7050, dark: 0x88C5A0)
     static let selection = adaptive(light: 0xA6472D, dark: 0xDC896B)
     static let onSelection = adaptive(light: 0xFFFFFF, dark: 0x302B26)

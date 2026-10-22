@@ -8,6 +8,7 @@ final class AppModel {
     private(set) var snapshot: AppSnapshot
     private let baseSnapshot: AppSnapshot
     let runtimePaths: SkillSetRuntimePaths
+    let mcpLibrary: MCPLibraryModel
     let globalConfiguration: GlobalConfigurationModel
 
     var section: NavigationItem = .projects
@@ -74,6 +75,7 @@ final class AppModel {
         globalLocations: GlobalConfigurationLocations? = nil
     ) {
         self.runtimePaths = runtimePaths
+        self.mcpLibrary = MCPLibraryModel(paths: runtimePaths, locations: globalLocations)
         self.globalConfiguration = GlobalConfigurationModel(paths: runtimePaths, locations: globalLocations)
         let base = snapshot ?? SkillSetService.defaultSnapshot(for: runtimePaths)
         self.baseSnapshot = base
@@ -745,12 +747,15 @@ final class AppModel {
         return try service.scanInstalledSkills(additionalRoots: additionalRoots)
     }
 
+    var installedSkillImportError: String?
+
     func importInstalledSkills(_ selection: [InstalledSkillObservation]) async -> Bool {
         guard !isWorking else { return false }
         isWorking = true
         defer { isWorking = false }
         let paths = runtimePaths
         let locations = globalConfiguration.locations
+        installedSkillImportError = nil
         do {
             _ = try await Task.detached(priority: .userInitiated) {
                 try SkillSetService(paths: paths, globalLocations: locations).importInstalledSkills(selection)
@@ -760,6 +765,7 @@ final class AppModel {
             report("已收录本机技能；原安装保持原样，可勾选技能后启用到 AI 工具")
             return true
         } catch {
+            installedSkillImportError = UserFacingText.error(error)
             reportKey(UserFacingText.error(error))
             return false
         }
@@ -818,6 +824,18 @@ final class AppModel {
             }
         } catch {
             reportKey(UserFacingText.error(error))
+        }
+    }
+
+    func prepareMCPLibraryPlan(host: MCPHost, projectID: UUID?) {
+        do {
+            guard let service else { throw DeploymentError.invalidPlan }
+            preparedPlan = try service.makeMCPLibraryPlan(host: host, projectID: projectID)
+            mcpLibrary.error = nil
+            planPresented = true
+        } catch {
+            preparedPlan = nil
+            mcpLibrary.error = UserFacingText.error(error)
         }
     }
 

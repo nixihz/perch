@@ -4,390 +4,234 @@ import SkillSetCore
 
 struct PluginsView: View {
     @Bindable var model: AppModel
-    @State private var acknowledgedExecutableRisk = false
+    @State private var sources: [SourcePreviewRecord] = []
+    @State private var selectedID: UUID?
+    @State private var inventory: PluginInventorySnapshot?
+    @State private var evidence: PluginImportEvidence?
+    @State private var editing: SourcePreviewRecord?
+    @State private var editorPresented = false
+    @State private var scanPresented = false
+    @State private var deleting: SourcePreviewRecord?
+    @State private var query = ""
+    @State private var error: String?
 
-    private var installedCount: Int {
-        model.plugins.filter(\.installed).count
-    }
-
-    private var hookCount: Int {
-        model.plugins.filter { $0.components.contains("hooks") }.count
+    private var library: PluginSourceLibrary { PluginSourceLibrary(stateRoot: model.runtimePaths.applicationSupportRoot) }
+    private var selected: SourcePreviewRecord? { sources.first { $0.id == selectedID } }
+    private var filtered: [SourcePreviewRecord] {
+        sources.filter { query.isEmpty || [$0.namespace, $0.inputURL].contains { $0.localizedCaseInsensitiveContains(query) } }
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            PageHeader(
-                eyebrow: "PLUGIN INVENTORY",
-                title: L10n.tr("插件管理"),
-                detail: L10n.tr("查看 Claude Code 和 Codex 的本机插件。安装、启用或卸载前，先审阅命令、范围和风险；本机批准后才会执行。")
-            )
-            HStack(spacing: 8) {
-                StatusBadge(text: L10n.tr("\(model.plugins.count) 个缓存包"), tone: .accent)
-                StatusBadge(text: L10n.tr("\(installedCount) 个已安装"), tone: installedCount > 0 ? .positive : .warning)
-                StatusBadge(text: L10n.tr("\(hookCount) 个含自动运行脚本"), tone: hookCount > 0 ? .danger : .positive)
-                if !model.pluginIssues.isEmpty {
-                    StatusBadge(text: L10n.tr("\(model.pluginIssues.count) 个读取问题"), tone: .warning)
-                }
-                Spacer()
-                Button(L10n.tr("重新扫描")) {
-                    model.refreshPlugins()
-                }
-                .buttonStyle(.bordered)
-            }
+            PageHeader(eyebrow: "PLUGIN SOURCES", title: L10n.tr("插件来源"),
+                detail: L10n.tr("保存插件仓库或本地包，也可扫描本机插件后收录。需要使用时，再到全局配置或项目选择范围并预览计划。"))
+            if let error { Text(L10n.text(error)).font(AppFont.secondary).foregroundStyle(.red) }
             HStack(alignment: .top, spacing: AppLayout.columnSpacing) {
-                pluginList
-                    .frame(width: AppLayout.listWidth)
-                pluginDetail
-            }
-        }
-        .onAppear {
-            model.refreshPlugins()
-        }
-        .onChange(of: model.selectedProjectID) {
-            model.refreshPlugins()
-        }
-        .onChange(of: model.selectedPluginID) {
-            acknowledgedExecutableRisk = false
-        }
-    }
-
-    private var pluginList: some View {
-        SurfaceCard {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text(L10n.tr("已发现的插件"))
-                        .font(AppFont.heading)
-                    Spacer()
-                    Text("\(model.plugins.count)")
-                        .font(AppFont.secondary.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                }
-
-                if model.plugins.isEmpty {
-                    EmptyState(
-                        icon: "puzzlepiece.extension",
-                        title: L10n.tr("还没有发现插件"),
-                        detail: L10n.tr("请先选择项目，或在 Claude Code / Codex 中配置插件市场，再重新扫描。")
-                    )
-                } else {
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 4) {
-                            ForEach(model.plugins) { plugin in
-                                pluginRow(plugin)
+                SurfaceCard {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Text(L10n.tr("插件来源")).font(AppFont.heading)
+                            Spacer()
+                            Button { editing = nil; editorPresented = true } label: { Image(systemName: "plus") }
+                                .help(L10n.tr("添加插件来源"))
+                                .accessibilityIdentifier("plugins.source.add")
+                        }
+                        AppSearchField(query: $query, prompt: L10n.tr("搜索名称或来源"),
+                            label: L10n.tr("搜索插件来源"), identifier: "plugins.source.search")
+                        Button(L10n.tr("扫描本机插件…")) { scanPresented = true }
+                            .accessibilityIdentifier("plugins.scan")
+                        if filtered.isEmpty {
+                            Text(L10n.tr("还没有匹配的插件来源。添加仓库、本地目录，或扫描本机插件。"))
+                                .font(AppFont.secondary).foregroundStyle(.secondary)
+                        }
+                        ScrollView {
+                            LazyVStack(alignment: .leading, spacing: 6) {
+                                ForEach(filtered) { source in
+                                    Button { select(source) } label: {
+                                        VStack(alignment: .leading, spacing: 5) {
+                                            Text(source.namespace).font(AppFont.body.weight(.semibold)).foregroundStyle(.primary)
+                                            Text(source.inputURL).font(AppFont.metadata).foregroundStyle(.secondary).lineLimit(2)
+                                        }
+                                        .frame(maxWidth: .infinity, alignment: .leading).padding(8)
+                                        .selectionRow(source.id == selectedID).contentShape(Rectangle())
+                                    }.buttonStyle(.plain)
+                                }
                             }
                         }
+                        Text(L10n.tr("保存来源不安装插件，也不修改 AI 工具的市场或配置。"))
+                            .font(AppFont.secondary).foregroundStyle(.secondary)
                     }
-                }
-
-                Divider()
-                Text(L10n.tr("扫描不运行插件命令、自动运行脚本或市场脚本。只有计划批准后才会调用所属工具。"))
-                    .font(AppFont.secondary)
-                    .foregroundStyle(.secondary)
-
-                if !model.pluginIssues.isEmpty {
-                    DisclosureGroup(L10n.tr("读取问题")) {
-                        VStack(alignment: .leading, spacing: 6) {
-                            ForEach(model.pluginIssues, id: \.self) { issue in
-                                Text(L10n.text(UserFacingText.diagnostic(issue, context: .plugin)))
-                                    .font(AppFont.secondary)
-                                    .foregroundStyle(.red)
-                                    .textSelection(.enabled)
-                            }
-                        }
-                        .padding(.top, 6)
-                    }
-                    .font(AppFont.secondary.weight(.medium))
-                }
-
-                DisclosureGroup(L10n.tr("扫描目录 \(model.pluginScanRoots.count) 个")) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        ForEach(model.pluginScanRoots, id: \.self) { root in
-                            Text(root)
-                                .font(AppFont.secondary.monospaced())
-                                .foregroundStyle(.secondary)
-                                .textSelection(.enabled)
-                        }
-                    }
-                    .padding(.top, 6)
-                }
-                .font(AppFont.secondary.weight(.medium))
+                }.frame(width: AppLayout.listWidth)
+                sourceDetail
             }
+        }
+        .task { reload() }
+        .sheet(isPresented: $editorPresented) {
+            PluginSourceEditor(library: library, source: editing) { source in reload(preferred: source.id) }
+        }
+        .sheet(isPresented: $scanPresented, onDismiss: { reload() }) {
+            PluginScanSheet(model: model, library: library)
+        }
+        .confirmationDialog(L10n.tr("移除插件来源？"), isPresented: Binding(
+            get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
+            Button(L10n.tr("移除"), role: .destructive) {
+                guard let source = deleting else { return }
+                do { try library.remove(source.id); deleting = nil; reload() }
+                catch { self.error = UserFacingText.error(error) }
+            }
+            Button(L10n.tr("取消"), role: .cancel) { deleting = nil }
+        } message: {
+            Text(L10n.tr("移除来源及栖集中的隔离副本，保留原始目录和已有插件安装。"))
         }
     }
 
-    private func pluginRow(_ plugin: PluginInventoryRecord) -> some View {
-        Button {
-            model.inspectPlugin(plugin)
-        } label: {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: plugin.installed ? "puzzlepiece.extension.fill" : "shippingbox")
-                    .foregroundStyle(plugin.id == model.selectedPluginID ? AppColor.accentText : .secondary)
-                    .frame(width: 18)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(plugin.name)
-                        .font(AppFont.body.weight(.semibold))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                    Text("\(plugin.host.displayName) · \(plugin.pluginID)")
-                        .font(AppFont.secondary)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                    Text(L10n.text(UserFacingText.pluginState(plugin)))
-                        .font(AppFont.metadata)
-                        .foregroundStyle(plugin.installed ? AppColor.positive : .secondary)
-                }
-                Spacer(minLength: 6)
-                StatusBadge(
-                    text: plugin.components.contains("hooks") ? L10n.tr("含自动运行脚本") : (plugin.version ?? L10n.tr("未声明版本")),
-                    tone: plugin.components.contains("hooks") ? .danger : .warning
-                )
-            }
-            .padding(.vertical, 9)
-            .padding(.horizontal, 6)
-            .selectionRow(plugin.id == model.selectedPluginID)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
-
-    @ViewBuilder
-    private var pluginDetail: some View {
-        if let plugin = model.selectedPlugin {
+    @ViewBuilder private var sourceDetail: some View {
+        if let source = selected, filtered.contains(where: { $0.id == source.id }) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     SurfaceCard(emphasis: true) {
-                        VStack(alignment: .leading, spacing: 10) {
-                            HStack(alignment: .top) {
-                                VStack(alignment: .leading, spacing: 5) {
-                                    Text(plugin.name)
-                                        .font(AppFont.title.weight(.bold))
-                                    Text(plugin.pluginID)
-                                        .font(AppFont.body.monospaced())
-                                        .foregroundStyle(.secondary)
-                                        .textSelection(.enabled)
-                                }
-                                Spacer()
-                                StatusBadge(text: L10n.text(UserFacingText.pluginState(plugin)), tone: statusTone(plugin))
-                            }
-                            if !plugin.description.isEmpty {
-                                Text(plugin.description)
-                                    .font(AppFont.body)
-                                    .foregroundStyle(.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                            Divider()
-                            HStack(spacing: 8) {
-                                ForEach(plugin.components.isEmpty ? ["manifest"] : plugin.components, id: \.self) {
-                                    StatusBadge(text: L10n.text(UserFacingText.metadata($0, field: .component)), tone: $0 == "hooks" || $0 == "MCP" ? .danger : .accent)
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text(source.namespace).font(AppFont.title.weight(.bold))
+                            DisclosureGroup(L10n.tr("详细信息")) {
+                                VStack(alignment: .leading, spacing: 10) {
+                                    Text(source.inputURL).font(AppFont.code).textSelection(.enabled)
+                                    KeyValueLine(key: L10n.tr("快照版本"), value: source.resolvedCommit, monospaced: true)
                                 }
                             }
+                            HStack {
+                                Button(L10n.tr("编辑来源…")) { editing = source; editorPresented = true }
+                                Button(L10n.tr("移除来源…"), role: .destructive) { deleting = source }
+                            }
+                            Text(L10n.tr("编辑会重新读取来源，失败时保留旧记录。已有安装不会跟随来源更新。"))
+                                .font(AppFont.secondary).foregroundStyle(.secondary)
                         }
                     }
-
-                    HStack(alignment: .top, spacing: 16) {
-                        SurfaceCard {
-                            VStack(alignment: .leading, spacing: 10) {
-                                Text(L10n.tr("来源与版本"))
-                                    .font(AppFont.heading)
-                                KeyValueLine(key: L10n.tr("AI 工具"), value: plugin.host.displayName)
-                                KeyValueLine(key: L10n.tr("市场"), value: plugin.marketplaceID ?? L10n.tr("项目或本地目录"))
-                                KeyValueLine(key: L10n.tr("声明版本"), value: plugin.version ?? L10n.tr("未声明"))
-                                KeyValueLine(key: L10n.tr("安装范围"), value: plugin.scope.map { L10n.text(UserFacingText.metadata($0, field: .scope)) } ?? L10n.tr("尚未确认"))
-                                KeyValueLine(
-                                    key: L10n.tr("安装版本"),
-                                    value: plugin.sourceRevision ?? L10n.tr("未从安装索引获得"),
-                                    monospaced: true
-                                )
-                                KeyValueLine(
-                                    key: L10n.tr("清单指纹"),
-                                    value: String(plugin.manifestDigest.prefix(20)) + "…",
-                                    monospaced: true
-                                )
-                            }
-                        }
-                        SurfaceCard {
-                            VStack(alignment: .leading, spacing: 10) {
-                                Text(L10n.tr("依赖与路径"))
-                                    .font(AppFont.heading)
-                                KeyValueLine(
-                                    key: L10n.tr("依赖"),
-                                    value: plugin.dependencyCount == 0
-                                        ? L10n.tr("未声明")
-                                        : L10n.tr("\(plugin.dependencyCount) 项，安装时由 AI 工具处理")
-                                )
-                                KeyValueLine(key: L10n.tr("许可"), value: plugin.license ?? L10n.tr("未声明"))
-                                Text(plugin.sourcePath)
-                                    .font(AppFont.secondary.monospaced())
-                                    .foregroundStyle(.secondary)
-                                    .textSelection(.enabled)
-                                    .lineLimit(4)
-                                Text(L10n.tr("仅凭版本号无法确认内容一致，还需核对来源、具体版本和清单指纹。"))
-                                    .font(AppFont.secondary)
-                                    .foregroundStyle(.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                        }
-                    }
-
                     SurfaceCard {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Label(L10n.tr("权限与运行风险"), systemImage: "hand.raised.fill")
-                                .font(AppFont.heading)
-                            ForEach(plugin.risks, id: \.self) { risk in
-                                Label(L10n.text(UserFacingText.pluginRisk(risk)), systemImage: risk.contains("hook") ? "exclamationmark.triangle.fill" : "info.circle")
-                                    .font(AppFont.secondary)
-                                    .foregroundStyle(risk.contains("hook") ? .red : .secondary)
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text(L10n.tr("来源中的插件")).font(AppFont.heading)
+                            if inventory?.records.isEmpty != false {
+                                Text(L10n.tr("没有发现可识别的插件清单；该来源仍可保留，宿主兼容性需要另行核对。"))
+                                    .font(AppFont.secondary).foregroundStyle(.secondary)
                             }
-                            Text(L10n.tr("安装、停用或卸载不能撤销脚本已经造成的改动；加载新插件可能需要重启会话。"))
-                                .font(AppFont.secondary)
-                                .foregroundStyle(.secondary)
+                            ForEach(inventory?.records ?? []) { plugin in
+                                VStack(alignment: .leading, spacing: 5) {
+                                    Text(plugin.name).font(AppFont.body.weight(.semibold))
+                                    Text(plugin.host.displayName + " · " + (plugin.version ?? L10n.tr("未声明版本")))
+                                        .font(AppFont.secondary).foregroundStyle(.secondary)
+                                    Text(plugin.description).font(AppFont.secondary)
+                                    Text(plugin.components.map { L10n.text(UserFacingText.metadata($0, field: .component)) }.joined(separator: " · "))
+                                        .font(AppFont.metadata).foregroundStyle(.secondary)
+                                    Button(L10n.tr("查看清单文件")) {
+                                        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: plugin.manifestPath)])
+                                    }
+                                }
+                                Divider()
+                            }
+                            ForEach(inventory?.issues ?? [], id: \.self) { issue in
+                                Text(L10n.text(UserFacingText.diagnostic(issue, context: .plugin)))
+                                    .font(AppFont.secondary).foregroundStyle(.orange)
+                            }
                         }
                     }
-
-                    lifecycleCard(plugin)
-
-                    HStack {
-                        Button(L10n.tr("查看清单文件")) {
-                            NSWorkspace.shared.activateFileViewerSelecting([
-                                URL(fileURLWithPath: plugin.manifestPath)
-                            ])
+                    if let evidence {
+                        SurfaceCard {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text(L10n.tr("扫描收录记录")).font(AppFont.heading)
+                                Text(L10n.date(evidence.scannedAt)).font(AppFont.secondary)
+                                ForEach(evidence.installations) { installation in
+                                    Text(installation.host.displayName + " · " + installation.pluginID).font(AppFont.secondary)
+                                    Text(installation.sourcePath).font(AppFont.code).textSelection(.enabled)
+                                    Text(L10n.text(UserFacingText.pluginState(installation))).font(AppFont.metadata).foregroundStyle(.secondary)
+                                }
+                                Text(L10n.tr("这里保存扫描时的安装证据，当前安装状态请在配置入口重新扫描。"))
+                                    .font(AppFont.secondary).foregroundStyle(.secondary)
+                            }
                         }
-                        .buttonStyle(.borderedProminent)
-                        .tint(AppColor.accent)
-
-                        Button(L10n.tr("复制插件标识")) {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(plugin.pluginID, forType: .string)
-                            model.report("已复制 \(plugin.pluginID)")
+                    }
+                    SurfaceCard {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text(L10n.tr("按需配置")).font(AppFont.heading)
+                            Text(L10n.tr("在全局配置或项目中选择 AI 工具，再打开插件配置。远程市场安装仍由宿主取得本机包后生成计划。"))
+                                .font(AppFont.secondary).foregroundStyle(.secondary)
+                            HStack {
+                                Button(L10n.tr("前往全局配置")) { model.section = .globalConfiguration }
+                                Button(L10n.tr("前往项目")) { model.section = .projects }
+                            }
                         }
-                        .buttonStyle(.bordered)
                     }
                 }
             }
         } else {
-            EmptyState(
-                icon: "puzzlepiece.extension",
-                title: L10n.tr("选择一个插件"),
-                detail: L10n.tr("选择左侧插件，核对来源、具体版本和自动运行脚本的风险。")
-            )
+            EmptyState(icon: "puzzlepiece.extension", title: L10n.tr("选择一个插件来源"),
+                detail: L10n.tr("查看来源、固定版本和插件内容，或扫描本机插件收录完整包。"))
         }
     }
 
-    private func lifecycleCard(_ plugin: PluginInventoryRecord) -> some View {
-        SurfaceCard {
-            VStack(alignment: .leading, spacing: 12) {
-                Label(L10n.tr("插件操作"), systemImage: "gearshape.2.fill")
-                    .font(AppFont.heading)
-                Text(L10n.tr("先预览插件操作计划，核对后再批准。栖集会调用本机 Claude Code 或 Codex 完成操作。"))
-                    .font(AppFont.secondary)
-                    .foregroundStyle(.secondary)
+    private func reload(preferred: UUID? = nil) {
+        do {
+            sources = try library.sources()
+            selectedID = preferred ?? selectedID
+            if let source = sources.first(where: { $0.id == selectedID }) ?? sources.first { select(source) }
+            else { selectedID = nil; inventory = nil; evidence = nil }
+            error = nil
+        } catch { self.error = UserFacingText.error(error) }
+    }
 
-                if requiresRiskAcknowledgement(plugin) {
-                    Toggle(
-                        L10n.tr("已核对完整插件包、自动运行脚本、命令、服务和配置风险，允许生成计划"),
-                        isOn: $acknowledgedExecutableRisk
-                    )
-                    .font(AppFont.secondary)
-                    .toggleStyle(.checkbox)
-                    if !acknowledgedExecutableRisk {
-                        Text(L10n.tr("请先勾选风险确认，再生成安装或更新计划。"))
-                            .font(AppFont.secondary)
-                            .foregroundStyle(.secondary)
+    private func select(_ source: SourcePreviewRecord) {
+        selectedID = source.id
+        inventory = nil
+        evidence = nil
+        do { inventory = try library.inventory(source.id); evidence = try library.evidence(source.id); error = nil }
+        catch { self.error = UserFacingText.error(error) }
+    }
+}
+
+private struct PluginSourceEditor: View {
+    let library: PluginSourceLibrary
+    let source: SourcePreviewRecord?
+    let onSave: (SourcePreviewRecord) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var address: String
+    @State private var ref: String
+    @State private var busy = false
+    @State private var error: String?
+
+    init(library: PluginSourceLibrary, source: SourcePreviewRecord?, onSave: @escaping (SourcePreviewRecord) -> Void) {
+        self.library = library; self.source = source; self.onSave = onSave
+        _address = State(initialValue: source?.inputURL ?? "")
+        _ref = State(initialValue: source?.requestedRef ?? "")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(L10n.tr(source == nil ? "添加插件来源" : "编辑插件来源")).font(AppFont.title.weight(.bold))
+            Text(L10n.tr("隔离读取完整来源，不执行插件脚本；保存后不会自动安装到 AI 工具。"))
+                .font(AppFont.secondary).foregroundStyle(.secondary)
+            AppFormField(L10n.tr("Git 仓库链接或本地目录")) { TextField("owner/repository", text: $address) }
+            Button(L10n.tr("选择本地目录…")) {
+                let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.showsHiddenFiles = true
+                if panel.runModal() == .OK, let url = panel.url { address = url.path; ref = "" }
+            }
+            AppFormField(L10n.tr("分支、标签或提交（可选）")) { TextField("", text: $ref) }
+            if let error { Text(L10n.text(error)).font(AppFont.secondary).foregroundStyle(.red) }
+            if busy { ProgressView().controlSize(.small) }
+            HStack {
+                Spacer()
+                Button(L10n.tr("取消")) { dismiss() }.keyboardShortcut(.cancelAction)
+                Button(L10n.tr("保存来源")) {
+                    busy = true; error = nil
+                    let input = address, revision = ref, replacing = source?.id
+                    Task {
+                        do {
+                            let result = try await Task.detached { try library.save(address: input, ref: revision, replacing: replacing) }.value
+                            onSave(result); dismiss()
+                        } catch { self.error = UserFacingText.error(error) }
+                        busy = false
                     }
-                }
-
-                HStack(spacing: 8) {
-                    if !plugin.installed {
-                        lifecycleButton(
-                            plugin,
-                            action: .install,
-                            title: L10n.tr("生成安装计划"),
-                            requiresRiskAcknowledgement: true
-                        )
-                    } else {
-                        if plugin.host == .claudeCode {
-                            if plugin.enabled == false {
-                                lifecycleButton(
-                                    plugin,
-                                    action: .enable,
-                                    title: L10n.tr("生成启用计划")
-                                )
-                            } else {
-                                lifecycleButton(
-                                    plugin,
-                                    action: .disable,
-                                    title: L10n.tr("生成停用计划")
-                                )
-                            }
-                            lifecycleButton(
-                                plugin,
-                                action: .update,
-                                title: L10n.tr("生成更新计划"),
-                                requiresRiskAcknowledgement: true
-                            )
-                        }
-                        lifecycleButton(
-                            plugin,
-                            action: .uninstall,
-                            title: L10n.tr("生成卸载计划")
-                        )
-                    }
-                    Spacer()
-                }
-
-                if plugin.host == .codex {
-                    Text(L10n.tr("Codex 目前只支持安装和卸载插件，暂不支持在这里启用、停用或更新。"))
-                        .font(AppFont.secondary)
-                        .foregroundStyle(.secondary)
-                }
-                if plugin.installed, plugin.enabled == nil {
-                    Text(L10n.tr("AI 工具尚未提供启用状态。生成计划时会重新检查，无法确认时不会继续操作。"))
-                        .font(AppFont.secondary)
-                        .foregroundStyle(.orange)
-                }
+                }.keyboardShortcut("s", modifiers: .command).buttonStyle(AppButtonStyle(kind: .primary))
+                    .disabled(address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
-    }
-
-    private func lifecycleButton(
-        _ plugin: PluginInventoryRecord,
-        action: PluginLifecycleAction,
-        title: String,
-        requiresRiskAcknowledgement: Bool = false
-    ) -> some View {
-        Button(title) {
-            model.makePluginLifecyclePlan(
-                plugin,
-                action: action,
-                acknowledgeExecutableComponents: requiresRiskAcknowledgement
-                    && acknowledgedExecutableRisk
-            )
-        }
-        .buttonStyle(.bordered)
-        .tint(action == .uninstall ? Color.secondary : AppColor.accentText)
-        .disabled(
-            requiresRiskAcknowledgement
-                && !acknowledgedExecutableRisk
-        )
-    }
-
-    private func requiresRiskAcknowledgement(_ plugin: PluginInventoryRecord) -> Bool {
-        !plugin.installed || plugin.host == .claudeCode
-    }
-
-    private func hasExecutableComponents(_ plugin: PluginInventoryRecord) -> Bool {
-        !Set(plugin.components)
-            .intersection(["hooks", "commands", "MCP", "LSP", "userConfig"])
-            .isEmpty
-    }
-
-    private func statusTone(_ plugin: PluginInventoryRecord) -> BadgeTone {
-        if plugin.components.contains("hooks") {
-            return .danger
-        }
-        if plugin.installed {
-            return plugin.enabled == false ? .warning : .positive
-        }
-        return .warning
+        .disabled(busy).interactiveDismissDisabled(busy).appControls().padding(26).frame(width: 620)
     }
 }

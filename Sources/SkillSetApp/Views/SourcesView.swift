@@ -67,7 +67,7 @@ struct SourcesView: View {
                         .frame(minHeight: 32)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(AppButtonStyle(kind: .quiet))
                 .help(L10n.tr("添加技能来源"))
                 .accessibilityLabel(L10n.tr("添加技能来源"))
                 .accessibilityIdentifier("sources.add")
@@ -168,7 +168,7 @@ struct SourcesView: View {
                                 Text(L10n.tr("在 Finder 中显示预览文件"))
                                     .frame(minHeight: 32)
                             }
-                            .buttonStyle(.bordered)
+                            .buttonStyle(AppButtonStyle())
                             .accessibilityIdentifier("sources.preview.reveal")
                             HStack {
                                 Button {
@@ -371,14 +371,14 @@ struct SourceEditorSheet: View {
                 Text(L10n.tr("Git 仓库链接或本地目录"))
                     .font(AppFont.secondary.weight(.semibold))
                 TextField("https://git.example.com/group/repo 或 owner/repo", text: $draft.url)
-                    .textFieldStyle(.roundedBorder)
+                    .textFieldStyle(AppTextFieldStyle())
                     .accessibilityLabel(L10n.tr("Git 仓库链接或本地目录"))
                     .focused($urlFocused)
                 Text(L10n.tr("分支、标签或提交（可选）"))
                     .font(AppFont.secondary.weight(.semibold))
                     .padding(.top, 8)
                 TextField(L10n.tr("留空使用默认分支"), text: $draft.ref)
-                    .textFieldStyle(.roundedBorder)
+                    .textFieldStyle(AppTextFieldStyle())
                     .accessibilityLabel(L10n.tr("分支、标签或提交（可选）"))
             }
             .disabled(model.isWorking)
@@ -413,11 +413,12 @@ struct SourceEditorSheet: View {
                     }
                 }
                 .keyboardShortcut(.defaultAction)
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(AppButtonStyle(kind: .primary))
                 .tint(AppColor.accent)
                 .disabled(model.isWorking || draft.url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
+        .appControls()
         .padding(26)
         .frame(width: 560)
         .interactiveDismissDisabled(model.isWorking)

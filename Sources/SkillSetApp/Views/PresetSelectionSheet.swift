@@ -47,6 +47,7 @@ struct PresetSelectionSheet: View {
             Divider()
             footer
         }
+        .appControls()
         .frame(width: 860, height: 620)
         .background(.regularMaterial)
         .disclosureGroupStyle(FullRowDisclosureGroupStyle())
@@ -96,7 +97,7 @@ struct PresetSelectionSheet: View {
                         .frame(minHeight: 32)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.borderless).help(L10n.tr("新建预设"))
+                .buttonStyle(AppButtonStyle(kind: .quiet)).help(L10n.tr("新建预设"))
                 .accessibilityLabel(L10n.tr("新建预设"))
                 .accessibilityIdentifier("presets.selection.new")
             }
@@ -216,7 +217,8 @@ struct PresetSelectionSheet: View {
         VStack(alignment: .leading, spacing: 6) {
             if request.projectID == nil {
                 HStack(spacing: 10) {
-                    Picker(L10n.tr("目标项目"), selection: $projectID) {
+                    AppPicker(title: L10n.tr("目标项目"), selection: $projectID,
+                              valueLabel: project?.name ?? L10n.tr("选择目标项目"), showsLabel: false) {
                         Text(L10n.tr("选择目标项目")).tag("")
                         ForEach(model.projects) { project in Text(project.name).tag(project.id) }
                     }
@@ -226,7 +228,7 @@ struct PresetSelectionSheet: View {
                             .frame(minHeight: 32)
                             .contentShape(Rectangle())
                     }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(AppButtonStyle(kind: .quiet))
                     .help(L10n.tr("添加本机目录…"))
                     .accessibilityLabel(L10n.tr("添加本机目录…"))
                     .accessibilityIdentifier("presets.selection.addProject")
@@ -359,12 +361,11 @@ struct PresetSelectionSheet: View {
                 if model.loadPreset(preset, into: projectID) { dismiss() }
                 else { error = model.actionMessage }
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(AppButtonStyle(kind: .primary))
             .keyboardShortcut(.defaultAction)
             .disabled(preview?.canLoad != true || model.isWorking)
             .accessibilityIdentifier("presets.selection.load")
         }
-        .controlSize(.large)
         .padding(.horizontal, 24)
         .padding(.vertical, 16)
     }

@@ -108,11 +108,20 @@ final class NavigationLayoutTests: XCTestCase {
         }
         let paths = SkillSetRuntimePaths(applicationSupportRoot: root, repositoryRoot: nil)
         for index in 0..<24 {
+            try MCPLibraryStore(rootURL: root).save(MCPLibraryEntry(name: "fixture\(index)", commandOrURL: "/usr/bin/true"))
+        }
+        for index in 0..<24 {
             try SourcePreviewStore(rootURL: paths.previewsRoot).save(SourcePreviewRecord(
                 id: UUID(), inputURL: "https://example.com/fixture/\(index)",
                 canonicalURL: "https://example.com/fixture/\(index)", namespace: "fixture-\(index)",
                 resolvedCommit: String(repeating: "a", count: 40), createdAt: Date(), workspacePath: root.path,
                 licenseEvidence: "", candidates: [], excludedCounts: [:], warnings: []))
+        }
+        // 插件页管理来源；用真实隔离包填充来源列表，而不是依赖宿主缓存列表。
+        let pluginLibrary = PluginSourceLibrary(stateRoot: root)
+        let inventory = PluginInventoryManager(projectRoot: nil, homeDirectory: root.appendingPathComponent("SKILLSET_HOME")).inspect()
+        for candidate in try pluginLibrary.scan(records: inventory.records) {
+            _ = try pluginLibrary.importCandidate(candidate)
         }
         // 长列表使用明确 fixture；生产初次启动不再隐式提供内置技能。
         let model = AppModel(snapshot: AppSnapshot.load(), runtimePaths: paths)
@@ -169,8 +178,11 @@ final class NavigationLayoutTests: XCTestCase {
                     // 检查真实滚动区域，避免只验证常量却漏掉页面自己的尺寸覆盖。
                     XCTAssertEqual(listRect.width, 280, accuracy: 1, "\(context) 列表卡片应为 320pt，扣除两侧各 20pt 内边距")
                     XCTAssertEqual(listRect.minX - sidebarRect.maxX, 48, accuracy: 2, "\(context) 列表左侧应对齐页面边距")
-                    XCTAssertEqual(detailRect.minX - listRect.maxX, 38, accuracy: 1, "\(context) 详情应紧邻统一列表栏")
-                    XCTAssertEqual(detailRect.maxX, controller.view.bounds.maxX - 28, accuracy: 1, "\(context) 详情未占满剩余宽度")
+                    // MCP 配置库的短详情卡片无需滚动，其他详情仍按真实滚动区域校验。
+                    if section != .mcp {
+                        XCTAssertEqual(detailRect.minX - listRect.maxX, 38, accuracy: 1, "\(context) 详情应紧邻统一列表栏")
+                        XCTAssertEqual(detailRect.maxX, controller.view.bounds.maxX - 28, accuracy: 1, "\(context) 详情未占满剩余宽度")
+                    }
                 }
                 if section == .skills || section == .mcp || section == .plugins {
                     let overflow = scrollViews.filter { scroll in

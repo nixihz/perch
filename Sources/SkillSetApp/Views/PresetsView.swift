@@ -29,7 +29,7 @@ struct PresetsView: View {
                             .frame(minHeight: 32)
                             .contentShape(Rectangle())
                     }
-                        .buttonStyle(.borderless).keyboardShortcut("n", modifiers: .command)
+                        .buttonStyle(AppButtonStyle(kind: .quiet)).keyboardShortcut("n", modifiers: .command)
                         .help(L10n.tr("新建预设"))
                         .accessibilityLabel(L10n.tr("新建预设"))
                         .accessibilityIdentifier("presets.new")
@@ -136,7 +136,7 @@ struct PresetsView: View {
     @ViewBuilder
     private func presetActions(_ preset: PresetRecord) -> some View {
         Button(L10n.tr("用于项目…")) { model.presetSelection = PresetSelectionRequest(presetID: preset.id) }
-            .buttonStyle(.borderedProminent).tint(AppColor.accent)
+            .buttonStyle(AppButtonStyle(kind: .primary)).tint(AppColor.accent)
             .accessibilityIdentifier("presets.chooseProject")
         Button(L10n.tr("编辑预设")) {
             model.beginEditingPreset(preset)

@@ -28,7 +28,7 @@ struct SourceSkillImportSheet: View {
                 HStack {
                     Text(L10n.tr("技能标识"))
                     TextField("my-skill", text: $draft.slug)
-                        .textFieldStyle(.roundedBorder).focused($slugFocused)
+                        .textFieldStyle(AppTextFieldStyle()).focused($slugFocused)
                         .disabled(model.isWorking).accessibilityIdentifier("sources.import.slug")
                 }
                 if invalidSlug {
@@ -76,19 +76,20 @@ struct SourceSkillImportSheet: View {
                     Button(L10n.tr("在技能库查看")) { dismiss(); model.showLibrarySkill(id) }
                         .accessibilityIdentifier("sources.import.view")
                     Button(L10n.tr("前往项目")) { dismiss(); model.section = .projects }
-                        .buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
+                        .buttonStyle(AppButtonStyle(kind: .primary)).keyboardShortcut(.defaultAction)
                         .accessibilityIdentifier("sources.import.projects")
                 } else {
                     if model.isWorking { ProgressView().controlSize(.small) }
                     Button(L10n.tr("加入技能库")) {
                         Task { if await model.importSourceSkill(draft) { addedID = "personal/\(draft.slug)" } }
                     }
-                    .buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
+                    .buttonStyle(AppButtonStyle(kind: .primary)).keyboardShortcut(.defaultAction)
                     .disabled(model.isWorking || invalidSlug || duplicate)
                     .accessibilityIdentifier("sources.import.confirm")
                 }
             }
         }
+        .appControls()
         .padding(24).frame(width: 720, height: 640)
         .interactiveDismissDisabled(model.isWorking)
         .onAppear { slugFocused = true }

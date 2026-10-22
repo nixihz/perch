@@ -1,12 +1,20 @@
 # Plugin 管理规格
 
-状态：只读 inventory 和审批门控生命周期已实现（2026-10-21）；marketplace 浏览、依赖图求解和跨宿主统一 enable/update 仍未实现。
+状态：来源管理、本机插件扫描入库、只读 inventory 和审批门控生命周期已实现（2026-10-22）；marketplace 浏览、来源包直接安装、依赖图求解和跨宿主统一 enable/update 仍未实现。
 
 ## 1. 为什么单独管理 Plugin
 
 Plugin 不是一个更大的 Skill 文件夹。它可能同时贡献 skills、MCP servers、commands、agents、hooks、LSP 或用户配置，且由宿主 marketplace、Git、目录、archive、npm 或 command source 装载。安装一个 plugin 的副作用范围比安装单个 skill 大，必须在 UI 中展开清楚。
 
-Alpha 的 Plugins 页面读取项目 `.claude-plugin` / `.codex-plugin`、Claude 与 Codex 插件缓存、Claude `installed_plugins.json`、Codex `config.toml` 和 manifest。盘点本身不执行 hooks、commands、市场脚本或安装器。生命周期由本应用生成不可变计划，经本机 UI 或 CLI 人工批准后，只调用宿主公开 CLI；AI 通过 MCP 可以生成计划，但不能批准，也不能为高风险安装/更新作风险确认。
+Alpha 的「插件来源」页面管理仓库、本地目录和扫描收录包；全局配置与项目页按需打开插件配置面板。扫描读取项目 `.claude-plugin` / `.codex-plugin`、Claude 与 Codex 插件缓存、Claude `installed_plugins.json`、Codex `config.toml` 和 manifest。盘点本身不执行 hooks、commands、市场脚本或安装器。生命周期由本应用生成不可变计划，经本机 UI 或 CLI 人工批准后，只调用宿主公开 CLI；AI 通过 MCP 可以生成计划，但不能批准，也不能为高风险安装/更新作风险确认。
+
+### 来源库与本机扫描
+
+`PluginSourceLibrary` 将来源保存在 `~/.perch/plugins/sources/<UUID>/`。仓库来源复用隔离 Git 预览，记录固定提交；本地来源复制完整目录并计算完整包指纹，包含 hooks 等附属资源，不依赖是否存在 SKILL.md。来源编辑先准备新快照，成功后移除旧记录；删除仅按 UUID 推导栖集内路径，不信任记录中的 `workspacePath`。来源盘点不叠加宿主安装状态。
+
+本机扫描以完整包指纹合并同内容位置。入库将完整包独立复制到 `checkout`，`import.json` 保存扫描时间、指纹与安装证据，`preview.json` 发布来源记录。复制前校验各原始位置与 manifest，复制后再次核对完整包指纹；失败清理未发布目录。既有相同内容不重复收录，附属文件改变可单独收录。来源更新、删除和入库均不改原始安装、宿主配置或待审计划；批量操作允许部分完成，界面保留未完成选择。
+
+配置入口绑定明确 host、scope 与已登记项目 ID，不从插件来源或当前其他页面选择推断目标。生命周期仍只支持本机可发现插件；来源库不自动注册市场、安装远程包或切换既有安装。Codex 仅开放用户范围，Claude Code 支持用户和项目范围。
 
 ## 2. 统一身份和版本
 

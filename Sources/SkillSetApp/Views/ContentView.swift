@@ -24,6 +24,7 @@ struct ContentView: View {
         .tint(AppColor.accent)
         .accentColor(AppColor.accent)
         .disclosureGroupStyle(FullRowDisclosureGroupStyle())
+        .appControls()
         .font(AppFont.body)
         .lineSpacing(2)
     }

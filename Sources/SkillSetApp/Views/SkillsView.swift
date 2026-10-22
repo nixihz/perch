@@ -26,7 +26,7 @@ struct SkillsView: View {
                 } label: {
                     Label(L10n.tr("新增技能"), systemImage: "plus")
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(AppButtonStyle(kind: .primary))
                 .keyboardShortcut("n", modifiers: [.command])
                 .accessibilityIdentifier("skills.create")
             }
@@ -281,7 +281,8 @@ private struct UserSkillInstallSheet: View {
             Text(L10n.tr("用户级启用技能")).font(AppFont.title)
             Text(L10n.tr("用户级技能会影响所选 AI 工具的全部项目。已有受管技能会保留；安装方式也会应用于它们。"))
                 .font(AppFont.secondary).foregroundStyle(.secondary)
-            Picker(L10n.tr("目标 AI 工具"), selection: $host) {
+            AppPicker(title: L10n.tr("目标 AI 工具"), selection: $host,
+                      valueLabel: host == "codex" ? "Codex · ~/.agents/skills" : "Claude Code · ~/.claude/skills") {
                 Text("Codex · ~/.agents/skills").tag("codex")
                 Text("Claude Code · ~/.claude/skills").tag("claude-code")
             }
@@ -301,8 +302,8 @@ private struct UserSkillInstallSheet: View {
                     dismiss()
                     model.prepareUserSkillPlan(skillIDs: skillIDs, agents: [host], method: method, adoptExisting: adoptExisting)
                 }
-                .keyboardShortcut(.defaultAction).buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction).buttonStyle(AppButtonStyle(kind: .primary))
             }
-        }.padding(26).frame(width: 600)
+        }.appControls().padding(26).frame(width: 600)
     }
 }

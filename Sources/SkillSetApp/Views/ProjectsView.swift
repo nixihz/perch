@@ -47,7 +47,7 @@ struct ProjectsView: View {
                         Label(L10n.tr("添加项目"), systemImage: "plus")
                             .frame(minHeight: 32)
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(AppButtonStyle())
                     .accessibilityIdentifier("projects.addProject")
                     .help(L10n.tr("添加本机项目"))
                 }
@@ -106,7 +106,7 @@ struct ProjectsView: View {
                         Button(L10n.tr("预览变更")) {
                             model.prepareDeploymentPlan()
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(AppButtonStyle(kind: .primary))
                         .tint(AppColor.accent)
                         .fixedSize()
                         .disabled(model.isWorking || model.runtimePaths.repositoryRoot == nil)
@@ -151,11 +151,11 @@ struct ProjectsView: View {
                                 .foregroundStyle(.secondary)
                         }
                         hostPicker(project: project)
-                        Picker(L10n.tr("技能安装方式"), selection: $model.skillInstallMethod) {
+                        AppPicker(title: L10n.tr("技能安装方式"), selection: $model.skillInstallMethod,
+                                  valueLabel: L10n.tr(model.skillInstallMethod == .copy ? "复制独立文件" : "软链接（推荐）"), showsLabel: false) {
                             Text(L10n.tr("软链接（推荐）")).tag(SkillInstallMethod.symlink)
                             Text(L10n.tr("复制独立文件")).tag(SkillInstallMethod.copy)
                         }
-                        .pickerStyle(.segmented).labelsHidden()
                         Text(L10n.tr("软链接指向 ~/.perch 中的固定版本；复制后的文件可独立编辑。"))
                             .font(AppFont.secondary).foregroundStyle(.secondary)
 
@@ -207,6 +207,13 @@ struct ProjectsView: View {
                         Text(L10n.tr("只更新栖集起止标记之间的规则，保留文件中的其他内容。已有标记不完整或位置冲突时，会暂停写入并提示检查。"))
                             .font(AppFont.secondary)
                             .foregroundStyle(.secondary)
+                    }
+                }
+
+                ForEach(MCPHost.allCases.filter { project.agents.contains($0.displayName) }) { host in
+                    MCPSelectionCard(model: model, host: host, projectID: UUID(uuidString: project.id))
+                    if let projectID = UUID(uuidString: project.id) {
+                        PluginConfigurationCard(model: model, host: host, projectID: projectID)
                     }
                 }
 
@@ -280,7 +287,7 @@ struct ProjectsView: View {
                                     Button(L10n.tr("审阅")) {
                                         model.reviewPlan(record)
                                     }
-                                    .buttonStyle(.bordered)
+                                    .buttonStyle(AppButtonStyle())
                                 }
                             }
                             Text(L10n.tr("AI 可以生成计划和执行已批准的计划；每份计划都需要你在本机窗口批准。"))
@@ -296,7 +303,7 @@ struct ProjectsView: View {
                 Button(L10n.tr("选择项目目录")) {
                     chooseProject()
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(AppButtonStyle(kind: .primary))
                 .tint(AppColor.accent)
                 HStack(spacing: 12) {
                     Button(L10n.tr("浏览技能库")) { model.section = .skills }
@@ -304,7 +311,7 @@ struct ProjectsView: View {
                     Button(L10n.tr("查看预设")) { model.section = .presets }
                         .accessibilityIdentifier("projects.browsePresets")
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(AppButtonStyle())
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -355,21 +362,22 @@ struct ProjectsView: View {
     }
 
     private func hostPicker(project: ProjectRecord) -> some View {
-        HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 8) {
             Text(L10n.tr("目标 AI 工具"))
                 .font(AppFont.secondary.weight(.semibold))
-            ForEach(AgentHost.allCases) { host in
-                let selected = project.agents.contains(host.rawValue)
-                Button {
-                    model.toggleAgent(host)
-                } label: {
-                    Label(host.rawValue, systemImage: selected ? "checkmark.circle.fill" : "circle")
-                        .font(AppFont.secondary)
+            HStack(spacing: 8) {
+                ForEach(AgentHost.allCases) { host in
+                    let selected = project.agents.contains(host.rawValue)
+                    Button {
+                        model.toggleAgent(host)
+                    } label: {
+                        Label(host.rawValue, systemImage: selected ? "checkmark.circle.fill" : "circle")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(AppButtonStyle(selected: selected))
+                    .accessibilityAddTraits(selected ? [.isSelected] : [])
                 }
-                .buttonStyle(.bordered)
-                .tint(selected ? AppColor.accentText : .secondary)
             }
-            Spacer()
         }
     }
 
@@ -510,6 +518,12 @@ struct PlanSheet: View {
                     Label(L10n.tr("此操作影响当前用户在该 AI 工具中的全部项目。"), systemImage: "globe")
                         .font(AppFont.secondary).foregroundStyle(.orange)
                 }
+                if isMCPPlan {
+                    KeyValueLine(key: L10n.tr("AI 工具 / 使用范围"),
+                        value: (MCPHost(rawValue: record.plan.metadata?["host"] ?? "")?.displayName ?? "") + " / "
+                            + (record.plan.metadata?["scope"] == "user" ? L10n.tr("当前用户的全部项目") : L10n.tr("项目")))
+                    KeyValueLine(key: L10n.tr("MCP 配置文件"), value: record.plan.metadata?["configPath"] ?? "", monospaced: true)
+                }
                 if isPluginPlan {
                     KeyValueLine(
                         key: L10n.tr("AI 工具 / 使用范围"),
@@ -600,11 +614,12 @@ struct PlanSheet: View {
                 Button(approvalTitle) {
                     confirmingApply = true
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(AppButtonStyle(kind: .primary))
                 .tint(AppColor.accent)
                 .disabled(model.preparedPlan == nil || model.isWorking)
             }
         }
+        .appControls()
         .padding(26)
         .frame(width: 700, height: 680)
         .confirmationDialog(

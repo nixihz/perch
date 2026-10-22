@@ -30,7 +30,7 @@ struct SkillEditorSheet: View {
             HStack {
                 Text(L10n.tr("技能标识"))
                 TextField("my-skill", text: $draft.slug)
-                    .textFieldStyle(.roundedBorder)
+                    .textFieldStyle(AppTextFieldStyle())
                     .disabled(isEditing)
                     .accessibilityIdentifier("skills.editor.slug")
             }
@@ -40,7 +40,7 @@ struct SkillEditorSheet: View {
             }
             TextEditor(text: $draft.document)
                 .font(AppFont.body.monospaced())
-                .border(AppColor.border)
+                .appEditorSurface()
                 .accessibilityLabel("SKILL.md")
                 .accessibilityIdentifier("skills.editor.document")
             Text(model.runtimePaths.libraryRoot.path)
@@ -55,12 +55,13 @@ struct SkillEditorSheet: View {
                 Button(L10n.tr("保存技能")) {
                     if model.saveSkill(draft) { dismiss() }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(AppButtonStyle(kind: .primary))
                 .keyboardShortcut("s", modifiers: [.command])
                 .disabled(draft.slug.isEmpty || draft.document.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 .accessibilityIdentifier("skills.editor.save")
             }
         }
+        .appControls()
         .padding(24)
         .frame(minWidth: 640, idealWidth: 720, minHeight: 520, idealHeight: 620)
         .interactiveDismissDisabled(hasChanges)

@@ -96,6 +96,14 @@ Tests/SkillSetCoreTests/        Swift Testing 行为测试
 
 MCP env 只记录变量名称或 Keychain 引用，绝不读取值。Codex 使用带标记的 TOML 受管块，Claude 使用 JSON 结构保留未知键；同名外部 server 会冲突阻塞，不会静默覆盖。管理器记录自己写入的 ownership，计划经过同一审批与文件事务。HTTP/OAuth 仍只生成配置；首发本应用的 AI 接入为 stdio，不监听端口。
 
+### MCP 配置库与使用选择
+
+`MCPLibraryEntry` 使用 UUID 标识，保存服务名称、transport、command/URL、args 和 envKeys，不绑定宿主或范围。本机 `~/.perch/mcp/library.json` 为权威配置库，新增、编辑、删除与扫描入库不写宿主。扫描只提取可复用连接字段，未知字段及凭据值不进入库；敏感连接或不支持的 TOML 参数不提供入库。批量入库先检查全部重名和有效性，再原子发布；提交前重新扫描候选，拒绝已经变化的连接。
+
+全局和各登记项目按宿主独立保存 `mcp/drafts/<scope-host>.json` 中的选择 ID。已部署内容按真实配置路径的 SHA-256 保存在 `mcp/selections/<hash>.json`，包含条目快照和逐节点指纹。编辑配置库不会改变既有安装；删除库条目保留引用，取消引用后仍能通过已部署快照规划移除。此选择独立于预设中原有的结构化 MCP 草稿，旧预设工作流继续逐项生成计划。
+
+`makeMCPLibraryPlan` 将单一宿主与范围的整组选择转换为 `mcp-configuration` 计划，一起暂存宿主配置和选择记录，审批、旧 hash、journal、回读与回滚复用现有文件事务。执行前按已登记项目或全局目标重建精确两文件白名单并核对 digest；事务共同根不授予其他路径写入权限。只更新配置库已有节点；外部同名服务阻塞，先前节点被外部修改或移除也阻塞。Codex 用户 TOML 与 Claude 用户/项目 JSON 分别转换，其他服务和顶层字段保留。全局配置影响该工具全部项目，项目选择不关闭全局继承。配置回读不证明宿主加载，跨进程锁仍未实现。
+
 ### PluginRevision
 
 内部键为 `(host, marketplaceID, pluginName, sourceRevision)`。记录 manifest digest、宿主 version、严格的不可变 revision、来源、依赖图、组件清单、hooks/commands/MCP 风险和 license。Claude plugin manifest 可组合 skills、hooks、MCP、commands、agents；Codex plugin schema 证据不足，不能复制 Claude 字段。
@@ -191,6 +199,8 @@ UI、CLI 和 MCP 共用稳定错误码，包括 `PLAN_STALE`、`APPROVAL_REQUIRE
 ## 来源驱动的本机技能库（2026-10-22）
 
 运行时不再合并仓库 catalog 或内置来源，初次技能库为空；自建技能与用户配置来源的索引保存在 `~/.perch/skills/index.json`，完整包保存于其 `packages/<UUID>`。来源配置与固定提交 checkout 保存在 `~/.perch/cache/sources/<UUID>`，兼容原 preview JSON 格式。Git 来源沿用禁用 hooks 的隔离下载；本地目录先复制再扫描，支持把已有 harness 目录的一级技能链接实体化。任何来源脚本均不执行。
+
+插件来源采用独立的 `PluginSourceLibrary` 与 `~/.perch/plugins/sources/<UUID>`，不混入技能索引。来源添加、编辑、移除和本机扫描入库只操作本机隔离副本；扫描收录保存完整包指纹、原始安装证据与扫描时间，不改变宿主安装。全局／项目配置页按明确宿主、范围与项目打开插件生命周期入口，继续使用原审批、状态复核和宿主 CLI 执行器。来源包直接安装和市场注册仍未实现，详见 [Plugin 管理规格](plugins.md)。
 
 同步按 canonical 来源地址和技能相对路径建立稳定标识，完整复制有效候选及根许可文件，核对原始内容后原子发布索引。失败保留原索引；编辑失败保留旧来源。来源更新不改变已经物化的版本目录；来源删除移除索引与 checkout，历史完整包和版本目录继续保留，不自动清理。手动创建、编辑副本和旧版个人技能记录兼容保留。
 

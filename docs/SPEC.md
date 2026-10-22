@@ -7,7 +7,7 @@
 Skill Set 是一个**本地 macOS 桌面应用**和 Git 大仓，不是 Web 软件，也不以浏览器页面或 loopback 服务作为产品入口。它把三类可组合能力放在同一套可追溯模型里：
 
 - **Skills**：正文、辅助资源、来源、不可变内容修订和项目选择。
-- **MCP Servers**：Codex、Claude Code 以及其他宿主里的连接配置、作用域、transport、环境变量引用、健康观察。
+- **MCP Servers**：统一维护可复用配置库，扫描 Codex / Claude Code 已有连接入库，再在全局配置或项目中勾选使用；已有宿主连接独立观察与管理。其他宿主仍待适配。
 - **Plugins**：marketplace/本地来源、宿主版本、依赖、贡献的 skills/MCP/commands/agents/hooks 和风险。
 
 用户要回答的问题是：
@@ -47,6 +47,8 @@ Skill Set 是一个**本地 macOS 桌面应用**和 Git 大仓，不是 Web 软�
 
 ### 已实现（Alpha）
 
+- 插件来源管理与本机扫描入库：Git／本地来源隔离读取、固定版本、搜索与编辑删除；扫描宿主缓存及已登记项目，按完整包指纹合并相同内容，复制独立包并保留安装位置证据。来源操作不改变宿主安装；全局／项目配置页按明确范围打开原生命周期计划入口。来源包直接安装和市场注册仍未提供。
+
 - 全局配置：Codex / Claude Code 用户作用域独立草稿、技能与规则部署、已有内容显式接管、原始备份、三种还原计划、操作历史和项目继承提示；不将 HOME 登记为项目，不写用户主目录项目锁。
 
 - 技能库新增、搜索、完整 `SKILL.md` 阅读、本地编辑和移除；附属文件通过列表按需只读预览，支持 UTF-8 文本，二进制和超过 2 MiB 的文件提供 Finder 定位入口。来源与内容指纹默认折叠，不增加常驻文件树。外部来源“复制并编辑”、隐藏及恢复。内容写入本机 `personal` 库，版本包保留，保存后可在项目草稿中选择并通过既有计划审批部署。
@@ -59,6 +61,7 @@ Skill Set 是一个**本地 macOS 桌面应用**和 Git 大仓，不是 Web 软�
 - 本机项目安装选择、版本记录、manifest digest、逐文件清单和内容寻址离线对象；源目录缺失时可以从锁与对象核验、恢复。
 - 计划绑定项目 realpath、旧/新 hash、digest 和 10 分钟有效期；未审批、过期、漂移、重放、软链置换和 rollback 冲突会拒绝。
 - GitHub 仓库根隔离预览，支持 branch/tag/commit ref，拒绝 URL 凭据和非 allowlist host，限制 12,000 文件 / 512 MiB；保存固定 commit、候选分类、内容指纹和许可迹象。
+- MCP 配置库的新增、编辑、删除与扫描入库；全局/项目按宿主独立保存勾选草稿，通过同一审批事务写入配置和逐节点管理记录。支持 Claude Code 项目级与双宿主用户级，Codex 项目级仍未适配。
 - Codex TOML、Claude 项目 `.mcp.json` 与用户 `~/.claude.json` 的真实 MCP 扫描和受管写入计划；保留未知键和其他 server，环境变量只写 `${NAME}` 引用。
 - Claude Code / Codex 插件缓存与 manifest、Claude 安装索引、Codex plugin 配置的真实盘点；展示 marketplace、安装状态、revision、组件和 hooks 风险。
 - Plugin 生命周期计划：操作本机已发现的插件；Claude install/update/enable/disable/uninstall，Codex install/uninstall。计划绑定 host、plugin id、scope、manifest digest、CLI realpath 和固定 argv；多缓存版本必须精确选择，执行前复核状态，执行后回读并记录 operation。
@@ -149,7 +152,7 @@ Sources/SkillSetCLI/             CLI 与 stdio MCP
 
 ## 9. 当前交互边界
 
-项目页会真实登记项目、保存草稿并在二次确认后写入所选宿主的 skills 与规则文件，同时生成项目锁。来源页会真实 clone 到 Application Support 隔离区并保存预览，用户逐项确认后可将完整技能包导入本机技能库，不修改仓库 catalog/vendor；导入后的项目使用仍需独立生成计划和批准。MCP 页会读取真实配置并生成受管写入计划；Plugin 页会读取真实缓存、安装索引和风险，并为本机已发现插件生成生命周期计划。盘点不启动 Plugin 进程或执行 hooks/commands；生命周期计划只有本机人工批准后才调用固定宿主 CLI。AI 接入页与实际 stdio MCP 共用服务边界，但不提供自我审批或风险代确认。
+项目页会真实登记项目、保存草稿并在二次确认后写入所选宿主的 skills 与规则文件，同时生成项目锁。来源页会真实 clone 到 Application Support 隔离区并保存预览，用户逐项确认后可将完整技能包导入本机技能库，不修改仓库 catalog/vendor；导入后的项目使用仍需独立生成计划和批准。MCP 页维护本机配置库，支持只读扫描全局与已登记项目连接、逐项勾选入库；全局配置与项目从库中勾选服务，分别生成并批准 MCP 写入或取消选择后的移除计划。同名外部连接不自动接管，凭据值不导入；「已有连接」保留原配置管理入口。插件来源页管理来源与扫描收录包；全局／项目的插件配置入口读取真实缓存、安装索引和风险，为本机已发现插件生成生命周期计划。盘点不启动 Plugin 进程或执行 hooks/commands；生命周期计划只有本机人工批准后才调用固定宿主 CLI。AI 接入页与实际 stdio MCP 共用服务边界，但不提供自我审批或风险代确认。
 
 浏览器实现不是运行入口；产品只走原生 `.app`、`skillset` CLI 和 stdio MCP。
 

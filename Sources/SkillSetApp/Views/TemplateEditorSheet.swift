@@ -22,17 +22,17 @@ struct TemplateEditorSheet: View {
                 .font(AppFont.title.weight(.bold))
             Text(L10n.tr("保存到本机片段库，随后可在项目或预设中选择。"))
                 .font(AppFont.secondary).foregroundStyle(.secondary)
-            LabeledContent(L10n.tr("片段名称")) {
+            AppFormField(L10n.tr("片段名称")) {
                 TextField(L10n.tr("例如：代码审查约定"), text: $draft.title)
-                    .textFieldStyle(.roundedBorder).accessibilityIdentifier("templates.editor.title")
+                    .textFieldStyle(AppTextFieldStyle()).accessibilityIdentifier("templates.editor.title")
             }
-            LabeledContent(L10n.tr("说明（可选）")) {
+            AppFormField(L10n.tr("说明（可选）")) {
                 TextField(L10n.tr("什么时候使用这个片段"), text: $draft.purpose)
-                    .textFieldStyle(.roundedBorder).accessibilityIdentifier("templates.editor.purpose")
+                    .textFieldStyle(AppTextFieldStyle()).accessibilityIdentifier("templates.editor.purpose")
             }
             Text(L10n.tr("规则正文")).font(AppFont.heading)
             TextEditor(text: $draft.body)
-                .font(AppFont.body.monospaced()).border(AppColor.border)
+                .font(AppFont.body.monospaced()).appEditorSurface()
                 .accessibilityLabel(L10n.tr("规则正文"))
                 .accessibilityIdentifier("templates.editor.body")
             Text(L10n.tr("只填写规则，起止标记由栖集自动添加。"))
@@ -48,11 +48,12 @@ struct TemplateEditorSheet: View {
                 Button(L10n.tr("保存片段")) {
                     if model.saveTemplate(draft) { dismiss() }
                 }
-                .buttonStyle(.borderedProminent).keyboardShortcut("s", modifiers: [.command])
+                .buttonStyle(AppButtonStyle(kind: .primary)).keyboardShortcut("s", modifiers: [.command])
                 .disabled(TemplateStore.validationIssue(draft.record) != nil)
                 .accessibilityIdentifier("templates.editor.save")
             }
         }
+        .appControls()
         .padding(24)
         .frame(minWidth: 640, idealWidth: 720, minHeight: 520, idealHeight: 620)
         .interactiveDismissDisabled(hasChanges)

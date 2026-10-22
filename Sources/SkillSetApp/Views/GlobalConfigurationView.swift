@@ -33,6 +33,8 @@ struct GlobalConfigurationView: View {
     private var configurationCards: some View {
         VStack(alignment: .leading, spacing: AppLayout.columnSpacing) {
             draftCard
+            MCPSelectionCard(model: model, host: global.host, projectID: nil)
+            PluginConfigurationCard(model: model, host: global.host)
             observationsCard
             historyCard
         }.frame(maxWidth: .infinity, alignment: .leading)
@@ -64,10 +66,10 @@ struct GlobalConfigurationView: View {
                 Text(L10n.tr("本机管理记录")).font(AppFont.secondary.weight(.semibold))
                 path(global.locations.stateRoot.appendingPathComponent("global").path)
                 Divider()
-                Text(L10n.tr("MCP 和插件按各自的用户范围管理。"))
+                Text(L10n.tr("在下方选择 MCP 服务和插件，分别预览配置计划。"))
                     .font(AppFont.secondary).foregroundStyle(.secondary)
                 Button(L10n.tr("管理 MCP 服务")) { model.section = .mcp }
-                Button(L10n.tr("管理插件")) { model.section = .plugins }
+                Button(L10n.tr("管理插件来源")) { model.section = .plugins }
             }
         }
     }
@@ -79,7 +81,7 @@ struct GlobalConfigurationView: View {
                     Text(L10n.tr("全局配置草稿")).font(AppFont.heading)
                     Spacer()
                     Button(L10n.tr("预览变更")) { present(global.prepareDeployment()) }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(AppButtonStyle(kind: .primary))
                         .disabled(model.isWorking || global.inspection == nil)
                         .accessibilityIdentifier("global.preview")
                 }
@@ -91,12 +93,12 @@ struct GlobalConfigurationView: View {
                 }
                 VStack(alignment: .leading, spacing: 6) {
                     Text(L10n.tr("技能安装方式")).font(AppFont.secondary.weight(.semibold))
-                    Picker(L10n.tr("技能安装方式"), selection: Binding(get: { global.draft.installMethod ?? .symlink }, set: { global.setInstallMethod($0) })) {
+                    AppPicker(title: L10n.tr("技能安装方式"),
+                              selection: Binding(get: { global.draft.installMethod ?? .symlink }, set: { global.setInstallMethod($0) }),
+                              valueLabel: L10n.tr(global.draft.installMethod == .copy ? "复制独立文件" : "软链接（推荐）"), showsLabel: false) {
                         Text(L10n.tr("软链接（推荐）")).tag(SkillInstallMethod.symlink)
                         Text(L10n.tr("复制独立文件")).tag(SkillInstallMethod.copy)
                     }
-                    .pickerStyle(.menu)
-                    .labelsHidden()
                 }
                 Text(L10n.tr("软链接指向 ~/.perch 中的固定版本；复制后的文件可独立编辑。"))
                     .font(AppFont.secondary).foregroundStyle(.secondary)

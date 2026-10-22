@@ -59,10 +59,10 @@ struct PresetEditorSheet: View {
                 VStack(alignment: .leading, spacing: 16) {
                     VStack(alignment: .leading, spacing: 10) {
                         TextField(L10n.tr("预设名称"), text: $draft.name)
-                            .font(AppFont.heading).textFieldStyle(.roundedBorder)
+                            .textFieldStyle(AppTextFieldStyle())
                             .focused($nameFocused).accessibilityIdentifier("presets.editor.name")
                         TextField(L10n.tr("说明（可选）"), text: $draft.description, axis: .vertical)
-                            .textFieldStyle(.roundedBorder).lineLimit(2...3)
+                            .textFieldStyle(AppTextFieldStyle()).lineLimit(2...3)
                             .accessibilityIdentifier("presets.editor.description")
                     }
                     Divider()
@@ -82,8 +82,8 @@ struct PresetEditorSheet: View {
                         }
                     }
                     if category == .skills {
-                        TextField(L10n.tr("搜索技能、来源或路径"), text: $search)
-                            .textFieldStyle(.roundedBorder).accessibilityIdentifier("presets.editor.search")
+                        AppSearchField(query: $search, prompt: L10n.tr("搜索技能、来源或路径"),
+                                       label: L10n.tr("搜索技能"), identifier: "presets.editor.search")
                     }
                     ScrollView {
                         VStack(alignment: .leading, spacing: 14) {
@@ -116,14 +116,14 @@ struct PresetEditorSheet: View {
                     Button(L10n.tr("保存预设")) {
                         if model.savePreset(draft) { dismiss() }
                     }
-                    .buttonStyle(.borderedProminent).keyboardShortcut("s", modifiers: .command)
+                    .buttonStyle(AppButtonStyle(kind: .primary)).keyboardShortcut("s", modifiers: .command)
                     .disabled(draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || draft.record.componentCount == 0)
                     .accessibilityIdentifier("presets.editor.save")
                 }
-                .controlSize(.large)
             }
             .padding(.horizontal, 24).padding(.vertical, 16)
         }
+        .appControls()
         .frame(width: 900, height: 670).background(.regularMaterial)
         .disclosureGroupStyle(FullRowDisclosureGroupStyle())
         .defaultFocus($nameFocused, true)
@@ -188,14 +188,14 @@ struct PresetEditorSheet: View {
                 }
                 .toggleStyle(.checkbox).help(plugin.pluginID)
                 if selected {
-                    Picker(L10n.tr("使用范围"), selection: Binding(
+                    AppPicker(title: L10n.tr("使用范围"), selection: Binding(
                         get: { draft.plugins.first { $0.host == plugin.host && $0.pluginID == plugin.pluginID }?.scope ?? .user },
                         set: { scope in
                             if let index = draft.plugins.firstIndex(where: { $0.host == plugin.host && $0.pluginID == plugin.pluginID }) {
                                 draft.plugins[index] = PresetPluginReference(plugin: plugin, scope: scope)
                             }
                         }
-                    )) {
+                    ), valueLabel: L10n.text((draft.plugins.first { $0.host == plugin.host && $0.pluginID == plugin.pluginID }?.scope ?? .user).displayName)) {
                         ForEach(PluginLifecycleScope.allCases.filter { plugin.host != .codex || $0 == .user }) { scope in
                             Text(L10n.text(scope.displayName)).tag(scope)
                         }
@@ -325,27 +325,37 @@ private struct PresetMCPForm: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text(L10n.tr("MCP 连接配置")).font(AppFont.title)
-            Form {
-                TextField(L10n.tr("名称"), text: $draft.name).accessibilityIdentifier("presets.mcp.name")
-                Picker(L10n.tr("AI 工具"), selection: $draft.host) {
-                    ForEach(MCPHost.allCases) { Text($0.displayName).tag($0) }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    AppFormField(L10n.tr("名称")) {
+                        TextField("my-server", text: $draft.name).accessibilityLabel(L10n.tr("名称"))
+                            .accessibilityIdentifier("presets.mcp.name")
+                    }
+                    AppPicker(title: L10n.tr("AI 工具"), selection: $draft.host, valueLabel: draft.host.displayName) {
+                        ForEach(MCPHost.allCases) { Text($0.displayName).tag($0) }
+                    }
+                    .onChange(of: draft.host) { if draft.host == .codex { draft.scope = .user } }
+                    AppPicker(title: L10n.tr("使用范围"), selection: $draft.scope, valueLabel: L10n.text(draft.scope.displayName)) {
+                        if draft.host == .claudeCode { Text(L10n.tr("项目")).tag(MCPConfigurationScope.project) }
+                        Text(L10n.tr("用户")).tag(MCPConfigurationScope.user)
+                    }
+                    AppPicker(title: L10n.tr("连接方式"), selection: $draft.transport, valueLabel: draft.transport) {
+                        Text("stdio").tag("stdio")
+                        Text("streamable-http").tag("streamable-http")
+                    }
+                    AppFormField(draft.transport == "stdio" ? L10n.tr("启动命令") : "URL") {
+                        TextField(draft.transport == "stdio" ? "/path/to/server" : "https://example.com/mcp", text: $draft.commandOrURL)
+                            .accessibilityLabel(draft.transport == "stdio" ? L10n.tr("启动命令") : "URL")
+                            .accessibilityIdentifier("presets.mcp.command")
+                    }
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(L10n.tr("启动参数（每行一项）"))
+                        TextEditor(text: $arguments).font(AppFont.metadata.monospaced()).frame(height: 70).appEditorSurface()
+                    }
+                    AppFormField(L10n.tr("环境变量名称（逗号分隔）")) {
+                        TextField("API_TOKEN", text: $environment).accessibilityLabel(L10n.tr("环境变量名称（逗号分隔）"))
+                    }
                 }
-                .onChange(of: draft.host) { if draft.host == .codex { draft.scope = .user } }
-                Picker(L10n.tr("使用范围"), selection: $draft.scope) {
-                    if draft.host == .claudeCode { Text(L10n.tr("项目")).tag(MCPConfigurationScope.project) }
-                    Text(L10n.tr("用户")).tag(MCPConfigurationScope.user)
-                }
-                Picker(L10n.tr("连接方式"), selection: $draft.transport) {
-                    Text("stdio").tag("stdio")
-                    Text("streamable-http").tag("streamable-http")
-                }
-                TextField(draft.transport == "stdio" ? L10n.tr("启动命令") : "URL", text: $draft.commandOrURL)
-                    .accessibilityIdentifier("presets.mcp.command")
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(L10n.tr("启动参数（每行一项）"))
-                    TextEditor(text: $arguments).font(AppFont.metadata.monospaced()).frame(height: 70).border(AppColor.border)
-                }
-                TextField(L10n.tr("环境变量名称（逗号分隔）"), text: $environment)
             }
             Text(L10n.tr("只填环境变量名称，不填密钥。选择「用户」范围会影响这个 AI 工具的所有项目。"))
                 .font(AppFont.secondary).foregroundStyle(.secondary)
@@ -360,10 +370,11 @@ private struct PresetMCPForm: View {
                     error = save(draft.normalized())
                     if error == nil { dismiss() }
                 }
-                .buttonStyle(.borderedProminent).keyboardShortcut("s", modifiers: .command)
+                .buttonStyle(AppButtonStyle(kind: .primary)).keyboardShortcut("s", modifiers: .command)
                 .accessibilityIdentifier("presets.mcp.save")
             }
         }
-        .padding(24).frame(width: 560)
+        .appControls()
+        .padding(24).frame(width: 560, height: 640)
     }
 }

@@ -51,7 +51,7 @@ struct AIAccessView: View {
                         tone: installation == nil ? .warning : .neutral
                     )
                     Button(L10n.tr("重新检测")) { model.refreshAIAccess() }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(AppButtonStyle())
                         .accessibilityIdentifier("aiAccess.refresh")
                 }
                 if let installation {
@@ -115,11 +115,11 @@ struct AIAccessView: View {
                     Button(connection == .updateNeeded ? L10n.tr("生成更新计划") : L10n.tr("生成接入计划")) {
                         _ = model.prepareAIAccess(host: host)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(AppButtonStyle(kind: .primary))
                     .disabled(!canPrepare)
                     .accessibilityIdentifier("aiAccess.prepare")
                     Button(L10n.tr("查看 MCP 服务")) { model.section = .mcp }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(AppButtonStyle())
                 }
                 Text(L10n.tr("先审阅变更，再在本机批准并写入。配置完成后仍需让 AI 工具重新加载并验证。"))
                     .font(AppFont.secondary)
@@ -195,7 +195,7 @@ struct AIAccessView: View {
                         }
                         Spacer()
                         Button(L10n.tr("审阅计划")) { model.reviewPlan(record) }
-                            .buttonStyle(.bordered)
+                            .buttonStyle(AppButtonStyle())
                     }
                 }
             }

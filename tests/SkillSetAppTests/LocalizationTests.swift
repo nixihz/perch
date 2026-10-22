@@ -49,6 +49,7 @@ final class LocalizationTests: XCTestCase {
             "MCP_CONFIG_CORRUPT", "MCP_CONFIG_DRAFT_INVALID", "PLUGIN_RISK_APPROVAL_REQUIRED",
             "PLUGIN_HOST_CLI_MISSING", "PLUGIN_COMMAND_FAILED", "PLUGIN_NOT_FOUND",
             "PLUGIN_SCOPE_AMBIGUOUS", "PLUGIN_ACTION_UNSUPPORTED", "PLUGIN_NOT_INSTALLED",
+            "PLUGIN_SOURCE_CHANGED", "PLUGIN_SOURCE_COLLECTED",
             "PATH_OUTSIDE_ROOT", "MANAGED_BLOCK_CONFLICT", "UNKNOWN_ERROR"
         ]
         let errors: [any Error] = codes.map { FixtureError(code: $0) } + [

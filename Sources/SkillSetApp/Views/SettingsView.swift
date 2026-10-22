@@ -17,12 +17,12 @@ struct SettingsView: View {
                         Label(L10n.text("外观"), systemImage: "circle.lefthalf.filled")
                             .font(AppFont.heading)
                         Spacer()
-                        Picker(L10n.text("外观"), selection: $preferences.appearance) {
+                        AppPicker(title: L10n.text("外观"), selection: $preferences.appearance,
+                                  valueLabel: L10n.text(preferences.appearance == .system ? "跟随系统" : preferences.appearance == .light ? "日间模式" : "夜间模式"), showsLabel: false) {
                             Text(L10n.text("跟随系统")).tag(AppAppearance.system)
                             Text(L10n.text("日间模式")).tag(AppAppearance.light)
                             Text(L10n.text("夜间模式")).tag(AppAppearance.dark)
                         }
-                        .labelsHidden()
                         .frame(width: 180)
                         .accessibilityIdentifier("settings.appearance")
                     }
@@ -31,12 +31,12 @@ struct SettingsView: View {
                         Label(L10n.text("语言"), systemImage: "globe")
                             .font(AppFont.heading)
                         Spacer()
-                        Picker(L10n.text("语言"), selection: $preferences.language) {
+                        AppPicker(title: L10n.text("语言"), selection: $preferences.language,
+                                  valueLabel: preferences.language == .system ? L10n.text("跟随系统") : preferences.language == .chinese ? "中文" : "English", showsLabel: false) {
                             Text(L10n.text("跟随系统")).tag(AppLanguage.system)
                             Text("中文").tag(AppLanguage.chinese)
                             Text("English").tag(AppLanguage.english)
                         }
-                        .labelsHidden()
                         .frame(width: 180)
                         .accessibilityIdentifier("settings.language")
                     }

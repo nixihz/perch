@@ -7,7 +7,6 @@ struct TemplatesView: View {
     @State private var query = ""
     @State private var editor: TemplateEditorDraft?
     @State private var removal: TemplateRecord?
-    @FocusState private var searchFocused: Bool
 
     private var matches: [TemplateRecord] { model.matchingTemplates(query) }
 
@@ -24,7 +23,7 @@ struct TemplatesView: View {
                     model.templateError = nil
                     editor = TemplateEditorDraft()
                 } label: { Label(L10n.tr("新增片段"), systemImage: "plus") }
-                .buttonStyle(.borderedProminent).keyboardShortcut("n", modifiers: [.command])
+                .buttonStyle(AppButtonStyle(kind: .primary)).keyboardShortcut("n", modifiers: [.command])
                 .accessibilityIdentifier("templates.create")
             }
             if let error = model.templateError, editor == nil {
@@ -66,19 +65,8 @@ struct TemplatesView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text(L10n.tr("AGENTS 片段"))
                     .font(AppFont.heading)
-                HStack {
-                    Button { searchFocused = true } label: { Image(systemName: "magnifyingglass") }
-                        .buttonStyle(.plain).keyboardShortcut("f", modifiers: [.command])
-                        .accessibilityLabel(L10n.tr("搜索片段"))
-                    TextField(L10n.tr("搜索名称、说明或正文"), text: $query)
-                        .textFieldStyle(.plain).focused($searchFocused)
-                        .accessibilityIdentifier("templates.search")
-                    if !query.isEmpty {
-                        Button { query = "" } label: { Image(systemName: "xmark.circle.fill") }
-                            .buttonStyle(.plain).accessibilityLabel(L10n.tr("清空搜索"))
-                    }
-                }
-                .padding(8).background(.background, in: RoundedRectangle(cornerRadius: 8))
+                AppSearchField(query: $query, prompt: L10n.tr("搜索名称、说明或正文"),
+                               label: L10n.tr("搜索片段"), identifier: "templates.search")
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(matches) { template in
