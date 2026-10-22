@@ -8,6 +8,7 @@ final class AppModel {
     private(set) var snapshot: AppSnapshot
     private let baseSnapshot: AppSnapshot
     let runtimePaths: SkillSetRuntimePaths
+    let globalConfiguration: GlobalConfigurationModel
 
     var section: NavigationItem = .projects
     var query = ""
@@ -15,7 +16,8 @@ final class AppModel {
     var selectedSkillID: String?
     var selectedMCPID = ""
     var selectedPluginID = ""
-    var selectedSourceID = "workspace"
+    var selectedSourceID = ""
+    var skillInstallMethod: SkillInstallMethod = .symlink
     var selectedPreviewID: UUID?
     var selectedPresetID = "personal-base"
     var presetSelection: PresetSelectionRequest?
@@ -68,20 +70,25 @@ final class AppModel {
 
     init(
         snapshot: AppSnapshot? = nil,
-        runtimePaths: SkillSetRuntimePaths = .detect()
+        runtimePaths: SkillSetRuntimePaths = .detect(),
+        globalLocations: GlobalConfigurationLocations? = nil
     ) {
         self.runtimePaths = runtimePaths
-        let base = snapshot ?? AppSnapshot.load(repositoryRoot: runtimePaths.repositoryRoot)
+        self.globalConfiguration = GlobalConfigurationModel(paths: runtimePaths, locations: globalLocations)
+        let base = snapshot ?? SkillSetService.defaultSnapshot(for: runtimePaths)
         self.baseSnapshot = base
         self.snapshot = base
         projectStore = ProjectStore(rootURL: runtimePaths.applicationSupportRoot)
         draftStore = ProjectDraftStore(rootURL: runtimePaths.applicationSupportRoot)
         planStore = DeploymentPlanStore(rootURL: runtimePaths.plansRoot)
-        executor = FileTransactionExecutor(operationsRoot: runtimePaths.operationsRoot)
-        service = try? SkillSetService(paths: runtimePaths)
+        executor = FileTransactionExecutor(operationsRoot: runtimePaths.operationsRoot, versionsRoot: runtimePaths.versionsRoot)
+        service = try? SkillSetService(paths: runtimePaths, globalLocations: globalLocations)
         selectedSkillID = self.snapshot.catalog.entries.first?.id
 
         do {
+            try runtimePaths.migrateLegacyState()
+            do { try service?.synchronizeSourceLibrary() }
+            catch { sourceImportError = UserFacingText.error(error) }
             try reloadLibrary()
             let recovered = try executor.recoverPendingOperations()
             try reloadProjects(preferredID: nil)
@@ -90,8 +97,6 @@ final class AppModel {
             refreshSourcePreviews()
             if !recovered.isEmpty {
                 report("已恢复 \(recovered.count) 个中断的写入操作")
-            } else if runtimePaths.repositoryRoot == nil {
-                report("未找到技能库目录；已添加项目仍可查看")
             } else if projects.isEmpty {
                 report("尚未添加项目")
             } else {
@@ -103,7 +108,7 @@ final class AppModel {
     }
 
     var filteredSkills: [SkillEntry] {
-        matchingSkills(snapshot.catalog.entries, query: query)
+        matchingSkills(snapshot.catalog.entries, query: query, sourceOrigins: sourceOrigins)
     }
 
     private var libraryStore: SkillLibraryStore { SkillLibraryStore(rootURL: runtimePaths.libraryRoot) }
@@ -230,7 +235,7 @@ final class AppModel {
             templateError = "本机片段库无法读取，请检查数据文件后重试。"
         }
         hiddenSkillCount = try libraryStore.hiddenCount()
-        service = try SkillSetService(paths: runtimePaths)
+        service = try SkillSetService(paths: runtimePaths, globalLocations: globalConfiguration.locations)
         updateQuery(query)
     }
 
@@ -282,7 +287,7 @@ final class AppModel {
         do {
             snapshot = try snapshot.replacingTemplates(templateStore.save(draft.record, initial: baseSnapshot.templates))
             selectedTemplateID = draft.id
-            service = try? SkillSetService(paths: runtimePaths)
+            service = try? SkillSetService(paths: runtimePaths, globalLocations: globalConfiguration.locations)
             report("片段已保存；项目更新仍需预览和批准。")
             return true
         } catch let error as TemplateStoreError {
@@ -296,7 +301,7 @@ final class AppModel {
         do {
             snapshot = try snapshot.replacingTemplates(templateStore.remove(id: template.id, initial: baseSnapshot.templates))
             selectedTemplateID = snapshot.templates.first?.id ?? ""
-            service = try? SkillSetService(paths: runtimePaths)
+            service = try? SkillSetService(paths: runtimePaths, globalLocations: globalConfiguration.locations)
             report("片段已删除；已写入项目的规则保持不变。")
         } catch let error as TemplateStoreError {
             templateError = error.errorDescription
@@ -332,11 +337,11 @@ final class AppModel {
             let registration = try projectStore.register(path: url, name: name, agents: ["codex"])
             let inspection = try? ProjectInspector.inspect(
                 projectURL: URL(fileURLWithPath: registration.canonicalPath, isDirectory: true),
-                catalog: snapshot.catalog
+                catalog: snapshot.catalog, operationsRoot: runtimePaths.operationsRoot
             )
             if try draftStore.load(projectID: registration.id) == nil {
                 let projectState = ProjectLockStore(
-                    projectRoot: URL(fileURLWithPath: registration.canonicalPath, isDirectory: true)
+                    projectRoot: URL(fileURLWithPath: registration.canonicalPath, isDirectory: true), stateRoot: runtimePaths.applicationSupportRoot
                 ).inspect()
                 let manifest = projectState.manifest
                 _ = try draftStore.save(
@@ -539,6 +544,15 @@ final class AppModel {
         }
     }
 
+    func prepareUserSkillPlan(skillIDs: [String], agents: [String], method: SkillInstallMethod, adoptExisting: Bool) {
+        do {
+            guard let service else { throw SkillSetServiceError.repositoryNotFound }
+            preparedPlan = try service.makeUserSkillPlan(skillIDs: skillIDs, agents: agents, installMethod: method, adoptExistingSkills: adoptExisting)
+            planPresented = true
+            report("已生成用户级技能计划；等待本机人工批准")
+        } catch { libraryError = UserFacingText.error(error) }
+    }
+
     func prepareDeploymentPlan() {
         guard let project = selectedProject, let id = UUID(uuidString: project.id) else {
             report("请先添加并选择一个项目")
@@ -572,7 +586,8 @@ final class AppModel {
                 skillIDs: project.draftSkillIDs.sorted(),
                 instructionIDs: project.fragments,
                 agents: canonicalAgentIDs(project.agents),
-                ruleBlockID: "project-rules"
+                ruleBlockID: "project-rules",
+                installMethod: skillInstallMethod
             )
             planPresented = true
             report("已生成变更计划；等待本机人工批准")
@@ -600,6 +615,12 @@ final class AppModel {
             let applied = try planStore.load(approved.id)
             preparedPlan = applied
             let planType = applied.plan.metadata?["planType"] ?? "skill-deployment"
+            if planType == "global-configuration" {
+                if let raw = applied.plan.metadata?["globalHost"], let host = MCPHost(rawValue: raw), host != globalConfiguration.host {
+                    globalConfiguration.selectHost(host)
+                }
+                globalConfiguration.didApply()
+            }
             let historyTitle: String
             if planType == "plugin-lifecycle" {
                 let host = MCPHost(rawValue: applied.plan.metadata?["pluginHost"] ?? "")?.displayName ?? "未识别工具"
@@ -719,6 +740,31 @@ final class AppModel {
         report("已展开 \(plugin.name) 的组件清单")
     }
 
+    func scanInstalledSkills(additionalRoots: [URL]) throws -> [InstalledSkillObservation] {
+        guard let service else { return [] }
+        return try service.scanInstalledSkills(additionalRoots: additionalRoots)
+    }
+
+    func importInstalledSkills(_ selection: [InstalledSkillObservation]) async -> Bool {
+        guard !isWorking else { return false }
+        isWorking = true
+        defer { isWorking = false }
+        let paths = runtimePaths
+        let locations = globalConfiguration.locations
+        do {
+            _ = try await Task.detached(priority: .userInitiated) {
+                try SkillSetService(paths: paths, globalLocations: locations).importInstalledSkills(selection)
+            }.value
+            try reloadLibrary()
+            refreshSourcePreviews()
+            report("已收录本机技能；原安装保持原样，可勾选技能后启用到 AI 工具")
+            return true
+        } catch {
+            reportKey(UserFacingText.error(error))
+            return false
+        }
+    }
+
     func previewSource(urlString: String, ref: String? = nil, replacing replacedID: UUID? = nil) async -> Bool {
         let trimmedURL = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedURL.isEmpty else {
@@ -729,20 +775,21 @@ final class AppModel {
         isWorking = true
         defer { isWorking = false }
         report("正在下载并扫描技能，不会运行仓库脚本")
-        let previewsRoot = runtimePaths.previewsRoot
+        let paths = runtimePaths
         let trimmedRef = ref?.trimmingCharacters(in: .whitespacesAndNewlines)
         do {
             let record = try await Task.detached(priority: .userInitiated) {
-                try SourcePreviewService(previewsRoot: previewsRoot).preview(
+                try SkillSetService(paths: paths).previewSource(
                     urlString: trimmedURL,
                     ref: trimmedRef?.isEmpty == true ? nil : trimmedRef,
                     replacing: replacedID
                 )
             }.value
+            try reloadLibrary()
             sourcePreviews.removeAll { $0.id == record.id || $0.id == replacedID }
             sourcePreviews.insert(record, at: 0)
             selectedPreviewID = record.id
-            report("已保存来源预览 \(record.resolvedCommit.prefix(12))；尚未收录或启用")
+            report("已同步来源 \(record.resolvedCommit.prefix(12))；技能已可搜索，尚未启用")
             return true
         } catch {
             reportKey(UserFacingText.error(error))
@@ -753,10 +800,11 @@ final class AppModel {
     func removeSourcePreview(_ id: UUID) {
         guard !isWorking else { return }
         do {
-            try SourcePreviewStore(rootURL: runtimePaths.previewsRoot).remove(id)
+            try service?.removeSource(id)
+            try reloadLibrary()
             sourcePreviews.removeAll { $0.id == id }
             if selectedPreviewID == id { selectedPreviewID = sourcePreviews.first?.id }
-            report("已删除隔离预览；技能库和项目未改变")
+            report("已移除来源及搜索条目；已部署的技能版本保留")
         } catch {
             reportKey(UserFacingText.error(error))
         }
@@ -940,14 +988,14 @@ final class AppModel {
                 inspection = try ProjectInspector.inspect(
                     projectURL: projectURL,
                     catalog: snapshot.catalog,
-                    operationsRoot: runtimePaths.operationsRoot
+                    operationsRoot: runtimePaths.operationsRoot, versionsRoot: runtimePaths.versionsRoot
                 )
                 inspectionFailure = nil
             } catch {
                 inspection = nil
                 inspectionFailure = error
             }
-            let projectState = ProjectLockStore(projectRoot: projectURL).inspect()
+            let projectState = ProjectLockStore(projectRoot: projectURL, stateRoot: runtimePaths.applicationSupportRoot).inspect()
             let manifest = projectState.manifest
             var draft = try draftStore.load(projectID: registration.id)
             if draft == nil {

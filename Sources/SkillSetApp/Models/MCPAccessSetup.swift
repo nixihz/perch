@@ -38,7 +38,7 @@ struct MCPAccessInstallation {
         }
         arguments += ["mcp", "serve", "--transport", "stdio"]
         return MCPConfigurationDraft(
-            name: "skillset", host: host, scope: .user, transport: "stdio",
+            name: "perch", host: host, scope: .user, transport: "stdio",
             commandOrURL: executableURL.path, args: arguments
         )
     }
@@ -49,7 +49,7 @@ enum MCPAccessConnectionState: Equatable {
 
     static func inspect(_ inspection: MCPConfigurationInspection?, installation: MCPAccessInstallation?) -> Self {
         guard let inspection else { return .unreadable }
-        guard let server = inspection.servers.first(where: { $0.name == "skillset" }) else {
+        guard let server = inspection.servers.first(where: { $0.name == "perch" }) else {
             // 已有其他名称的同程序配置时不再自动新增一份。
             if let installation, inspection.servers.contains(where: { $0.command == installation.executableURL.path }) {
                 return .external

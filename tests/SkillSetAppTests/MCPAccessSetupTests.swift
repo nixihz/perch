@@ -29,6 +29,7 @@ final class MCPAccessSetupTests: XCTestCase {
             let installation = MCPAccessInstallation(executableURL: root.appendingPathComponent("App With Spaces/Helpers/skillset"), origin: .bundled)
             let paths = SkillSetRuntimePaths(applicationSupportRoot: root.appendingPathComponent("Application Support/state"), repositoryRoot: root.appendingPathComponent("my skills"))
             let draft = installation.draft(host: .claudeCode, paths: paths)
+            XCTAssertEqual(draft.name, "perch")
             XCTAssertEqual(draft.host, .claudeCode)
             XCTAssertEqual(draft.scope, .user)
             XCTAssertEqual(draft.commandOrURL, installation.executableURL.path)
@@ -44,7 +45,7 @@ final class MCPAccessSetupTests: XCTestCase {
         func inspection(_ servers: [MCPObservedServer], issues: [String] = []) -> MCPConfigurationInspection {
             MCPConfigurationInspection(host: .codex, scope: .user, configPath: "/fixture/config.toml", exists: true, servers: servers, issues: issues)
         }
-        func server(_ command: String, managed: Bool, name: String = "skillset") -> MCPObservedServer {
+        func server(_ command: String, managed: Bool, name: String = "perch") -> MCPObservedServer {
             MCPObservedServer(host: .codex, scope: .user, name: name, transport: "stdio", command: command, argumentCount: 4, envKeys: [], configPath: "/fixture/config.toml", managed: managed)
         }
         XCTAssertEqual(MCPAccessConnectionState.inspect(inspection([]), installation: installation), .unconfigured)
@@ -52,7 +53,7 @@ final class MCPAccessSetupTests: XCTestCase {
         XCTAssertEqual(MCPAccessConnectionState.inspect(inspection([server(installation.executableURL.path, managed: true)]), installation: installation), .configured)
         XCTAssertEqual(MCPAccessConnectionState.inspect(inspection([server("/old/skillset", managed: true)]), installation: installation), .updateNeeded)
         XCTAssertEqual(MCPAccessConnectionState.inspect(inspection([server("/other/program", managed: false)]), installation: installation), .external)
-        XCTAssertEqual(MCPAccessConnectionState.inspect(inspection([server(installation.executableURL.path, managed: false, name: "perch")]), installation: installation), .external)
+        XCTAssertEqual(MCPAccessConnectionState.inspect(inspection([server(installation.executableURL.path, managed: false, name: "skillset")]), installation: installation), .external)
         XCTAssertEqual(MCPAccessConnectionState.inspect(nil, installation: installation), .unreadable)
     }
 
@@ -75,7 +76,7 @@ final class MCPAccessSetupTests: XCTestCase {
             XCTAssertTrue(model.approveAndApplyPreparedPlan(), model.lastAction)
             let written = try String(contentsOf: config, encoding: .utf8)
             XCTAssertTrue(written.hasPrefix(original))
-            XCTAssertTrue(written.contains("[mcp_servers.skillset]"))
+            XCTAssertTrue(written.contains("[mcp_servers.perch]"))
             XCTAssertTrue(written.contains(executable.path))
             XCTAssertTrue(written.contains("\"--state\""))
             model.refreshAIAccess()
@@ -101,7 +102,7 @@ final class MCPAccessSetupTests: XCTestCase {
             try resources(beside: program)
             let config = root.appendingPathComponent("CODEX_HOME/config.toml")
             try FileManager.default.createDirectory(at: config.deletingLastPathComponent(), withIntermediateDirectories: true)
-            let original = "[mcp_servers.skillset]\ncommand = \"/another/program\"\n"
+            let original = "[mcp_servers.perch]\ncommand = \"/another/program\"\n"
             try original.write(to: config, atomically: true, encoding: .utf8)
             let model = AppModel(runtimePaths: SkillSetRuntimePaths(applicationSupportRoot: root.appendingPathComponent("state"), repositoryRoot: root))
             XCTAssertEqual(MCPAccessConnectionState.inspect(model.mcpAccessInspection(host: .codex), installation: model.mcpAccessInstallation), .external)

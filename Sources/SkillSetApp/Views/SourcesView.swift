@@ -13,7 +13,7 @@ struct SourcesView: View {
             PageHeader(
                 eyebrow: "SOURCE REGISTRY",
                 title: L10n.tr("技能来源"),
-                detail: L10n.tr("点「添加技能来源」预览仓库中的技能，再选择需要的技能加入技能库。")
+                detail: L10n.tr("配置来源后同步到 ~/.perch，全部技能可在技能库搜索；启用时选择软链接或复制。")
             )
 
             if let error = model.sourceImportError, importingSkill == nil {
@@ -33,7 +33,7 @@ struct SourcesView: View {
             SourceSkillImportSheet(model: model, initialDraft: draft)
         }
         .confirmationDialog(
-            L10n.tr("删除这条来源预览？"),
+            L10n.tr("删除这个技能来源？"),
             isPresented: Binding(
                 get: { deletingPreview != nil },
                 set: { if !$0 { deletingPreview = nil } }
@@ -41,13 +41,13 @@ struct SourcesView: View {
             titleVisibility: .visible,
             presenting: deletingPreview
         ) { preview in
-            Button(L10n.tr("删除预览"), role: .destructive) {
+            Button(L10n.tr("删除来源"), role: .destructive) {
                 model.removeSourcePreview(preview.id)
                 deletingPreview = nil
             }
             Button(L10n.tr("取消"), role: .cancel) { deletingPreview = nil }
         } message: { preview in
-            Text(L10n.tr("将删除 \(preview.canonicalURL) 的预览和下载文件。已加入技能库的技能与项目配置不会改变。"))
+            Text(L10n.tr("将删除 \(preview.canonicalURL) 的来源配置、下载缓存和搜索条目。已部署的技能版本和项目配置保留。"))
         }
         .task {
             model.refreshSourcePreviews()
@@ -75,42 +75,8 @@ struct SourcesView: View {
             }
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text(L10n.tr("内置来源"))
-                        .font(AppFont.secondary.weight(.semibold))
-                    ForEach(model.snapshot.sources.sources) { source in
-                        Button {
-                            model.selectedSourceID = source.id
-                            model.selectedPreviewID = nil
-                        } label: {
-                            HStack(alignment: .top, spacing: 10) {
-                                Image(systemName: source.id == model.selectedSourceID && model.selectedPreviewID == nil ? "checkmark.seal.fill" : "circle")
-                                    .foregroundStyle(source.id == model.selectedSourceID && model.selectedPreviewID == nil ? AppColor.accentText : .secondary)
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(L10n.text(source.title))
-                                        .font(AppFont.body.weight(.semibold))
-                                        .foregroundStyle(.primary)
-                                    Text(L10n.text(UserFacingText.metadata(source.kind, field: .sourceKind)))
-                                        .font(AppFont.secondary)
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                StatusBadge(
-                                    text: source.trust == "local-owned" ? L10n.tr("本地") : L10n.tr("待审"),
-                                    tone: source.trust == "local-owned" ? .positive : .warning
-                                )
-                            }
-                            .padding(.vertical, 8)
-                            .padding(.horizontal, 8)
-                            .selectionRow(source.id == model.selectedSourceID && model.selectedPreviewID == nil)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("sources.option.\(source.id)")
-                    }
-
-                    Divider()
                     HStack {
-                        Text(L10n.tr("来源预览"))
+                        Text(L10n.tr("已配置来源"))
                             .font(AppFont.secondary.weight(.semibold))
                         Spacer()
                         Text("\(model.sourcePreviews.count)")
@@ -118,7 +84,7 @@ struct SourcesView: View {
                             .foregroundStyle(.secondary)
                     }
                     if model.sourcePreviews.isEmpty {
-                        Text(L10n.tr("还没有来源预览。点「添加技能来源」查看仓库中的技能。"))
+                        Text(L10n.tr("还没有技能来源。点「添加技能来源」同步仓库或本地目录。"))
                             .font(AppFont.secondary)
                             .foregroundStyle(.secondary)
                     } else {
@@ -162,48 +128,6 @@ struct SourcesView: View {
     private var sourceDetail: some View {
         if let preview = model.selectedSourcePreview {
             sourcePreviewDetail(preview)
-        } else if let source = model.selectedSource {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    SurfaceCard(emphasis: true) {
-                        VStack(alignment: .leading, spacing: 9) {
-                            HStack {
-                                Text(L10n.text(source.title))
-                                    .font(AppFont.title.weight(.bold))
-                                Spacer()
-                                StatusBadge(text: L10n.text(UserFacingText.metadata(source.trust, field: .trust)), tone: source.trust == "local-owned" ? .positive : .warning)
-                            }
-                            Text(source.origin)
-                                .font(AppFont.secondary.monospaced())
-                                .foregroundStyle(.secondary)
-                                .textSelection(.enabled)
-                            Divider()
-                            KeyValueLine(key: L10n.tr("来源类型"), value: L10n.text(UserFacingText.metadata(source.kind, field: .sourceKind)))
-                            KeyValueLine(key: L10n.tr("快照路径"), value: source.snapshotPath ?? source.path ?? L10n.tr("未提供"), monospaced: true)
-                            KeyValueLine(key: L10n.tr("许可"), value: L10n.text(UserFacingText.metadata(source.licenseReview, field: .licenseReview)))
-                            Label(L10n.tr("内置来源仅供查看。要添加其他仓库，请点「添加技能来源」。"), systemImage: "lock")
-                                .font(AppFont.secondary)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    if let importedFrom = source.importedFrom {
-                        SurfaceCard {
-                            VStack(alignment: .leading, spacing: 9) {
-                                Label(L10n.tr("导入记录"), systemImage: "arrow.triangle.2.circlepath")
-                                    .font(AppFont.heading)
-                                KeyValueLine(key: L10n.tr("原始路径"), value: importedFrom, monospaced: true)
-                                KeyValueLine(key: L10n.tr("来源版本"), value: source.sourceCommit ?? L10n.tr("未记录"), monospaced: true)
-                                if source.sourceDirty == true {
-                                    StatusBadge(text: L10n.tr("原工作区有未提交改动"), tone: .warning)
-                                }
-                                Text(L10n.tr("这里保留导入前的路径和版本，方便核对来源。"))
-                                    .font(AppFont.secondary)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                }
-            }
         } else {
             EmptyState(icon: "arrow.down.doc", title: L10n.tr("选择一个来源"), detail: L10n.tr("选择左侧来源，查看路径、版本和许可审查状态。"))
         }
@@ -225,7 +149,7 @@ struct SourcesView: View {
                                     .textSelection(.enabled)
                             }
                             Spacer()
-                            StatusBadge(text: L10n.tr("来源预览"), tone: .neutral)
+                            StatusBadge(text: L10n.tr("已配置来源"), tone: .neutral)
                         }
                         Divider()
                         KeyValueLine(key: L10n.tr("来源标识"), value: preview.namespace, monospaced: true)
@@ -272,7 +196,7 @@ struct SourcesView: View {
                                 .disabled(model.isWorking)
                             }
                         }
-                        Text(L10n.tr("选择下方技能加入本机技能库，再到项目页选择并预览变更。"))
+                        Text(L10n.tr("同步完成的技能已在技能库中，可到项目页选择并预览变更。"))
                             .font(AppFont.secondary)
                             .foregroundStyle(.secondary)
                     }
@@ -388,6 +312,9 @@ struct SourcesView: View {
 
     @ViewBuilder
     private func previewActions(_ preview: SourcePreviewRecord) -> some View {
+        Button(L10n.tr("同步来源")) {
+            Task { _ = await model.previewSource(urlString: preview.canonicalURL, ref: preview.requestedRef, replacing: preview.id) }
+        }.disabled(model.isWorking)
         Button {
             editor = SourceEditorDraft(preview: preview)
         } label: {
@@ -401,7 +328,7 @@ struct SourcesView: View {
         Button(role: .destructive) {
             deletingPreview = preview
         } label: {
-            Label(L10n.tr("删除预览"), systemImage: "trash")
+            Label(L10n.tr("删除来源"), systemImage: "trash")
         }
         .disabled(model.isWorking)
         .accessibilityIdentifier("sources.preview.delete")
@@ -420,7 +347,7 @@ struct SourceEditorDraft: Identifiable {
     init(preview: SourcePreviewRecord) {
         replacingID = preview.id
         url = preview.canonicalURL
-        ref = preview.requestedRef ?? preview.resolvedCommit
+        ref = preview.canonicalURL.hasPrefix("/") ? "" : (preview.requestedRef ?? preview.resolvedCommit)
     }
 }
 
@@ -436,16 +363,16 @@ struct SourceEditorSheet: View {
             Text(draft.replacingID == nil ? L10n.tr("添加技能来源") : L10n.tr("编辑技能来源"))
                 .font(AppFont.title)
             Text(draft.replacingID == nil
-                ? L10n.tr("填写仓库链接，预览其中的技能和固定版本。")
+                ? L10n.tr("填写 Git 仓库链接或本地目录，同步后即可在技能库搜索。")
                 : L10n.tr("修改链接或版本后重新预览，成功后替换原记录；失败时保留原预览。"))
                 .font(AppFont.body)
                 .foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: 8) {
-                Text(L10n.tr("Git 仓库链接"))
+                Text(L10n.tr("Git 仓库链接或本地目录"))
                     .font(AppFont.secondary.weight(.semibold))
                 TextField("https://git.example.com/group/repo 或 owner/repo", text: $draft.url)
                     .textFieldStyle(.roundedBorder)
-                    .accessibilityLabel(L10n.tr("Git 仓库链接"))
+                    .accessibilityLabel(L10n.tr("Git 仓库链接或本地目录"))
                     .focused($urlFocused)
                 Text(L10n.tr("分支、标签或提交（可选）"))
                     .font(AppFont.secondary.weight(.semibold))
@@ -475,7 +402,7 @@ struct SourceEditorSheet: View {
                 Button(L10n.tr("取消")) { dismiss() }
                     .keyboardShortcut(.cancelAction)
                     .disabled(model.isWorking)
-                Button(draft.replacingID == nil ? L10n.tr("预览来源") : L10n.tr("保存并重新预览")) {
+                Button(draft.replacingID == nil ? L10n.tr("同步来源") : L10n.tr("保存并同步")) {
                     failure = nil
                     Task {
                         if await model.previewSource(urlString: draft.url, ref: draft.ref, replacing: draft.replacingID) {

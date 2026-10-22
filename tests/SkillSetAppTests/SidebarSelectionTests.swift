@@ -20,7 +20,7 @@ final class SidebarSelectionTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(80))
         controller.view.layoutSubtreeIfNeeded()
         let table = try XCTUnwrap(findTable(in: controller.view))
-        XCTAssertEqual(table.selectedRow, 6)
+        XCTAssertEqual(table.selectedRow, 7)
         XCTAssertNotNil(
             table.rowView(atRow: table.selectedRow, makeIfNecessary: true) as? SidebarSelectionRow,
             "实际侧栏必须接入品牌选中态，而非只单独测试绘制类"
@@ -45,13 +45,13 @@ final class SidebarSelectionTests: XCTestCase {
         ))
         table.keyDown(with: down)
         XCTAssertEqual(selected, .mcp, "上下键必须跳过 AI 工具分组标题")
-        XCTAssertEqual(table.selectedRow, 8)
+        XCTAssertEqual(table.selectedRow, 9)
 
         selected = .aiAccess
         controller.rootView = SidebarList(selection: binding, skillCount: 151)
         try await Task.sleep(for: .milliseconds(80))
-        XCTAssertEqual(table.selectedRow, 10, "菜单快捷键改变绑定时，原生侧栏必须同步")
-        let skillCell = try XCTUnwrap(table.view(atColumn: 0, row: 4, makeIfNecessary: true) as? SidebarDestinationCell)
+        XCTAssertEqual(table.selectedRow, 11, "菜单快捷键改变绑定时，原生侧栏必须同步")
+        let skillCell = try XCTUnwrap(table.view(atColumn: 0, row: 5, makeIfNecessary: true) as? SidebarDestinationCell)
         XCTAssertEqual(skillCell.subtitleLabel.stringValue, AppPreferences.shared.language.resolved() == .english ? "151 skills to search and edit" : "151 个技能，可搜索和编辑")
 
         selected = .settings
@@ -63,7 +63,7 @@ final class SidebarSelectionTests: XCTestCase {
         selected = .projects
         controller.rootView = SidebarList(selection: binding, skillCount: 153)
         try await Task.sleep(for: .milliseconds(80))
-        XCTAssertEqual(try XCTUnwrap(findTable(in: controller.view)).selectedRow, 1, "离开设置后应恢复工作区选择")
+        XCTAssertEqual(try XCTUnwrap(findTable(in: controller.view)).selectedRow, 2, "离开设置后应恢复工作区选择")
     }
 
     func testSelectionDrawsTerracottaInBothAppearancesEvenWhenUnfocused() throws {

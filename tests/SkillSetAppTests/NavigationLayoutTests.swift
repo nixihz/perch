@@ -106,7 +106,16 @@ final class NavigationLayoutTests: XCTestCase {
                 to: manifest.appendingPathComponent("plugin.json"), atomically: true, encoding: .utf8
             )
         }
-        let model = AppModel(runtimePaths: SkillSetRuntimePaths(applicationSupportRoot: root, repositoryRoot: nil))
+        let paths = SkillSetRuntimePaths(applicationSupportRoot: root, repositoryRoot: nil)
+        for index in 0..<24 {
+            try SourcePreviewStore(rootURL: paths.previewsRoot).save(SourcePreviewRecord(
+                id: UUID(), inputURL: "https://example.com/fixture/\(index)",
+                canonicalURL: "https://example.com/fixture/\(index)", namespace: "fixture-\(index)",
+                resolvedCommit: String(repeating: "a", count: 40), createdAt: Date(), workspacePath: root.path,
+                licenseEvidence: "", candidates: [], excludedCounts: [:], warnings: []))
+        }
+        // 长列表使用明确 fixture；生产初次启动不再隐式提供内置技能。
+        let model = AppModel(snapshot: AppSnapshot.load(), runtimePaths: paths)
         XCTAssertEqual(model.mcpServers.count, 24)
         XCTAssertEqual(model.plugins.count, 24)
         let controller = NSHostingController(rootView: ContentView(model: model))
@@ -138,7 +147,14 @@ final class NavigationLayoutTests: XCTestCase {
                 let scrollViews = descendants(of: controller.view).compactMap { $0 as? NSScrollView }.filter { $0 !== sidebar }
                 XCTAssertFalse(scrollViews.isEmpty, "\(context) 缺少详情滚动入口")
                 for scroll in scrollViews {
-                    assertInsideWindow(scroll, window: window, context: context)
+                    // 嵌套滚动区随外层文档离开视口属于正常裁剪，只检查页面顶层滚动容器。
+                    var parent = scroll.superview
+                    var nested = false
+                    while let ancestor = parent {
+                        if ancestor is NSScrollView { nested = true; break }
+                        parent = ancestor.superview
+                    }
+                    if !nested { assertInsideWindow(scroll, window: window, context: context) }
                 }
                 if [.skills, .mcp, .plugins, .sources].contains(section) {
                     let ordered = scrollViews.sorted {

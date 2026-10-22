@@ -5,6 +5,8 @@ struct SkillsView: View {
     @Bindable var model: AppModel
     @State private var editor: SkillEditorDraft?
     @State private var removal: [SkillEntry] = []
+    @State private var installing = false
+    @State private var scanning = false
     @State private var checkedSkillIDs: Set<String> = []
 
     var body: some View {
@@ -16,6 +18,8 @@ struct SkillsView: View {
                     detail: L10n.tr("搜索、阅读和编辑技能。要让 AI 在项目中使用技能，请到「项目」选择并预览变更。")
                 )
                 Spacer(minLength: 0)
+                Button(L10n.tr("扫描已安装技能…")) { scanning = true }
+                    .accessibilityIdentifier("skills.scan-installed")
                 Button {
                     model.libraryError = nil
                     editor = SkillEditorDraft()
@@ -30,6 +34,9 @@ struct SkillsView: View {
                 StatusBadge(text: L10n.tr("\(model.snapshot.catalog.entries.count) 个技能"), tone: .accent)
                 StatusBadge(text: L10n.tr("\(model.blockedCount) 个暂不可用"), tone: model.blockedCount > 0 ? .danger : .positive)
                 Spacer()
+                Button(L10n.tr("启用到 AI 工具…")) { installing = true }
+                    .disabled(checkedSkillIDs.isEmpty || model.isWorking)
+                    .accessibilityIdentifier("skills.install-user")
                 if model.hiddenSkillCount > 0 {
                     Button(L10n.tr("恢复隐藏条目（\(model.hiddenSkillCount)）")) { model.restoreHiddenSkills() }
                 }
@@ -42,6 +49,12 @@ struct SkillsView: View {
                     .frame(width: AppLayout.listWidth)
                 skillDetail
             }
+        }
+        .sheet(isPresented: $scanning) {
+            InstalledSkillScanSheet(model: model)
+        }
+        .sheet(isPresented: $installing) {
+            UserSkillInstallSheet(model: model, skillIDs: checkedSkillIDs.sorted())
         }
         .sheet(item: $editor) { draft in
             SkillEditorSheet(model: model, initialDraft: draft)
@@ -125,7 +138,7 @@ struct SkillsView: View {
                                                     StatusBadge(text: L10n.tr("暂不可用"), tone: .danger)
                                                 }
                                             }
-                                            Text(skill.sourceId)
+                                            Text(model.sourceOrigins[skill.id]?.url ?? skill.sourceId)
                                                 .font(AppFont.metadata.monospaced())
                                                 .foregroundStyle(.secondary)
                                                 .lineLimit(1)
@@ -199,7 +212,7 @@ struct SkillsView: View {
                                     KeyValueLine(key: L10n.tr("内容指纹"), value: skill.contentHash, monospaced: true)
                                     Text(L10n.tr("内容指纹用于核对文件、路径和执行权限是否改变。"))
                                         .font(AppFont.secondary).foregroundStyle(.secondary)
-                                    KeyValueLine(key: L10n.tr("存储路径"), value: skill.sourceId == SkillLibraryStore.sourceID
+                                    KeyValueLine(key: L10n.tr("存储路径"), value: (skill.sourceId == SkillLibraryStore.sourceID || skill.sourceId.hasPrefix("source-"))
                                         ? model.runtimePaths.libraryRoot.appendingPathComponent(skill.path).path : skill.path, monospaced: true)
                                     KeyValueLine(key: L10n.tr("许可"), value: L10n.text(UserFacingText.metadata(skill.licenseReview, field: .licenseReview)))
                                     KeyValueLine(key: L10n.tr("技能信息"), value: L10n.text(UserFacingText.metadata(skill.metadataReview, field: .metadataReview)))
@@ -253,3 +266,43 @@ struct SkillsView: View {
     }
 }
 
+
+
+private struct UserSkillInstallSheet: View {
+    @Bindable var model: AppModel
+    let skillIDs: [String]
+    @State private var host = "codex"
+    @State private var method: SkillInstallMethod = .symlink
+    @State private var adoptExisting = false
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(L10n.tr("用户级启用技能")).font(AppFont.title)
+            Text(L10n.tr("用户级技能会影响所选 AI 工具的全部项目。已有受管技能会保留；安装方式也会应用于它们。"))
+                .font(AppFont.secondary).foregroundStyle(.secondary)
+            Picker(L10n.tr("目标 AI 工具"), selection: $host) {
+                Text("Codex · ~/.agents/skills").tag("codex")
+                Text("Claude Code · ~/.claude/skills").tag("claude-code")
+            }
+            Picker(L10n.tr("技能安装方式"), selection: $method) {
+                Text(L10n.tr("软链接（推荐）")).tag(SkillInstallMethod.symlink)
+                Text(L10n.tr("复制独立文件")).tag(SkillInstallMethod.copy)
+            }.pickerStyle(.segmented)
+            Text(model.runtimePaths.versionsRoot.path).font(AppFont.metadata.monospaced()).textSelection(.enabled)
+            Toggle(L10n.tr("迁移同内容的现有目录（先备份，再替换）"), isOn: $adoptExisting)
+            Text(L10n.tr("迁移前可把现有 skills 目录添加为本地来源，完整复制到栖集。内容不同的同名技能会阻止安装。"))
+                .font(AppFont.secondary).foregroundStyle(.secondary)
+            HStack {
+                Spacer()
+                Button(L10n.tr("取消")) { dismiss() }.keyboardShortcut(.cancelAction)
+                Button(L10n.tr("预览变更")) {
+                    model.libraryError = nil
+                    dismiss()
+                    model.prepareUserSkillPlan(skillIDs: skillIDs, agents: [host], method: method, adoptExisting: adoptExisting)
+                }
+                .keyboardShortcut(.defaultAction).buttonStyle(.borderedProminent)
+            }
+        }.padding(26).frame(width: 600)
+    }
+}

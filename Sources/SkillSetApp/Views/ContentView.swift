@@ -78,6 +78,8 @@ struct DetailView: View {
     var body: some View {
         Group {
             switch model.section {
+            case .globalConfiguration:
+                GlobalConfigurationView(model: model)
             case .projects:
                 ProjectsView(model: model)
             case .skills:
@@ -116,4 +118,3 @@ struct DetailView: View {
         }
     }
 }
-

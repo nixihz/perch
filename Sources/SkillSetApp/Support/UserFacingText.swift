@@ -69,6 +69,12 @@ enum UserFacingText {
             ?? (error as? ProjectLockError)?.code
         if let code {
             switch code {
+            case "GLOBAL_STATE_CORRUPT":
+                return "全局管理记录无法核验，请检查操作历史和本机数据；已有文件保持不变。"
+            case "GLOBAL_BASELINE_MISSING":
+                return "原始备份缺失或已改变，无法安全还原；请检查备份后重试。"
+            case "GLOBAL_OPERATION_STALE":
+                return "已有后续全局变更，请先撤销后续操作，再撤销这次操作。"
             case "TEMPLATE_STORE_CORRUPT":
                 return "本机片段库无法读取，请检查数据文件后重试。"
             case "SOURCE_IMPORT_CHANGED":
@@ -277,6 +283,7 @@ enum UserFacingText {
                 return "来源包含无法识别的提示，请先核对仓库内容和许可，不要直接启用。"
             }
         case .plan:
+            if text == "此操作影响当前用户在该 AI 工具中的全部项目。" { return "此操作影响当前用户在该 AI 工具中的全部项目。" }
             if text.contains("保留原归属") { return "项目原有内容会保留，取消选择不会删除。" }
             if text.contains("缺少本机管理记录") { return "无法确认这些内容是否由栖集写入，会保留已有文件。请先核对来源和内容。" }
             if text.contains("许可审查") { return "技能许可尚未完成审查，请核对许可后再批准。" }

@@ -2,8 +2,14 @@ import SwiftUI
 
 /// 搜索紧邻受影响的列表，避免将技能筛选误认为全应用搜索。
 struct SkillSearchField: View {
-    @Bindable var model: AppModel
+    @Binding var query: String
     @FocusState private var isFocused: Bool
+
+    init(model: AppModel) {
+        _query = Binding(get: { model.query }, set: { model.updateQuery($0) })
+    }
+
+    init(query: Binding<String>) { _query = query }
 
     var body: some View {
         HStack(spacing: 4) {
@@ -18,14 +24,12 @@ struct SkillSearchField: View {
             .accessibilityLabel(L10n.tr("搜索技能"))
             .help(L10n.tr("搜索技能（⌘F）"))
             .accessibilityIdentifier("skills.search.focus")
-            TextField(L10n.tr("搜索技能、来源或路径"), text: Binding(
-                get: { model.query }, set: { model.updateQuery($0) }
-            ))
+            TextField(L10n.tr("搜索技能、来源或路径"), text: $query)
             .textFieldStyle(.plain)
             .focused($isFocused)
             .accessibilityIdentifier("skills.search")
-            if !model.query.isEmpty {
-                Button { model.updateQuery(""); isFocused = true } label: {
+            if !query.isEmpty {
+                Button { query = ""; isFocused = true } label: {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
                         .frame(width: 32, height: 32)
                         .contentShape(Rectangle())

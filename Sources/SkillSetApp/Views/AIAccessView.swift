@@ -141,7 +141,7 @@ struct AIAccessView: View {
     private var connectionDetail: String {
         switch connection {
         case .unconfigured:
-            L10n.tr("将新增名为 skillset 的用户级 stdio 配置，使用上方程序的绝对路径。")
+            L10n.tr("将新增名为 perch 的用户级 stdio 配置，使用上方程序的绝对路径。")
         case .configured:
             L10n.tr("已找到本应用管理的配置。请重新加载 AI 工具，确认它能列出栖集的 MCP 工具；如无法使用，可重新生成计划核对参数。")
         case .updateNeeded:
@@ -159,8 +159,8 @@ struct AIAccessView: View {
                 Text(L10n.tr("接入后怎么用"))
                     .font(AppFont.heading)
                 Text(L10n.tr("1. 批准接入计划后，让 AI 工具重新加载 MCP；必要时重新打开会话。"))
-                Text(L10n.tr("2. 在 AI 工具中确认已出现 skillset 的工具，再试着询问："))
-                Text(L10n.tr("“查询栖集里有哪些代码审查技能。”"))
+                Text(L10n.tr("2. 在 AI 工具中确认已出现 perch 的工具，再试着询问："))
+                Text(L10n.tr("“列出栖集的预设，搜索代码审查技能，再把我选定的技能或预设安装到当前项目。”"))
                     .textSelection(.enabled)
                     .foregroundStyle(AppColor.accentText)
                 Text(L10n.tr("3. 涉及项目写入时，先让 AI 生成计划，再回到本机审阅并批准。"))
@@ -206,7 +206,7 @@ struct AIAccessView: View {
         DisclosureGroup(L10n.tr("工具与兼容性详情"), isExpanded: $showTechnicalDetails) {
             VStack(alignment: .leading, spacing: 8) {
                 Text(L10n.tr("目前仅验证了 stdio 连接与 2025-11-25 版本协议；其他连接方式和 AI 工具兼容性仍待验证。"))
-                Text(L10n.tr("提供项目查询、技能搜索、来源预览、计划、操作记录、MCP 配置和插件管理等 14 个工具；实际列表以 AI 工具发现的结果为准。"))
+                Text(L10n.tr("提供预设列表、技能搜索、项目技能与预设安装、来源预览、计划和操作记录等 17 个工具；实际列表以 AI 工具发现的结果为准。"))
                 Text(L10n.tr("AI 可以生成计划和执行已批准的计划；MCP 不提供批准工具。"))
             }
             .font(AppFont.secondary)

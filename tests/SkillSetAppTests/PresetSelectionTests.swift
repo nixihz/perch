@@ -145,7 +145,7 @@ final class PresetSelectionTests: XCTestCase {
             draft.instructions = ["engineering"]
             draft.mcpServers = [MCPConfigurationDraft(name: "docs", scope: .user, commandOrURL: "/usr/bin/true", args: ["one value"])]
             XCTAssertTrue(model.savePreset(draft))
-            let restarted = AppModel(runtimePaths: model.runtimePaths)
+            let restarted = AppModel(snapshot: AppSnapshot.load(), runtimePaths: model.runtimePaths)
             let preset = try XCTUnwrap(restarted.snapshot.presets.first { $0.id == draft.id })
             XCTAssertTrue(restarted.loadPreset(preset, into: projectID))
             let saved = try XCTUnwrap(ProjectDraftStore(rootURL: model.runtimePaths.applicationSupportRoot).load(projectID: UUID(uuidString: projectID)!))
@@ -178,7 +178,7 @@ final class PresetSelectionTests: XCTestCase {
             editor.skills = ["workspace/stc"]
             editor.instructions = ["engineering"]
             XCTAssertTrue(model.savePreset(editor))
-            let restarted = AppModel(runtimePaths: model.runtimePaths)
+            let restarted = AppModel(snapshot: AppSnapshot.load(), runtimePaths: model.runtimePaths)
             let saved = try XCTUnwrap(restarted.snapshot.presets.first { $0.id == original.id })
             XCTAssertEqual(saved.name, "我的日常组合")
             XCTAssertEqual(saved.revision, original.revision + 1)
@@ -218,7 +218,7 @@ final class PresetSelectionTests: XCTestCase {
             XCTAssertEqual(try Data(contentsOf: store.documentURL), before)
             copy.name = "工具箱副本"
             XCTAssertTrue(model.savePreset(copy))
-            let restarted = AppModel(runtimePaths: model.runtimePaths)
+            let restarted = AppModel(snapshot: AppSnapshot.load(), runtimePaths: model.runtimePaths)
             let duplicated = try XCTUnwrap(restarted.snapshot.presets.first { $0.id == copy.id })
             XCTAssertEqual(duplicated.revision, 1)
             XCTAssertEqual(duplicated.description, "四类组件")
@@ -368,7 +368,7 @@ final class PresetSelectionTests: XCTestCase {
 
         init() throws {
             for variable in variables { setenv(variable, root.appendingPathComponent(variable).path, 1) }
-            model = AppModel(runtimePaths: SkillSetRuntimePaths(applicationSupportRoot: root.appendingPathComponent("state"), repositoryRoot: nil))
+            model = AppModel(snapshot: AppSnapshot.load(), runtimePaths: SkillSetRuntimePaths(applicationSupportRoot: root.appendingPathComponent("state"), repositoryRoot: nil))
         }
 
         func cleanup() {

@@ -1,6 +1,7 @@
 import SwiftUI
 
 enum NavigationItem: String, CaseIterable, Identifiable {
+    case globalConfiguration
     case projects
     case skills
     case mcp
@@ -15,13 +16,14 @@ enum NavigationItem: String, CaseIterable, Identifiable {
 
     // 菜单、侧栏共用任务顺序；快捷键保留已有的 1 / 2 / 3 习惯。
     static let groups: [(title: String, items: [NavigationItem])] = [
-        ("项目配置", [.projects, .presets]),
+        ("配置", [.globalConfiguration, .projects, .presets]),
         ("技能与规则", [.skills, .templates, .sources]),
         ("AI 工具", [.mcp, .plugins, .aiAccess])
     ]
 
     var keyboardShortcut: String {
         switch self {
+        case .globalConfiguration: "9"
         case .projects: "1"
         case .skills: "2"
         case .mcp: "3"
@@ -36,6 +38,7 @@ enum NavigationItem: String, CaseIterable, Identifiable {
 
     @MainActor var title: String {
         switch self {
+        case .globalConfiguration: L10n.tr("全局配置")
         case .projects: L10n.tr("项目")
         case .skills: L10n.tr("技能库")
         case .mcp: L10n.tr("MCP 服务")
@@ -50,6 +53,7 @@ enum NavigationItem: String, CaseIterable, Identifiable {
 
     @MainActor var subtitle: String {
         switch self {
+        case .globalConfiguration: L10n.tr("管理当前用户的技能与规则")
         case .projects: L10n.tr("选择技能，预览并写入项目")
         case .skills: L10n.tr("查找、阅读和编辑技能")
         case .mcp: L10n.tr("管理 Codex 与 Claude Code 连接")
@@ -64,6 +68,7 @@ enum NavigationItem: String, CaseIterable, Identifiable {
 
     var systemImage: String {
         switch self {
+        case .globalConfiguration: "globe"
         case .projects: "square.stack.3d.up"
         case .skills: "wand.and.stars"
         case .mcp: "point.3.connected.trianglepath.dotted"

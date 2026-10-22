@@ -64,7 +64,7 @@ final class SkillEditorTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("batch-removal-\(UUID())")
         defer { try? FileManager.default.removeItem(at: root) }
         let paths = SkillSetRuntimePaths(applicationSupportRoot: root, repositoryRoot: nil)
-        let model = AppModel(runtimePaths: paths)
+        let model = AppModel(snapshot: AppSnapshot.load(), runtimePaths: paths)
         for slug in ["batch-first", "batch-stale", "batch-last"] {
             XCTAssertTrue(model.saveSkill(SkillEditorDraft(
                 slug: slug, document: "---\nname: \(slug)\ndescription: 批量移除验证\n---\n正文\n"
@@ -87,7 +87,7 @@ final class SkillEditorTests: XCTestCase {
         XCTAssertEqual(model.removeSkills([updated, last, last, source]), [updated.id, last.id, source.id])
         XCTAssertNil(model.skillRemovalError)
         XCTAssertEqual(model.hiddenSkillCount, hiddenCount + 1)
-        let restarted = AppModel(runtimePaths: paths)
+        let restarted = AppModel(snapshot: AppSnapshot.load(), runtimePaths: paths)
         XCTAssertFalse(restarted.snapshot.catalog.entries.contains { [first.id, stale.id, last.id, source.id].contains($0.id) })
         restarted.restoreHiddenSkills()
         XCTAssertTrue(restarted.snapshot.catalog.entries.contains { $0.id == source.id })

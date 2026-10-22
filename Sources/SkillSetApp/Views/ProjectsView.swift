@@ -30,6 +30,7 @@ struct ProjectsView: View {
         }
         .task {
             model.refreshPendingPlans()
+            model.globalConfiguration.refreshInheritance()
         }
     }
 
@@ -150,6 +151,14 @@ struct ProjectsView: View {
                                 .foregroundStyle(.secondary)
                         }
                         hostPicker(project: project)
+                        Picker(L10n.tr("技能安装方式"), selection: $model.skillInstallMethod) {
+                            Text(L10n.tr("软链接（推荐）")).tag(SkillInstallMethod.symlink)
+                            Text(L10n.tr("复制独立文件")).tag(SkillInstallMethod.copy)
+                        }
+                        .pickerStyle(.segmented).labelsHidden()
+                        Text(L10n.tr("软链接指向 ~/.perch 中的固定版本；复制后的文件可独立编辑。"))
+                            .font(AppFont.secondary).foregroundStyle(.secondary)
+
                         Divider()
                         skillChooser(project: project)
                     }
@@ -305,7 +314,18 @@ struct ProjectsView: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(UserFacingText.localizedInheritance(project.inherited))
                 .font(AppFont.secondary)
-            Text(L10n.tr("目前只读取项目配置，尚未检查全局、父目录或插件提供的内容。"))
+            ForEach(MCPHost.allCases.filter { project.agents.contains($0.displayName) }) { host in
+                if let error = model.globalConfiguration.inheritanceErrors[host] {
+                    Text(host.displayName + " · " + L10n.text(error)).foregroundStyle(.orange)
+                } else {
+                    let resources = model.globalConfiguration.inheritedResources[host] ?? []
+                    Text(L10n.tr("\(host.displayName) 全局资源：\(resources.count) 项；取消项目选择不会停用全局内容。"))
+                    ForEach(resources) { resource in
+                        Text(resource.path).font(AppFont.code).textSelection(.enabled)
+                    }
+                }
+            }
+            Text(L10n.tr("已扫描用户级技能与规则文件；父目录和插件内容尚未检查，同名优先级及会话加载仍需宿主确认。"))
                 .font(AppFont.metadata)
         }
         .foregroundStyle(.secondary)
@@ -444,11 +464,19 @@ struct PlanSheet: View {
         model.preparedPlan?.plan.metadata?["planType"] == "mcp-configuration"
     }
 
+    private var isGlobalPlan: Bool {
+        model.preparedPlan?.plan.metadata?["planType"] == "global-configuration"
+    }
+
+    private var approvalTitle: String {
+        isGlobalPlan ? L10n.tr("批准并更新全局配置") : isPluginPlan ? L10n.tr("批准并执行命令") : isMCPPlan ? L10n.tr("批准并写入配置") : L10n.tr("批准并写入项目")
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(isPluginPlan ? L10n.tr("插件变更计划") : isMCPPlan ? L10n.tr("MCP 配置计划") : L10n.tr("变更计划"))
+                    Text(isGlobalPlan ? L10n.tr("全局配置计划") : isPluginPlan ? L10n.tr("插件变更计划") : isMCPPlan ? L10n.tr("MCP 配置计划") : L10n.tr("变更计划"))
                         .font(AppFont.title.weight(.bold))
                     Text(
                         isPluginPlan
@@ -469,13 +497,19 @@ struct PlanSheet: View {
             Divider()
             if let record = model.preparedPlan {
                 KeyValueLine(
-                    key: isPluginPlan ? L10n.tr("工作目录") : isMCPPlan ? L10n.tr("配置目录") : L10n.tr("项目"),
+                    key: isGlobalPlan ? L10n.tr("全局事务目录") : isPluginPlan ? L10n.tr("工作目录") : isMCPPlan ? L10n.tr("配置目录") : L10n.tr("项目"),
                     value: record.plan.projectPath,
                     monospaced: true
                 )
                 KeyValueLine(key: L10n.tr("计划"), value: record.id.uuidString, monospaced: true)
                 KeyValueLine(key: L10n.tr("计划指纹"), value: record.plan.digest, monospaced: true)
                 KeyValueLine(key: L10n.tr("有效至"), value: L10n.date(record.expiresAt))
+                if isGlobalPlan {
+                    KeyValueLine(key: L10n.tr("AI 工具 / 使用范围"),
+                        value: (MCPHost(rawValue: record.plan.metadata?["globalHost"] ?? "")?.displayName ?? "") + " / " + L10n.tr("当前用户的全部项目"))
+                    Label(L10n.tr("此操作影响当前用户在该 AI 工具中的全部项目。"), systemImage: "globe")
+                        .font(AppFont.secondary).foregroundStyle(.orange)
+                }
                 if isPluginPlan {
                     KeyValueLine(
                         key: L10n.tr("AI 工具 / 使用范围"),
@@ -504,7 +538,9 @@ struct PlanSheet: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 HStack {
                                     StatusBadge(text: L10n.text(UserFacingText.changeAction(change.action)), tone: change.action == "add" ? .positive : .warning)
-                                    Text(change.relativePath)
+                                    Text(change.scope == "project-state"
+                                        ? ProjectLockStore(projectRoot: URL(fileURLWithPath: record.plan.projectPath), stateRoot: model.runtimePaths.applicationSupportRoot).directoryURL.appendingPathComponent(change.relativePath).path
+                                        : isGlobalPlan ? URL(fileURLWithPath: record.plan.projectPath).appendingPathComponent(change.relativePath).path : change.relativePath)
                                         .font(AppFont.code.weight(.semibold))
                                     Spacer()
                                 }
@@ -561,7 +597,7 @@ struct PlanSheet: View {
                     dismiss()
                 }
                     .keyboardShortcut(.cancelAction)
-                Button(isPluginPlan ? L10n.tr("批准并执行命令") : isMCPPlan ? L10n.tr("批准并写入配置") : L10n.tr("批准并写入项目")) {
+                Button(approvalTitle) {
                     confirmingApply = true
                 }
                 .buttonStyle(.borderedProminent)
@@ -572,11 +608,11 @@ struct PlanSheet: View {
         .padding(26)
         .frame(width: 700, height: 680)
         .confirmationDialog(
-            isPluginPlan ? L10n.tr("执行这条插件命令？") : isMCPPlan ? L10n.tr("更新 AI 工具配置？") : L10n.tr("确认写入这个项目？"),
+            isGlobalPlan ? L10n.tr("确认更新当前用户的全局配置？") : isPluginPlan ? L10n.tr("执行这条插件命令？") : isMCPPlan ? L10n.tr("更新 AI 工具配置？") : L10n.tr("确认写入这个项目？"),
             isPresented: $confirmingApply,
             titleVisibility: .visible
         ) {
-            Button(isPluginPlan ? L10n.tr("批准并执行命令") : isMCPPlan ? L10n.tr("批准并写入配置") : L10n.tr("批准并写入项目"), role: .destructive) {
+            Button(approvalTitle, role: .destructive) {
                 _ = model.approveAndApplyPreparedPlan()
             }
             Button(L10n.tr("返回审阅"), role: .cancel) {}
@@ -591,4 +627,3 @@ struct PlanSheet: View {
         }
     }
 }
-

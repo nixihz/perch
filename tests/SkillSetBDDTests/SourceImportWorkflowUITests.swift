@@ -4,14 +4,14 @@ import SkillSetCore
 
 @MainActor
 final class SourceImportWorkflowUITests: XCTestCase {
-    func testReviewCancelImportAndProjectPlanUseTheCompleteSourcePackage() throws {
+    func testSynchronizedSourceAppearsInLibraryAndProjectPlan() throws {
         guard NativeUIHarness.canRunInCurrentEnvironment else { throw XCTSkip(NativeUIHarness.unavailableReason) }
         let world = try BDDWorld()
         defer { world.cleanup() }
         try world.registerProject(named: "source-import-ui")
-        let state = world.temporaryRoot.appendingPathComponent("native-ui/home/Library/Application Support/Skill Set")
+        let state = world.temporaryRoot.appendingPathComponent("native-ui/home/.perch")
         let previewID = UUID()
-        let previewRoot = state.appendingPathComponent("previews")
+        let previewRoot = state.appendingPathComponent("cache/sources")
         let checkout = previewRoot.appendingPathComponent(previewID.uuidString).appendingPathComponent("checkout")
         let package = checkout.appendingPathComponent("skills/import-ui")
         try FileManager.default.createDirectory(at: package.appendingPathComponent("references"), withIntermediateDirectories: true)
@@ -23,43 +23,29 @@ final class SourceImportWorkflowUITests: XCTestCase {
         try SourcePreviewStore(rootURL: previewRoot).save(preview)
         try world.launchNativeUI()
         let ui = try XCTUnwrap(world.nativeUI)
+        // 启动时同步来源库：候选直接进入技能库，不再需要逐项手动导入。
         try ui.selectSidebarItem("技能来源")
         try ui.pressButton(identifier: "sources.preview.\(previewID.uuidString)")
-        try ui.waitForButton("加入技能库…")
-        try ui.pressButton(identifier: "sources.import.skills/import-ui")
-        try ui.waitForButton("加入技能库")
-        try ui.waitForStaticText(containing: "来源界面测试正文")
+        try ui.waitForButton("在技能库查看")
+        XCTAssertFalse(try ui.hasEnabledButton("加入技能库…"))
         try ui.captureWindowScreenshot(to: URL(fileURLWithPath: "/tmp/skillset-source-import-review.png"))
-        try ui.pressButton("取消")
-        XCTAssertFalse(FileManager.default.fileExists(atPath: state.appendingPathComponent("skill-library/index.json").path))
-        try ui.pressButton(identifier: "sources.import.skills/import-ui")
-        try ui.waitForButton("加入技能库")
-        try ui.setText(fieldMatching: "sources.import.slug", to: "../../escape")
-        XCTAssertFalse(try ui.buttonIsEnabled("加入技能库"))
-        try ui.setText(fieldMatching: "sources.import.slug", to: "ui-imported")
-        do { try ui.waitForButton("加入技能库") }
-        catch {
-            try ui.captureWindowScreenshot(to: URL(fileURLWithPath: "/tmp/skillset-source-import-error.png"))
-            XCTFail(ui.accessibilityDebugDescription())
-            throw error
-        }
-        try ui.pressButton(identifier: "sources.import.confirm")
-        try ui.waitForStaticText("已加入技能库")
-        try ui.captureWindowScreenshot(to: URL(fileURLWithPath: "/tmp/skillset-source-import-success.png"))
-        try ui.pressButton(identifier: "sources.import.view")
+        try ui.pressButton(identifier: "sources.view.skills/import-ui")
         try ui.waitForStaticText(containing: "来源界面测试正文")
-        let library = SkillLibraryStore(rootURL: state.appendingPathComponent("skill-library"))
-        XCTAssertNotNil(try library.sourceURLs()["personal/ui-imported"])
+        let library = SkillLibraryStore(rootURL: state.appendingPathComponent("skills"))
+        let importedID = try XCTUnwrap(
+            try library.sourceURLs().keys.first { $0.hasSuffix("/import-ui") },
+            "来源同步后应能在技能库找到 import-ui"
+        )
         try ui.selectSidebarItem("技能来源")
         try ui.pressButton(identifier: "sources.preview.\(previewID.uuidString)")
         XCTAssertTrue(try ui.hasEnabledButton("在技能库查看"))
         XCTAssertFalse(try ui.hasEnabledButton("加入技能库…"))
         try ui.selectSidebarItem("项目")
-        try ui.setText(fieldMatching: "skills.search", to: "ui-imported")
-        try ui.pressButton(identifier: "projects.skill.personal/ui-imported")
+        try ui.setText(fieldMatching: "skills.search", to: "import-ui")
+        try ui.pressButton(identifier: "projects.skill.\(importedID)")
         try ui.previewDeploymentPlan()
         let plan = try ui.waitForSinglePlan()
-        XCTAssertTrue(plan.plan.changes.contains { $0.relativePath.contains("ui-imported") })
+        XCTAssertTrue(plan.plan.changes.contains { $0.relativePath.contains("import-ui") })
         try ui.pressEscapeToCancelPlan()
         let registration = try XCTUnwrap(ProjectStore(rootURL: state).list().first)
         XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: registration.canonicalPath).isEmpty)

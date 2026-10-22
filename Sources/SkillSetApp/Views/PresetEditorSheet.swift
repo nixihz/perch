@@ -145,7 +145,7 @@ struct PresetEditorSheet: View {
     }
 
     private var skills: some View {
-        let entries = matchingSkills(model.snapshot.catalog.entries, query: search)
+        let entries = matchingSkills(model.snapshot.catalog.entries, query: search, sourceOrigins: model.sourceOrigins)
         return Group {
             if entries.isEmpty { Text(L10n.tr("没有匹配的技能")).foregroundStyle(.secondary) }
             ForEach(entries) { skill in

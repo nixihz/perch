@@ -23,7 +23,7 @@ final class SourceManagementTests: XCTestCase {
 
             model.removeSourcePreview(second.id)
             XCTAssertNil(model.selectedPreviewID)
-            XCTAssertNotNil(model.selectedSource, "最后一条预览删除后仍能显示内置来源")
+            XCTAssertNil(model.selectedSource, "删除全部来源后显示空状态，不恢复内置来源")
             XCTAssertTrue(try store.list().isEmpty)
         }
     }

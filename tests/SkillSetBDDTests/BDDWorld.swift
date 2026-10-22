@@ -93,10 +93,19 @@ final class BDDWorld {
             .appendingPathComponent("skillset-bdd-\(UUID().uuidString)", isDirectory: true)
         applicationSupportRoot = temporaryRoot.appendingPathComponent("state", isDirectory: true)
         try fileManager.createDirectory(at: applicationSupportRoot, withIntermediateDirectories: true)
-        service = try SkillSetService(paths: SkillSetRuntimePaths(
-            applicationSupportRoot: applicationSupportRoot,
-            repositoryRoot: repositoryRoot
-        ))
+        // 应用不再内置技能；BDD 夹具直接以仓库目录作为库存，模拟已同步的来源内容。
+        let repositorySnapshot = AppSnapshot.load(repositoryRoot: repositoryRoot)
+        let repositorySkillSources = Dictionary(uniqueKeysWithValues: repositorySnapshot.catalog.entries.map {
+            ($0.id, repositoryRoot.appendingPathComponent($0.path))
+        })
+        service = try SkillSetService(
+            paths: SkillSetRuntimePaths(
+                applicationSupportRoot: applicationSupportRoot,
+                repositoryRoot: repositoryRoot
+            ),
+            snapshot: repositorySnapshot,
+            skillSourceURLs: repositorySkillSources
+        )
     }
 
     func registerProject(named name: String) throws {
@@ -617,13 +626,13 @@ final class BDDWorld {
     }
 
     func savedPreviewCount() throws -> Int {
-        try SourcePreviewStore(rootURL: applicationSupportRoot.appendingPathComponent("previews"))
+        try SourcePreviewStore(rootURL: applicationSupportRoot.appendingPathComponent("cache/sources"))
             .list()
             .count
     }
 
     func previewDirectoryCount() throws -> Int {
-        let root = applicationSupportRoot.appendingPathComponent("previews", isDirectory: true)
+        let root = applicationSupportRoot.appendingPathComponent("cache/sources", isDirectory: true)
         guard fileManager.fileExists(atPath: root.path) else { return 0 }
         return try fileManager.contentsOfDirectory(
             at: root,
@@ -669,7 +678,7 @@ final class BDDWorld {
         let workspace = URL(fileURLWithPath: currentPreview.workspacePath, isDirectory: true)
             .resolvingSymlinksInPath()
             .standardizedFileURL
-        let root = applicationSupportRoot.appendingPathComponent("previews", isDirectory: true)
+        let root = applicationSupportRoot.appendingPathComponent("cache/sources", isDirectory: true)
             .resolvingSymlinksInPath()
             .standardizedFileURL
         return workspace.path.hasPrefix(root.path + "/")
@@ -698,7 +707,7 @@ final class BDDWorld {
 
     func projectLockStatus() throws -> String {
         guard let projectURL else { throw BDDWorldError.missingProject }
-        return ProjectLockStore(projectRoot: projectURL).inspect().status
+        return ProjectLockStore(projectRoot: projectURL, stateRoot: applicationSupportRoot).inspect().status
     }
 
     func planStatusLabel() throws -> String {
@@ -781,7 +790,7 @@ final class BDDWorld {
     private func installPreviewService(remotePath: String, virtualURL: String) {
         let baseURL = URL(fileURLWithPath: remotePath).absoluteString
         previewService = SourcePreviewService(
-            previewsRoot: applicationSupportRoot.appendingPathComponent("previews", isDirectory: true),
+            previewsRoot: applicationSupportRoot.appendingPathComponent("cache/sources", isDirectory: true),
             gitEnvironment: [
                 "GIT_CONFIG_COUNT": "1",
                 "GIT_CONFIG_KEY_0": "url.\(baseURL).insteadOf",
@@ -793,7 +802,7 @@ final class BDDWorld {
     private func reloadedPreview() throws -> SourcePreviewRecord {
         guard let currentPreview else { throw BDDWorldError.missingPreview }
         return try SourcePreviewStore(
-            rootURL: applicationSupportRoot.appendingPathComponent("previews", isDirectory: true)
+            rootURL: applicationSupportRoot.appendingPathComponent("cache/sources", isDirectory: true)
         ).load(currentPreview.id)
     }
 

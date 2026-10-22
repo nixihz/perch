@@ -161,7 +161,7 @@ final class SkillFileBrowserTests: XCTestCase {
             try FileManager.default.createDirectory(at: repo.appendingPathComponent("registry"), withIntermediateDirectories: true)
             try JSONEncoder().encode(CatalogDocument(schemaVersion: 1, hashAlgorithm: "sha256:path-content-executable:v1", entries: entries))
                 .write(to: repo.appendingPathComponent("registry/catalog.json"))
-            let model = AppModel(runtimePaths: SkillSetRuntimePaths(applicationSupportRoot: root.appendingPathComponent("state"), repositoryRoot: repo))
+            let model = AppModel(snapshot: AppSnapshot.load(repositoryRoot: repo), runtimePaths: SkillSetRuntimePaths(applicationSupportRoot: root.appendingPathComponent("state"), repositoryRoot: repo))
             return (model, root, cleanup)
         } catch {
             cleanup()

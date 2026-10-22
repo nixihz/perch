@@ -103,10 +103,7 @@ final class NativeUIHarness {
         let uiRoot = temporaryRoot.appendingPathComponent("native-ui", isDirectory: true)
         let home = uiRoot.appendingPathComponent("home", isDirectory: true)
         let codex = uiRoot.appendingPathComponent("codex", isDirectory: true)
-        applicationSupportRoot = home.appendingPathComponent(
-            "Library/Application Support/Skill Set",
-            isDirectory: true
-        )
+        applicationSupportRoot = home.appendingPathComponent(".perch", isDirectory: true)
         try FileManager.default.createDirectory(
             at: applicationSupportRoot,
             withIntermediateDirectories: true
@@ -137,6 +134,8 @@ final class NativeUIHarness {
         environment["SKILLSET_HOME"] = home.path
         environment["CODEX_HOME"] = codex.path
         environment["SKILLSET_REPOSITORY_ROOT"] = repositoryRoot.path
+        // 夹具没有用户导入流程，显式让应用使用仓库快照，保持技能 ID 与场景一致。
+        environment["SKILLSET_REPOSITORY_LIBRARY"] = "1"
         if let executable = pluginFixture?.executableURL {
             environment["SKILLSET_CLAUDE_BIN"] = executable.path
         }

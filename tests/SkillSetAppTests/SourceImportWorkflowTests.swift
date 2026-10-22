@@ -36,8 +36,9 @@ final class SourceImportWorkflowTests: XCTestCase {
             let prepared = await model.prepareSourceSkillImport(previewID: preview.id, path: "skills/import-workflow")
             let draft = try XCTUnwrap(prepared)
             XCTAssertTrue(draft.document.contains("来源正文"))
-            XCTAssertNil(model.importedSkillID(preview: preview, candidate: preview.candidates[0]))
-            XCTAssertFalse(FileManager.default.fileExists(atPath: model.runtimePaths.libraryRoot.path), "审阅时不应产生技能副本")
+            let cachedID = try XCTUnwrap(model.importedSkillID(preview: preview, candidate: preview.candidates[0]))
+            XCTAssertTrue(cachedID.hasPrefix("source-"), "同步后无需逐项导入即可搜索")
+            XCTAssertFalse(model.snapshot.catalog.entries.contains { $0.id == "personal/import-workflow" }, "审阅不应创建个人副本")
             model.query = "an-unrelated-search"
             let succeeded = await model.importSourceSkill(draft)
             XCTAssertTrue(succeeded, model.sourceImportError ?? "")
@@ -70,9 +71,71 @@ final class SourceImportWorkflowTests: XCTestCase {
             XCTAssertFalse(succeeded)
             XCTAssertFalse(model.isWorking)
             XCTAssertTrue(model.sourceImportError?.contains("重新预览") == true)
-            XCTAssertNil(model.importedSkillID(preview: preview, candidate: preview.candidates[0]))
+            XCTAssertNotNil(model.importedSkillID(preview: preview, candidate: preview.candidates[0]), "导入副本失败不能移除已同步版本")
             XCTAssertEqual(model.sourcePreviews.count, 1)
             XCTAssertFalse(model.snapshot.catalog.entries.contains { $0.id == "personal/import-workflow" })
+        }
+    }
+
+    func testSyncedSourceAndLibraryEmptyStateFitMinimumWindow() async throws {
+        try await withFixture { model, preview, _ in
+            let controller = NSHostingController(rootView: ContentView(model: model))
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1080, height: 700), styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentViewController = controller
+            defer { window.close() }
+            let output = URL(fileURLWithPath: "/tmp/perch-source-ui")
+            try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+            for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+                window.appearance = NSAppearance(named: appearance)
+                for section in [NavigationItem.sources, .skills] {
+                    model.section = section
+                    try await Task.sleep(for: .milliseconds(120))
+                    controller.view.layoutSubtreeIfNeeded()
+                    XCTAssertLessThanOrEqual(controller.view.fittingSize.width, 1081)
+                    XCTAssertLessThanOrEqual(controller.view.fittingSize.height, 701)
+                    let bitmap = try XCTUnwrap(controller.view.bitmapImageRepForCachingDisplay(in: controller.view.bounds))
+                    controller.view.cacheDisplay(in: controller.view.bounds, to: bitmap)
+                    try bitmap.representation(using: .png, properties: [:])?.write(to: output.appendingPathComponent("\(section.rawValue)-\(appearance == .aqua ? "light" : "dark").png"))
+                }
+            }
+            model.removeSourcePreview(preview.id)
+            XCTAssertTrue(model.snapshot.catalog.entries.isEmpty)
+            model.section = .skills
+            try await Task.sleep(for: .milliseconds(120))
+            controller.view.layoutSubtreeIfNeeded()
+            XCTAssertLessThanOrEqual(controller.view.fittingSize.width, 1081)
+            XCTAssertLessThanOrEqual(controller.view.fittingSize.height, 701)
+        }
+    }
+
+    func testInstalledScanSheetFitsBothAppearancesWithoutWritingHost() async throws {
+        try await withFixture { model, _, root in
+            let locations = model.globalConfiguration.locations
+            let skill = locations.skillsRoot(.codex).appendingPathComponent("existing")
+            try FileManager.default.createDirectory(at: skill, withIntermediateDirectories: true)
+            let body = Data("---\nname: existing\ndescription: local\n---\n# Existing".utf8)
+            try body.write(to: skill.appendingPathComponent("SKILL.md"))
+            let controller = NSHostingController(rootView: InstalledSkillScanSheet(model: model))
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 780, height: 580), styleMask: [.titled], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentViewController = controller
+            window.orderFront(nil)
+            defer { window.close() }
+            for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+                window.appearance = NSAppearance(named: appearance)
+                try await Task.sleep(for: .milliseconds(120))
+                controller.view.layoutSubtreeIfNeeded()
+                XCTAssertLessThanOrEqual(controller.view.fittingSize.width, 781)
+                XCTAssertLessThanOrEqual(controller.view.fittingSize.height, 581)
+            }
+            XCTAssertEqual(try Data(contentsOf: skill.appendingPathComponent("SKILL.md")), body)
+            XCTAssertNil(try? FileManager.default.destinationOfSymbolicLink(atPath: skill.path))
+            XCTAssertEqual(try model.scanInstalledSkills(additionalRoots: []).filter(\.canImport).count, 1)
+            let imported = await model.importInstalledSkills(try model.scanInstalledSkills(additionalRoots: []).filter(\.canImport))
+            XCTAssertTrue(imported)
+            XCTAssertTrue(model.snapshot.catalog.entries.contains { $0.slug == "existing" })
+            XCTAssertEqual(try Data(contentsOf: skill.appendingPathComponent("SKILL.md")), body)
         }
     }
 
