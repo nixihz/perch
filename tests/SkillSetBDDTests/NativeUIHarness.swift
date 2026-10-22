@@ -567,18 +567,19 @@ final class NativeUIHarness {
     }
 
     func setText(fieldMatching text: String, to value: String) throws {
-        guard let field = nodes().first(where: { node in
-            guard node.role == kAXTextFieldRole as String else { return false }
-            return [
+        let fields = nodes().filter { $0.role == kAXTextFieldRole as String }
+        func labels(_ node: NativeUINode) -> [String] {
+            [
                 node.placeholder,
                 node.title,
                 node.label,
                 node.identifier,
                 titleUIElementText(node.element)
-            ].contains {
-                !text.isEmpty && $0.contains(text)
-            }
-        }) else {
+            ]
+        }
+        // 表单名称优先精确匹配，避免命中背后页面的「搜索名称或命令」。
+        guard !text.isEmpty, let field = fields.first(where: { labels($0).contains(text) })
+            ?? fields.first(where: { labels($0).contains { $0.contains(text) } }) else {
             throw NativeUIHarnessError.elementNotFound("文本字段 \(text)")
         }
         let focusError = AXUIElementSetAttributeValue(
