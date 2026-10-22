@@ -113,3 +113,14 @@ python3 -m unittest tests.test_update_packaging tests.test_ui_localization -v
 - 匿名 HTTPS 验证首页、图片、appcast 和完整 DMG，最终地址均为 Perch 子域；4 个文件长度与 SHA-256 均与发布目录一致。公网 DMG 的 `sign_update --verify` 通过；清单保持新平台 enclosure、build 4、macOS 14 与原公钥，返回 `Cache-Control: no-cache`。HEAD 返回 200 和长度 25,210,037；Range 返回完整文件（200），不支持分段续传。报告：`dist/release-v0.0.1-4/public-platform-verification.json`。
 - Nginx 配置检查及 reload 通过，既有平台与 Capslock Bye 配置逐字节保持原样；平台、Capslock Bye 及同机两个站点的公网首页摘要在变更前后一致。HTTP 到 HTTPS 跳转保留路径与查询参数。浏览器自动化工具超时，未完成本轮浏览器视觉复核；已通过真实公网匿名 HTTP 与文件校验。
 - 待完成：手动安装迁移版后，两个正式版本之间的应用内下载、安装、重启与数据保留验收。旧版内置旧 feed，不会自行发现新平台，本次不修改旧清单。通配证书沿用平台现有手工 DNS-01 续期安排，到期时间为 2027-01-20；本次未更改续期策略。
+
+
+2026-10-22 构建 `0.0.1 (5)` 发布验证：
+
+- 包含 MCP 配置库、宿主连接扫描入库、全局／项目 MCP 勾选计划、插件来源与本机扫描入库，以及原生控件统一。补齐 MCP 配置库表单的无障碍标签，原生 BDD 改为通过新配置库与全局插件入口验证凭据拒绝和风险确认，不弱化审批要求。
+- 最终完整回归通过：128 项 Swift Testing、73 项 XCTest、317 项 BDD 步骤；Python 31 项、Node 5 项、skill 结构和目录指纹检查通过。保留初次失败日志，最终结果见 `dist/release-v0.0.1-5/swift-tests-final.log`。App 与内置 CLI 均为 arm64 / x86_64，严格递归验签、hardened runtime 和包内／独立 CLI 仓库外 MCP 握手通过（各 17 个工具）。
+- App 与 DMG 均使用原 Developer ID 签名、公证并装订，Gatekeeper 返回 `Notarized Developer ID`。App 公证 ID：`b9b85bff-fd8c-49ae-9189-4a0ec16738d0`；DMG 公证 ID：`3ffcbb6b-d1f7-4d1b-a435-bd7fd83ef797`。保留原 Bundle ID、公钥与新平台 feed。
+- DMG：`Perch-0.0.1-5-universal.dmg`，25,241,863 字节，SHA-256：`6d95558c0721d36a4a8f5a4329d10908a676b9bfe963217cd4899fadc6591371`。签名清单 SHA-256：`2b2a9efd67291897eae08298ae9c33c5341b117463bbb2fb4925c43db8ae1b74`。离线 ZIP 保留在本地，官网与 Sparkle 共用 DMG。
+- 新平台发布包 24,439,554 字节，完整文件集合与逐文件字节一致；独立临时预览的首页、图片、DMG 和清单共 4 文件核验通过，预览退出后临时数据已清理。使用有效管理员登录执行 `publish --update`，平台 release ID：`4b4ee2af-fd9c-4ced-8cf0-78f6ff30fbbe`；本次未修改平台基础设施或旧 keli.tech 站点。
+- 公网匿名 HTTPS 下载 4 文件与发布目录逐字节一致，线上 DMG 的 Sparkle 验签通过；清单为 build 5 并返回 `Cache-Control: no-cache`。HEAD 返回 200 和正确长度，Range 返回完整文件 200。完整报告：`dist/release-v0.0.1-5/release-verification.json` 与 `public-platform-verification.json`。
+- 待完成：build 4 → build 5 的应用内下载、安装、重启与数据保留验收；本次文件校验不等同于完成安装升级。仍使用旧 keli.tech 清单的客户端须手动安装一次迁移版。

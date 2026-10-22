@@ -34,3 +34,5 @@ CLI 的 `--data` 默认为当前目录下的 `data`；不同工作目录会读�
 2026-10-22 已发布 build 4，平台 release ID 为 `407bf84e-1cfc-4d5e-b5da-83b46d84de57`。首页、图片、appcast 与 DMG 匿名 HTTPS 完整下载均与发布目录逐字节一致；公网 DMG 的 Sparkle 验签通过。HEAD 返回 200 和正确长度；Range 返回完整文件（200）。旧站未修改，跨版本安装尚未验收。
 
 平台通用托管、CLI 登录目录与桌面附件分发问题见[平台交接](../../docs/app-platform-handoff.md)。
+
+2026-10-22 再次更新至 `0.0.1 (5)`，release ID 为 `4b4ee2af-fd9c-4ced-8cf0-78f6ff30fbbe`；唯一命名 DMG、官网与签名清单同批发布，匿名公网字节及 Sparkle 验签通过。最新发布目录为 `dist/perch-app-platform-v0.0.1-5/`，本地验收报告见 `dist/release-v0.0.1-5/`。
