@@ -275,6 +275,11 @@ enum UserFacingText {
     }
 
     // 只转换已知诊断；未知或夹带英文的外部文本不回显，也不据此推断成功状态。
+    static func isInformationalPlanNote(_ text: String) -> Bool {
+        // 仅识别核心生成的完整格式，未知或附带外部内容的提示仍保留给用户。
+        text.range(of: #"^对象存储新增 [0-9]+ 个对象，共 [0-9]+ 字节；项目锁绑定 manifest sha256:[0-9a-f]{64}。$"#, options: .regularExpression) != nil
+    }
+
     static func diagnostic(_ text: String, context: DiagnosticContext) -> String {
         switch context {
         case .project:
@@ -298,6 +303,9 @@ enum UserFacingText {
                 return "来源包含无法识别的提示，请先核对仓库内容和许可，不要直接启用。"
             }
         case .plan:
+            if isInformationalPlanNote(text) {
+                return "部署内容已保存到本机版本库，项目版本记录将随计划更新。"
+            }
             if text == "此操作影响当前用户在该 AI 工具中的全部项目。" { return "此操作影响当前用户在该 AI 工具中的全部项目。" }
             if text.contains("保留原归属") { return "项目原有内容会保留，取消选择不会删除。" }
             if text.contains("缺少本机管理记录") { return "无法确认这些内容是否由栖集写入，会保留已有文件。请先核对来源和内容。" }

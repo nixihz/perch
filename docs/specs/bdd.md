@@ -123,3 +123,11 @@ CUCUMBER_TAGS=bdd CUCUMBER_VERBOSE=1 swift test
 ## 5. 当前边界
 
 原生 UI 已覆盖首开任务入口、导航、展开交互、搜索与项目空态、权限失败、MCP/Plugin 表单和双层审批取消。它不替代文件事务、Plugin 状态漂移和宿主命令边界的服务级场景，也不证明真实宿主已加载配置；这些边界继续由现有服务级 BDD 单独验证。
+
+## AGENTS 片段原生闭环
+
+`TemplateWorkflowUITests` 从独立原生进程通过 AX 新建片段、输入多行正文、选择项目、用 Escape 取消、查看差异、二次批准，最终回读临时 AGENTS.md 并验证手写正文保留。目标选择取消需保持草稿字节不变，审批取消需保持目标文件不变。系统允许窗口截图时保存目标选择、规则差异和写入结果到 `/tmp/perch-template-{target,diff,result}.png`。`TemplateEditorTests` 另以原生 NSHostingController 在明暗外观捕获 `/tmp/perch-template-{target,diff}-{light,dark}.png` 并检查弹窗尺寸；Accessibility 不可用时端到端场景明确跳过，不宣称界面通过。`TemplateWorkflowTests` 补充双宿主项目／全局、更新与取消启用、旧预览、引用损坏和外部文件修改的行为验证。
+
+AXPress 会绕过鼠标手势识别，因此上述端到端通过不能单独证明鼠标可点击。`ButtonInteractionTests` 在测试窗口向三种实际 `AppButtonStyle` 发送鼠标按下、松开事件，验证启用时执行一次、禁用时不执行；事件只发给测试窗口，不注入系统鼠标。曾有零距离拖拽用于按压缩放，导致 AXPress 有效而鼠标点击零执行，该测试在移除手势前失败、移除后通过。按钮反馈必须使用原生 `configuration.isPressed`，不得以额外手势接管点击。
+
+用户库不预置片段或预设。`UserLibraryTests` 验证正常首开空库、旧同标识的用户编辑保留、删除重启不恢复、删除预设不改变已载入草稿；`TemplateEditorTests` 验证被引用片段仍可删除、项目文件保持原样，失效引用在计划边界被拒绝，清理后可重新预览。引用和使用位置盘点失败不再锁定库条目的删除。

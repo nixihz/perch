@@ -27,14 +27,15 @@ task app
 - **MCP Servers**：读取 Codex TOML、Claude 项目与用户 JSON 中的真实连接；生成新增或受管配置计划，人工批准后写入并不启动 MCP 进程。
 - **Plugins**：读取本机 Claude Code / Codex 缓存、Claude 安装索引、Codex 配置和 manifest，展示安装状态、marketplace、revision、组件与 hooks 风险；为本机已发现插件生成 install / update / enable / disable / uninstall 计划。计划批准后才调用固定宿主 CLI，执行前复核状态、执行后回读并记录 operation。
 - **来源 / 预设 / 规则片段**：GitHub 仓库根可联网预览并保存固定 commit，在技能旁点击“加入技能库…”可审阅正文与文件、修改本机标识并保存完整独立副本；保留附带文件和仓库许可，删除来源预览不影响已导入技能。导入后点击“前往项目”，选择技能、预览变更并批准写入。项目页可直接使用预设，预设页可选择项目或添加本机目录，载入前展示草稿中技能与规则的新增、保留、移除项；预设只生成项目草稿，真实写入仍需预览与批准；规则片段分别写入目标宿主的 `AGENTS.md` / `CLAUDE.md` 受管块。
-- **规则片段**：支持新增、按名称/说明/正文搜索、查看、编辑和删除；修改保存在本机，重启后保留。删除不会改动项目文件；草稿和预设中的失效引用可手动移除。应用到项目仍需预览和批准。
+- **AGENTS 片段**：支持新增、搜索、编辑、复制正文和创建副本。点击“用于配置…”选择项目或全局目标，核对真实路径和合成规则，再“加入草稿并预览…”。审批页提供差异、写入前和写入后正文；批准后写入并回读，宿主加载仍需验证。使用位置列出草稿、已写入配置和预设，片段更新需要再次部署；删除后引用显示不可用，清理后才能重新部署。关闭目标选择不会保存草稿；取消审批保留已加入的草稿，目标文件保持不变。
+- **跨电脑复制片段库**：将 `templates.json` 放入 `~/.perch/`。缺失标识与可选字段、正文中的裸换行会兼容读取，首次改写前自动备份原文件；读取失败会显示路径与“重新读取”，修复后无需重启。
 - **AI 接入**：检查随 App 提供的 MCP 程序与运行资源，分别显示程序、Codex / Claude 用户级配置和宿主加载待验证状态；选择宿主后生成接入计划，本机审阅并批准后才写配置。真实 `skillset mcp serve --transport stdio` 提供查询、预览和计划；AI 不能自我批准写入。
 
 项目写入只发生在用户于计划 sheet 中二次确认后，并经过旧 hash 校验、staging、journal、离线对象核验和回读；CLI 的 `approve` 是显式本机人工动作。MCP 配置写入复用同一审批与事务层；Plugin 生命周期复用计划/审批/operation 模型，但外部宿主命令不伪装成可通用回滚的文件事务。Keychain 不读取，来源脚本、hooks、子模块和 postinstall 不执行。
 
 项目接入现在区分“项目已有”和“栖集管理”：相同内容保留原归属，同路径不同内容与受管内容漂移会阻塞。取消技能或宿主选择会规划移除未漂移的受管技能与规则块，并保存可撤销的备份；块外新增规则保留。旧锁没有本机管理记录时不自动接管，旧版待执行部署计划须重新生成。接入基线、恢复接入前状态和完整退出管理仍待实现，详见[项目接入设计](docs/specs/project-integration.md)。
 
-- 技能库默认无内置来源。配置 Git 仓库或本地目录并同步后，即可搜索其中的技能；本仓 JSON 快照仅保留为仓库资料。
+- 片段和预设默认空库，仅显示用户保存的条目，均可删除。技能库默认无内置来源。配置 Git 仓库或本地目录并同步后，即可搜索其中的技能；本仓 JSON 快照仅保留为仓库资料。
 - `local-brian/ponytail-review` 的 5 条断链保留为 `blocked`，不猜测修复。
 - Matt 链接实测固定到 `5beb35b040e3de97e54fa9e386d7e42d15c295c2`，识别 27 个 promoted、7 个 in-progress、4 个 misc；远端可主动触发只读预览，但不会自动收录或增加库存。
 - 来源缓存保存在 `~/.perch/cache/sources/`，技能完整包和安装版本分别保存在 `skills/`、`versions/`。同步不等于启用；启用时可选择软链接（默认）或复制，经计划批准后写入项目或用户级 harness 目录。
@@ -48,7 +49,7 @@ swift build --product skillset
 .build/debug/skillset doctor --json
 .build/debug/skillset sources preview https://github.com/mattpocock/skills --json
 .build/debug/skillset projects add /path/to/project --name demo --json
-.build/debug/skillset plan <project-id> --skills workspace/stc --instructions base-zh --json
+.build/debug/skillset plan <project-id> --skills workspace/stc --instructions <saved-snippet-id> --json
 .build/debug/skillset approve <plan-id> --digest <digest>
 .build/debug/skillset apply <plan-id> --digest <digest> --json
 .build/debug/skillset objects verify --project <project-id> --json

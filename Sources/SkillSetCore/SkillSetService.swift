@@ -154,7 +154,9 @@ public struct SkillSetService {
     }
 
     private static func defaultSnapshot(repositorySnapshot: AppSnapshot) -> AppSnapshot {
+        // 仓库示例仅供显式启用的开发夹具；用户库从空内容开始。
         usesRepositoryLibrary ? repositorySnapshot : repositorySnapshot.withoutBundledSkills()
+            .replacingPresets([]).replacingTemplates([])
     }
 
     /// 本机技能库版本优先，测试注入的仓库快照只在库中没有同名条目时兜底。

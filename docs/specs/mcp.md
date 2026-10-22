@@ -46,7 +46,7 @@
 
 服务 `initialize.serverInfo.name` 和 AI 接入向导的新配置键均为 `perch`。已有旧名称配置保留，避免擅自覆盖外部配置；使用向导前应在 MCP 服务页审阅旧连接并通过计划移除，然后生成 `perch` 接入计划。宿主重新加载后才可确认发现 17 个工具。
 
-AGENTS 片段的新建、编辑和删除只开放在本机 UI，保存到本机 `templates.json`；内置片段按同标识覆盖，删除记录在重启后继续生效。App、CLI 和 MCP 的部署计划共用合并后的片段库，长运行的 stdio 服务需重启以读取片段变更。片段删除不修改项目文件，也不静默移除草稿或预设引用；下次计划遇到失效引用会拒绝并要求重新选择。已经生成的计划保留生成时的内容和 digest，库编辑不改写既有计划；写项目仍需逐份预览和批准。不新增 MCP 片段写入工具。
+AGENTS 片段的新建、编辑和删除只开放在本机 UI，保存到本机 `templates.json`；正常启动不提供程序自带片段或预设，仅加载用户本机保存的条目；旧版用户修改过的同标识条目保留，删除记录在重启后继续生效。App、CLI 和 MCP 的部署计划共用合并后的片段库，长运行的 stdio 服务需重启以读取片段变更。本机 UI 的所有片段均可删除，引用和盘点失败不锁定删除操作；确认时说明引用将显示为不可用，需移除或替换后再部署。删除本身不修改项目文件，也不静默移除引用；旧版本或外部操作留下的失效引用在下次计划时仍拒绝。已经生成的计划保留生成时的内容和 digest，库编辑不改写既有计划；写项目仍需逐份预览和批准。本机片段页可以选择项目或全局目标，查看合成正文并生成正式计划；审批页展示规则前后内容和差异，复用同一事务与回读，不新增 MCP 片段写入工具。
 
 原生预设的新建与编辑只开放在本机 UI。MCP 的 `presets_list` 每次合并内置与本机预设，按标识使用本机覆盖；`presets_install` 为技能与规则生成追加安装计划。包含插件或 MCP 的混合预设返回 `PRESET_REQUIRES_LOCAL_PLAN`，不生成部分计划，转本机完整载入并分别审阅组件计划。插件与 MCP 组件仍分别通过既有计划工具和本机审批处理。
 
@@ -103,7 +103,7 @@ skillset objects verify [--project ID]
 skillset plugins list [--project ID]
 skillset plugins plan --host claude-code|codex --plugin ID --action install|update|enable|disable|uninstall [--scope user|project|local] [--project ID] [--manifest-digest SHA256] [--acknowledge-executable-components] [--remove-data]
 skillset inspect <project-id>
-skillset plan <project-id> --skills id1,id2 --instructions base-zh [--agents codex,claude-code]
+skillset plan <project-id> --skills id1,id2 --instructions snippet-id [--agents codex,claude-code]
 skillset plans list
 skillset approve <plan-id> [--digest DIGEST]
 skillset apply <plan-id> [--digest DIGEST]

@@ -53,7 +53,7 @@ Sources/SkillSetCLI/
 Tests/SkillSetCoreTests/        Swift Testing 行为测试
 ```
 
-应用的模板与预设可读取仓库 JSON/Markdown，SwiftPM resources 作回退；技能库只读取用户配置来源与本机索引，不自动加载仓库 catalog。项目草稿、计划、staging、operation 和来源缓存写入 ~/.perch。所有部署写入经过 `SkillSetService`，UI、CLI 和 MCP 不各自实现安装逻辑。
+正常运行时片段和预设只读取 ~/.perch/templates.json 与 ~/.perch/presets.json，初始为空；仓库 JSON/Markdown 与 SwiftPM 快照仅用于显式启用的开发夹具，不作为用户的预置内容。技能库只读取用户配置来源与本机索引，不自动加载仓库 catalog。项目草稿、计划、staging、operation 和来源缓存写入 ~/.perch。所有部署写入经过 `SkillSetService`，UI、CLI 和 MCP 不各自实现安装逻辑。
 
 技能库编辑通过 `SkillLibraryStore` 保存到 `~/.perch/skills/`：`index.json` 记录 `personal/<slug>` 条目与外部隐藏条目，`packages/<uuid>/` 保存完整版本。每次编辑先复制旧包、替换 `SKILL.md`、计算部署同算法指纹，再原子切换索引；失败不修改旧索引或旧版本。删除只移除索引引用，历史包保留，外部条目可恢复隐藏。当前不提供跨进程编辑锁、历史版本恢复 UI 或缓存清理。
 
@@ -74,7 +74,7 @@ Tests/SkillSetCoreTests/        Swift Testing 行为测试
 | 数据 | 权威位置 | 是否进入 Git |
 | --- | --- | --- |
 | Skill/Plugin/MCP 来源和不可变 revision | `registry/`、`vendor/`、对象 store | 是 |
-| 预设和规则片段 | `presets/`、`templates/agents/` | 是 |
+| 用户预设和规则片段 | `~/.perch/presets.json`、`~/.perch/templates.json` | 否 |
 | 项目期望/锁 | `~/.perch/project-state/<canonical-path-sha256>/` | 否 |
 | 项目 canonical realpath、旧 hash、备份、审批 | `~/.perch/` | 否 |
 | 凭据 | macOS Keychain；仓库只存引用名和状态 | 否 |

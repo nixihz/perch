@@ -221,6 +221,8 @@ final class NativeUIHarness {
     }
 
     func focusSidebar() throws {
+        NSRunningApplication(processIdentifier: processIdentifier)?.activate(options: .activateAllWindows)
+        pump(for: 0.15)
         let outline = try sidebar()
         let error = AXUIElementSetAttributeValue(
             outline.element,
@@ -230,6 +232,7 @@ final class NativeUIHarness {
         guard error == .success else {
             throw NativeUIHarnessError.accessibilityFailure(error, "聚焦侧栏")
         }
+        try waitUntil("侧栏获得键盘焦点") { try self.focusIsSidebar() }
     }
 
     func pressDownArrow() throws {
@@ -269,17 +272,19 @@ final class NativeUIHarness {
             throw NativeUIHarnessError.elementNotFound("侧栏项 \(title)")
         }
         let current = try sidebarSelection()
-        guard let currentIndex = rows.firstIndex(where: {
+        guard rows.contains(where: {
             collect(from: $0.element).contains { !$0.value.isEmpty && current.hasPrefix($0.value) }
         }) else {
             throw NativeUIHarnessError.elementNotFound("当前侧栏选中项")
         }
         try focusSidebar()
-        let keyCode = targetIndex > currentIndex ? CGKeyCode(125) : CGKeyCode(126)
-        // 分组标题不接收方向键选择；按实际 AX 行定位方向，达到目的地便停止。
-        for _ in rows.indices {
-            if try sidebarSelection().hasPrefix(title) { break }
-            try pressKey(keyCode)
+        for _ in 0..<(rows.count * 2) {
+            let selection = try sidebarSelection()
+            if selection.hasPrefix(title) { break }
+            guard let index = rows.firstIndex(where: {
+                collect(from: $0.element).contains { !$0.value.isEmpty && selection.hasPrefix($0.value) }
+            }) else { throw NativeUIHarnessError.elementNotFound("当前侧栏选中项") }
+            try pressKey(targetIndex > index ? CGKeyCode(125) : CGKeyCode(126))
         }
         try waitUntil("侧栏切换到 \(title)") {
             try self.sidebarSelection().hasPrefix(title)
@@ -567,7 +572,11 @@ final class NativeUIHarness {
     }
 
     func setText(fieldMatching text: String, to value: String) throws {
-        let fields = nodes().filter { $0.role == kAXTextFieldRole as String }
+        NSRunningApplication(processIdentifier: processIdentifier)?.activate(options: .activateAllWindows)
+        try waitUntil("隔离测试窗口获得输入焦点") {
+            NSWorkspace.shared.frontmostApplication?.processIdentifier == self.processIdentifier
+        }
+        let fields = nodes().filter { [kAXTextFieldRole as String, kAXTextAreaRole as String].contains($0.role) }
         func labels(_ node: NativeUINode) -> [String] {
             [
                 node.placeholder,
@@ -601,9 +610,18 @@ final class NativeUIHarness {
         typeText(value)
         try waitUntil("文本字段 \(text) 接受输入") {
             self.nodes().contains {
-                $0.role == kAXTextFieldRole as String && $0.value == value
+                [kAXTextFieldRole as String, kAXTextAreaRole as String].contains($0.role) && $0.value == value
             }
         }
+    }
+
+    func selectRadioButton(_ label: String) throws {
+        guard let radio = nodes().first(where: { $0.role == kAXRadioButtonRole as String && $0.label == label }) else {
+            throw NativeUIHarnessError.elementNotFound(label)
+        }
+        let error = AXUIElementPerformAction(radio.element, kAXPressAction as CFString)
+        guard error == .success else { throw NativeUIHarnessError.accessibilityFailure(error, "选择 \(label)") }
+        pump(for: 0.2)
     }
 
     func toggleCheckbox(containing text: String) throws {

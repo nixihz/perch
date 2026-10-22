@@ -20,12 +20,19 @@ final class AppModel {
     var selectedSourceID = ""
     var skillInstallMethod: SkillInstallMethod = .symlink
     var selectedPreviewID: UUID?
-    var selectedPresetID = "personal-base"
+    var selectedPresetID = ""
     var presetSelection: PresetSelectionRequest?
     var presetEditor: PresetEditorDraft?
     var presetError: String?
-    var selectedTemplateID = "base-zh"
+    var selectedTemplateID = ""
     var templateError: String?
+    private(set) var templateLibraryError: String?
+    var templateUseRequest: TemplateUseRequest?
+    var templatePlanReady = false
+    private var templatePlanID: UUID?
+    private var templatePlanPaths: [String] = []
+    private(set) var lastTemplateWritePaths: [String] = []
+    var planError: String?
     var projects: [ProjectRecord] = []
     var projectIssues: [String: [String]] = [:]
     var projectSkillObservations: [String: [ProjectSkillObservation]] = [:]
@@ -224,18 +231,14 @@ final class AppModel {
     private func reloadLibrary() throws {
         snapshot = try baseSnapshot.replacingCatalog(libraryStore.catalog(merging: baseSnapshot.catalog))
         sourceOrigins = try libraryStore.sourceOrigins()
-        do { snapshot = try snapshot.replacingPresets(presetStore.list(merging: baseSnapshot.presets)) }
-        catch { presetError = "本机预设文件无法读取，请检查文件后重试。" }
         do {
-            snapshot = try snapshot.replacingTemplates(templateStore.list(merging: baseSnapshot.templates))
-            if !snapshot.templates.contains(where: { $0.id == selectedTemplateID }) {
-                selectedTemplateID = snapshot.templates.first?.id ?? ""
+            snapshot = try snapshot.replacingPresets(presetStore.list(merging: baseSnapshot.presets))
+            if !snapshot.presets.contains(where: { $0.id == selectedPresetID }) {
+                selectedPresetID = snapshot.presets.first?.id ?? ""
             }
-            templateError = nil
-        } catch {
-            snapshot = snapshot.replacingTemplates([])
-            templateError = "本机片段库无法读取，请检查数据文件后重试。"
         }
+        catch { presetError = "本机预设文件无法读取，请检查文件后重试。" }
+        reloadTemplates()
         hiddenSkillCount = try libraryStore.hiddenCount()
         service = try SkillSetService(paths: runtimePaths, globalLocations: globalConfiguration.locations)
         updateQuery(query)
@@ -275,6 +278,22 @@ final class AppModel {
 
     private var templateStore: TemplateStore { TemplateStore(rootURL: runtimePaths.applicationSupportRoot) }
 
+    func reloadTemplates() {
+        do {
+            snapshot = snapshot.replacingTemplates(try templateStore.list(merging: baseSnapshot.templates))
+            if !snapshot.templates.contains(where: { $0.id == selectedTemplateID }) {
+                selectedTemplateID = snapshot.templates.first?.id ?? ""
+            }
+            templateLibraryError = nil
+            templateError = nil
+            service = try? SkillSetService(paths: runtimePaths, globalLocations: globalConfiguration.locations)
+        } catch {
+            snapshot = snapshot.replacingTemplates([])
+            selectedTemplateID = ""
+            templateLibraryError = "片段库读取失败，请检查 JSON 格式和版本后重新读取。原文件未被修改。"
+        }
+    }
+
     func matchingTemplates(_ query: String) -> [TemplateRecord] {
         let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
         return snapshot.templates.filter { template in
@@ -289,6 +308,7 @@ final class AppModel {
         do {
             snapshot = try snapshot.replacingTemplates(templateStore.save(draft.record, initial: baseSnapshot.templates))
             selectedTemplateID = draft.id
+            for index in projects.indices { projects[index].pendingChanges = pendingChangeCount(for: projects[index]) }
             service = try? SkillSetService(paths: runtimePaths, globalLocations: globalConfiguration.locations)
             report("片段已保存；项目更新仍需预览和批准。")
             return true
@@ -308,6 +328,58 @@ final class AppModel {
         } catch let error as TemplateStoreError {
             templateError = error.errorDescription
         } catch { templateError = UserFacingText.error(error) }
+    }
+
+    /// 选择窗口只读；明确加入草稿时才生成计划并持久化目标草稿。
+    @discardableResult
+    func prepareTemplateUse(templateID: String, target: TemplateUseTarget, preview: TemplateUsePreview) -> Bool {
+        templateError = nil
+        preparedPlan = nil
+        planError = nil
+        templatePlanReady = false
+        do {
+            let latest = try templateUsePreview(templateID: templateID, target: target)
+            guard latest == preview else {
+                templateError = "目标草稿或片段已改变，请重新选择目标以刷新预览。"
+                return false
+            }
+            let fresh = try SkillSetService(paths: runtimePaths, globalLocations: globalConfiguration.locations)
+            let plan: StoredDeploymentPlan
+            switch target {
+            case .project(let rawID):
+                guard let id = UUID(uuidString: rawID), let draft = latest.projectDraft else { throw DeploymentError.invalidPlan }
+                let registration = try projectStore.project(id: id)
+                let manifest = try ProjectLockStore(projectRoot: URL(fileURLWithPath: registration.canonicalPath),
+                    stateRoot: runtimePaths.applicationSupportRoot).loadManifest()
+                plan = try fresh.makePlan(projectID: id, skillIDs: draft.skillIDs, instructionIDs: draft.instructionIDs,
+                    agents: draft.agents, ruleBlockID: manifest?.ruleBlockID ?? "project-rules", installMethod: skillInstallMethod)
+                _ = try draftStore.save(projectID: id, skillIDs: draft.skillIDs, instructionIDs: draft.instructionIDs,
+                    agents: draft.agents, plugins: draft.plugins, mcpServers: draft.mcpServers)
+                try reloadProjects(preferredID: id)
+            case .global(let host):
+                guard let draft = latest.globalDraft else { throw DeploymentError.invalidPlan }
+                plan = try fresh.makeGlobalPlan(host: host, selection: draft)
+                try fresh.globalConfiguration.saveDraft(draft, host: host)
+                globalConfiguration.selectHost(host)
+            }
+            service = fresh
+            preparedPlan = plan
+            templatePlanID = plan.id
+            templatePlanPaths = latest.paths
+            templatePlanReady = true
+            templateUseRequest = nil
+            report("片段已加入配置草稿；请核对变更并批准写入。")
+            return true
+        } catch {
+            templateError = UserFacingText.error(error)
+            return false
+        }
+    }
+
+    func presentTemplatePlanIfReady() {
+        guard templatePlanReady else { return }
+        templatePlanReady = false
+        planPresented = true
     }
 
     var blockedCount: Int {
@@ -431,6 +503,18 @@ final class AppModel {
     }
 
     private var presetStore: PresetStore { PresetStore(rootURL: runtimePaths.applicationSupportRoot) }
+
+    func removePreset(_ preset: PresetRecord) {
+        presetError = nil
+        do {
+            snapshot = snapshot.replacingPresets(try presetStore.remove(id: preset.id))
+            selectedPresetID = snapshot.presets.first?.id ?? ""
+            service = try? SkillSetService(paths: runtimePaths, globalLocations: globalConfiguration.locations)
+            report("预设已删除；已载入的项目草稿保持不变。")
+        } catch let error as PresetStoreError {
+            presetError = error.errorDescription
+        } catch { presetError = UserFacingText.error(error) }
+    }
 
     func beginNewPreset() {
         presetError = nil
@@ -602,6 +686,7 @@ final class AppModel {
 
     @discardableResult
     func approveAndApplyPreparedPlan() -> Bool {
+        planError = nil
         guard let prepared = preparedPlan else {
             report("没有可用的计划，请先预览变更")
             return false
@@ -642,16 +727,19 @@ final class AppModel {
             if planType == "plugin-lifecycle" {
                 refreshPlugins()
             }
+            if applied.id == templatePlanID { lastTemplateWritePaths = templatePlanPaths }
             planPresented = false
             reportKey(UserFacingText.applyResult(result.message))
             return true
         } catch {
+            planError = UserFacingText.error(error)
             reportKey(UserFacingText.error(error))
             return false
         }
     }
 
     func dismissPlan() {
+        planError = nil
         preparedPlan = nil
         planPresented = false
     }
@@ -667,6 +755,7 @@ final class AppModel {
     }
 
     func reviewPlan(_ record: StoredDeploymentPlan) {
+        planError = nil
         preparedPlan = record
         planPresented = true
     }

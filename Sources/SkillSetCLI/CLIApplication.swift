@@ -236,7 +236,7 @@ struct CLIInvocation {
     private static func plan(arguments: [String], paths: SkillSetRuntimePaths, json: Bool) throws {
         var rest = arguments
         guard let rawID = rest.first, let projectID = UUID(uuidString: rawID) else {
-            throw CLIError("用法：skillset plan <project-id> --skills id1,id2 --instructions base-zh [--json]", exitCode: 2)
+            throw CLIError("用法：skillset plan <project-id> --skills id1,id2 --instructions snippet-id [--json]", exitCode: 2)
         }
         rest.removeFirst()
         let skills = splitList(consumeOption("--skills", from: &rest) ?? "")

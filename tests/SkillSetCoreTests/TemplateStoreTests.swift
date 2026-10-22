@@ -3,6 +3,62 @@ import XCTest
 @testable import SkillSetCore
 
 final class TemplateStoreTests: XCTestCase {
+    func testCopiedLibraryWithMissingIDsAndLiteralNewlinesLoadsLosslesslyAndBacksUpOnFirstSave() throws {
+        try fixture { _, store in
+            try FileManager.default.createDirectory(at: store.rootURL, withIntermediateDirectories: true)
+            let text = """
+            {"schemaVersion":1,"records":[
+              {"id":"existing","title":"原有片段","body":"原正文","purpose":"保留","isLocal":true},
+              {"title":"跨电脑片段","body":"第一行
+            第二行","isLocal":true},
+              {"title":"其他片段","body":"保留另一个正文","purpose":"说明"}
+            ],"deletedIDs":[]}
+            """
+            let original = Data(text.utf8)
+            try original.write(to: store.documentURL)
+            let loaded = try store.list(merging: [])
+            XCTAssertEqual(loaded.count, 3)
+            XCTAssertEqual(loaded[0].id, "existing")
+            XCTAssertEqual(loaded[1].body, "第一行\n第二行")
+            XCTAssertEqual(loaded[1].purpose, "")
+            XCTAssertNotEqual(loaded[1].id, loaded[2].id)
+            XCTAssertEqual(try store.list(merging: []).map(\.id), loaded.map(\.id))
+            XCTAssertEqual(try Data(contentsOf: store.documentURL), original, "读取不能改写拷贝来的文件")
+            XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: store.rootURL.path), ["templates.json"])
+            let edited = TemplateRecord(id: loaded[1].id, title: "更新名称", body: loaded[1].body)
+            let saved = try store.save(edited, initial: [])
+            XCTAssertEqual(Set(saved.map(\.id)), Set(loaded.map(\.id)))
+            XCTAssertEqual(saved[0], loaded[0])
+            XCTAssertEqual(saved.first { $0.id == loaded[2].id }, loaded[2])
+            XCTAssertEqual(try TemplateStore(rootURL: store.rootURL).list(merging: []), saved)
+            let backups = try FileManager.default.contentsOfDirectory(at: store.rootURL, includingPropertiesForKeys: nil)
+                .filter { $0.lastPathComponent.hasPrefix("templates-before-import-") }
+            XCTAssertEqual(backups.count, 1)
+            XCTAssertEqual(try Data(contentsOf: XCTUnwrap(backups.first)), original)
+            _ = try store.save(edited, initial: [])
+            XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: store.rootURL.path).filter {
+                $0.hasPrefix("templates-before-import-")
+            }.count, 1)
+        }
+    }
+
+    func testInvalidImportedRecordAndDuplicateIDsNeverPartiallyReplaceLibrary() throws {
+        try fixture { _, store in
+            try FileManager.default.createDirectory(at: store.rootURL, withIntermediateDirectories: true)
+            for text in [
+                #"{"schemaVersion":1,"records":[{"title":"有效","body":"保留"},{"title":"缺正文"}]}"#,
+                #"{"records":[{"id":"same","title":"一","body":"正文"},{"id":"same","title":"二","body":"正文"}]}"#,
+                #"{"schemaVersion":99,"records":[{"title":"有效","body":"保留"}]}"#
+            ] {
+                let before = Data(text.utf8)
+                try before.write(to: store.documentURL)
+                XCTAssertThrowsError(try store.list(merging: []))
+                XCTAssertThrowsError(try store.save(TemplateRecord(title: "新片段", body: "新正文"), initial: []))
+                XCTAssertEqual(try Data(contentsOf: store.documentURL), before)
+            }
+        }
+    }
+
     func testCreateEditAndDeleteSurviveReloadIncludingBuiltInDeletion() throws {
         try fixture { root, store in
             let initial = [TemplateRecord(id: "base", title: "初始", body: "原规则\n")]

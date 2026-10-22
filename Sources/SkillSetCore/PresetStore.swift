@@ -36,7 +36,7 @@ public enum PresetStoreError: Error, LocalizedError, SkillSetCodedError {
     }
 }
 
-/// 用户预设保存在本机库；初始组合的修改按标识覆盖，不改动资源文件或项目文件。
+/// 用户预设保存在本机库，不改动项目文件；显式传入的初始组合仅用于开发夹具。
 public struct PresetStore {
     public let rootURL: URL
     public var documentURL: URL { rootURL.appendingPathComponent("presets.json") }
@@ -102,5 +102,18 @@ public struct PresetStore {
         try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
         try encoder.encode(records).write(to: documentURL, options: .atomic)
         return Self.merging(records, with: initial)
+    }
+
+    @discardableResult
+    public func remove(id: String) throws -> [PresetRecord] {
+        var records = try list()
+        guard records.contains(where: { $0.id == id }) else {
+            throw PresetStoreError.invalid("这个预设已删除，请重新选择。")
+        }
+        records.removeAll { $0.id == id }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        try encoder.encode(records).write(to: documentURL, options: .atomic)
+        return records
     }
 }

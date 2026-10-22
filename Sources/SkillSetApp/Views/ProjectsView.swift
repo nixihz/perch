@@ -463,6 +463,9 @@ struct PlanSheet: View {
     @Bindable var model: AppModel
     @Environment(\.dismiss) private var dismiss
     @State private var confirmingApply = false
+    @State private var rulePreviews: [RuleFilePreview] = []
+    @State private var rulePreviewError: String?
+    @State private var rulePreviewsLoaded = false
 
     private var isPluginPlan: Bool {
         model.preparedPlan?.plan.metadata?["planType"] == "plugin-lifecycle"
@@ -509,9 +512,14 @@ struct PlanSheet: View {
                     value: record.plan.projectPath,
                     monospaced: true
                 )
-                KeyValueLine(key: L10n.tr("计划"), value: record.id.uuidString, monospaced: true)
-                KeyValueLine(key: L10n.tr("计划指纹"), value: record.plan.digest, monospaced: true)
-                KeyValueLine(key: L10n.tr("有效至"), value: L10n.date(record.expiresAt))
+                DisclosureGroup(L10n.tr("计划详情（指纹与有效期）")) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        KeyValueLine(key: L10n.tr("计划"), value: record.id.uuidString, monospaced: true)
+                        KeyValueLine(key: L10n.tr("计划指纹"), value: record.plan.digest, monospaced: true)
+                        KeyValueLine(key: L10n.tr("有效至"), value: L10n.date(record.expiresAt))
+                    }.padding(.top, 8)
+                }
+                .font(AppFont.secondary)
                 if isGlobalPlan {
                     KeyValueLine(key: L10n.tr("AI 工具 / 使用范围"),
                         value: (MCPHost(rawValue: record.plan.metadata?["globalHost"] ?? "")?.displayName ?? "") + " / " + L10n.tr("当前用户的全部项目"))
@@ -548,6 +556,9 @@ struct PlanSheet: View {
                     .font(AppFont.heading)
                 ScrollView {
                     VStack(alignment: .leading, spacing: 10) {
+                        ForEach(rulePreviews) { preview in
+                            RuleFilePreviewView(preview: preview)
+                        }
                         ForEach(record.plan.changes, id: \.relativePath) { change in
                             VStack(alignment: .leading, spacing: 4) {
                                 HStack {
@@ -576,10 +587,9 @@ struct PlanSheet: View {
                         }
                     }
                 }
-                .frame(maxHeight: 260)
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(L10n.tr("批准前须知"))
-                        .font(AppFont.secondary.weight(.semibold))
+                .frame(maxHeight: .infinity)
+                DisclosureGroup(L10n.tr("批准前须知")) {
+                  VStack(alignment: .leading, spacing: 8) {
                     Label(
                         isPluginPlan
                             ? L10n.tr("批准仅对当前计划、插件、范围、清单和命令参数有效")
@@ -593,17 +603,22 @@ struct PlanSheet: View {
                             : L10n.tr("写入前再次核对原文件内容；任一步失败会尝试恢复"),
                         systemImage: "checkmark.shield"
                     )
-                    if !record.plan.warnings.isEmpty {
-                        Text(record.plan.warnings.map { L10n.text(UserFacingText.diagnostic($0, context: .plan)) }.joined(separator: "\n"))
-                            .foregroundStyle(.orange)
-                    }
+                  }.padding(.top, 8)
                 }
                 .font(AppFont.secondary)
                 .foregroundStyle(.secondary)
+                let warnings = record.plan.warnings.filter { !UserFacingText.isInformationalPlanNote($0) }
+                if !warnings.isEmpty {
+                    Text(warnings.map { L10n.text(UserFacingText.diagnostic($0, context: .plan)) }.joined(separator: "\n"))
+                        .font(AppFont.secondary).foregroundStyle(.orange)
+                }
             } else {
                 EmptyState(icon: "doc.badge.gearshape", title: L10n.tr("没有可审阅的计划"), detail: L10n.tr("返回项目页重新生成。"))
             }
-            Spacer()
+            if let error = model.planError ?? rulePreviewError {
+                Text(L10n.text(error)).font(AppFont.secondary).foregroundStyle(.red).textSelection(.enabled)
+                    .accessibilityIdentifier("plan.error")
+            }
             HStack {
                 Spacer()
                 Button(L10n.tr("取消")) {
@@ -616,12 +631,14 @@ struct PlanSheet: View {
                 }
                 .buttonStyle(AppButtonStyle(kind: .primary))
                 .tint(AppColor.accent)
-                .disabled(model.preparedPlan == nil || model.isWorking)
+                .disabled(model.preparedPlan == nil || model.isWorking || rulePreviewError != nil
+                    || !rulePreviewsLoaded || model.preparedPlan?.isExpired(at: Date()) == true)
             }
         }
         .appControls()
         .padding(26)
         .frame(width: 700, height: 680)
+        .task(id: model.preparedPlan?.id) { loadRulePreviews() }
         .confirmationDialog(
             isGlobalPlan ? L10n.tr("确认更新当前用户的全局配置？") : isPluginPlan ? L10n.tr("执行这条插件命令？") : isMCPPlan ? L10n.tr("更新 AI 工具配置？") : L10n.tr("确认写入这个项目？"),
             isPresented: $confirmingApply,
@@ -641,4 +658,22 @@ struct PlanSheet: View {
             }
         }
     }
+    private func loadRulePreviews() {
+        rulePreviews = []
+        rulePreviewError = nil
+        rulePreviewsLoaded = false
+        guard let record = model.preparedPlan else { return }
+        if isPluginPlan || isMCPPlan { rulePreviewsLoaded = true; return }
+        do {
+            rulePreviews = try record.plan.changes.filter {
+                $0.scope != "project-state" && ["AGENTS.md", "CLAUDE.md"].contains(URL(fileURLWithPath: $0.relativePath).lastPathComponent)
+            }.map { try RuleFilePreview.load(record: record, change: $0) }
+            rulePreviewsLoaded = true
+        } catch RulePreviewError.tooLarge {
+            rulePreviewError = "规则文件超过 1 MiB，无法在此完整审阅；请先精简文件，再重新生成计划。"
+        } catch {
+            rulePreviewError = "规则文件或预览内容已改变或无法读取，请取消并重新生成计划。"
+        }
+    }
+
 }

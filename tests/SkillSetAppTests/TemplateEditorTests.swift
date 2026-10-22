@@ -6,7 +6,7 @@ import SkillSetCore
 
 @MainActor
 final class TemplateEditorTests: XCTestCase {
-    func testModelSavesSearchesAndRemovesWithoutChangingProjectOrSilentlyDroppingReferences() throws {
+    func testModelSavesSearchesEditsAndDeletesReferencedSnippetWithoutWritingProject() throws {
         try fixture { root, paths in
             let project = root.appendingPathComponent("project")
             try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
@@ -33,25 +33,25 @@ final class TemplateEditorTests: XCTestCase {
             var editing = TemplateEditorDraft(template: saved)
             editing.body = "检查重试上限。"
             XCTAssertTrue(model.saveTemplate(editing))
-            XCTAssertEqual(model.selectedTemplate?.id, saved.id)
             XCTAssertEqual(model.selectedTemplate?.body, "检查重试上限。")
             model.removeTemplate(try XCTUnwrap(model.selectedTemplate))
-            XCTAssertFalse(model.snapshot.templates.contains { $0.id == saved.id })
+            XCTAssertNil(model.templateError)
+            XCTAssertFalse(AppModel(runtimePaths: paths).snapshot.templates.contains { $0.id == saved.id })
             XCTAssertTrue(model.selectedProject?.fragments.contains(saved.id) == true)
             XCTAssertTrue(model.selectedPreset?.instructionFragments.contains(saved.id) == true)
-            XCTAssertFalse(model.savePreset(preset))
+            XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "手写规则\n")
+            let service = try SkillSetService(paths: paths)
+            XCTAssertThrowsError(try service.makePlan(projectID: UUID(uuidString: model.selectedProjectID)!, skillIDs: [], instructionIDs: [saved.id]))
             model.toggleInstructionID(saved.id)
             XCTAssertFalse(model.selectedProject?.fragments.contains(saved.id) == true)
-            XCTAssertFalse(AppModel(runtimePaths: paths).snapshot.templates.contains { $0.id == saved.id })
-            XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "手写规则\n")
-            XCTAssertFalse(FileManager.default.fileExists(atPath: project.appendingPathComponent("skillset.json").path))
+            XCTAssertNoThrow(try service.makePlan(projectID: UUID(uuidString: model.selectedProjectID)!, skillIDs: [], instructionIDs: []))
         }
     }
 
     func testLocalMetadataStaysOriginalEvenWhenItMatchesAnEnglishTranslationKey() throws {
         try fixture { _, paths in
             let model = AppModel(runtimePaths: paths)
-            let initial = try XCTUnwrap(model.snapshot.templates.first { $0.id == "base-zh" })
+            let initial = try XCTUnwrap(AppSnapshot.load().templates.first { $0.id == "base-zh" })
             XCTAssertEqual(UserFacingText.templateTitle(initial, language: .english), "Chinese Collaboration")
             var draft = TemplateEditorDraft(template: initial)
             draft.title = "中文协作"
@@ -116,6 +116,63 @@ final class TemplateEditorTests: XCTestCase {
         }
     }
 
+    func testTargetAndApprovalSheetsFitAndExposeRuleContentInBothAppearances() async throws {
+        let root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent("template-sheets-\(UUID())")
+        let saved = isolateHostEnvironment(root)
+        let language = AppPreferences.shared.language
+        AppPreferences.shared.language = .chinese
+        defer {
+            AppPreferences.shared.language = language
+            restoreHostEnvironment(saved)
+            try? FileManager.default.removeItem(at: root)
+        }
+        let paths = SkillSetRuntimePaths(applicationSupportRoot: root.appendingPathComponent("state"), repositoryRoot: nil)
+        let project = root.appendingPathComponent("示例项目")
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        try "# 项目约定\n请保留手写内容。\n".write(to: project.appendingPathComponent("AGENTS.md"), atomically: true, encoding: .utf8)
+        let model = AppModel(runtimePaths: paths)
+        XCTAssertTrue(model.registerProject(project))
+        var draft = TemplateEditorDraft()
+        draft.title = "接口可靠性"
+        draft.purpose = "接口实现与评审时使用。"
+        draft.body = "# 接口规则\n检查超时、取消与重试上限。"
+        XCTAssertTrue(model.saveTemplate(draft))
+        let template = try XCTUnwrap(model.selectedTemplate)
+        let targetController = NSHostingController(rootView: TemplateUseSheet(model: model, template: template).background(Color(nsColor: .windowBackgroundColor)))
+        let targetWindow = makeWindow(targetController, size: NSSize(width: 680, height: 620))
+        defer { targetWindow.close() }
+        for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+            targetWindow.appearance = NSAppearance(named: appearance)
+            try await Task.sleep(for: .milliseconds(100))
+            targetController.view.layoutSubtreeIfNeeded()
+            XCTAssertLessThanOrEqual(targetController.view.fittingSize.width, 681)
+            XCTAssertLessThanOrEqual(targetController.view.fittingSize.height, 621)
+            try capture(targetController.view, path: "/tmp/perch-template-target-\(appearance == .aqua ? "light" : "dark").png")
+        }
+        let target = TemplateUseTarget.project(try XCTUnwrap(model.selectedProject).id)
+        let preview = try model.templateUsePreview(templateID: template.id, target: target)
+        XCTAssertTrue(model.prepareTemplateUse(templateID: template.id, target: target, preview: preview))
+        let controller = NSHostingController(rootView: PlanSheet(model: model).background(Color(nsColor: .windowBackgroundColor)))
+        let window = makeWindow(controller, size: NSSize(width: 700, height: 680))
+        defer { window.close() }
+        for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+            window.appearance = NSAppearance(named: appearance)
+            try await Task.sleep(for: .milliseconds(100))
+            controller.view.layoutSubtreeIfNeeded()
+            XCTAssertLessThanOrEqual(controller.view.fittingSize.width, 701)
+            XCTAssertLessThanOrEqual(controller.view.fittingSize.height, 681)
+            XCTAssertTrue(descendants(controller.view).contains { $0 is NSScrollView })
+            try capture(controller.view, path: "/tmp/perch-template-diff-\(appearance == .aqua ? "light" : "dark").png")
+        }
+    }
+
+    private func capture(_ view: NSView, path: String) throws {
+        let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+        view.cacheDisplay(in: view.bounds, to: bitmap)
+        let data = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+        try data.write(to: URL(fileURLWithPath: path))
+    }
+
     private func makeWindow<V: View>(_ controller: NSHostingController<V>, size: NSSize) -> NSWindow {
         let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -128,12 +185,12 @@ final class TemplateEditorTests: XCTestCase {
 
     private func isolateHostEnvironment(_ root: URL) -> [String: String] {
         let saved = ProcessInfo.processInfo.environment
-        for key in ["CFFIXED_USER_HOME", "SKILLSET_HOME", "CODEX_HOME"] { setenv(key, root.appendingPathComponent(key).path, 1) }
+        for key in ["CFFIXED_USER_HOME", "SKILLSET_HOME", "CODEX_HOME", "CLAUDE_CONFIG_DIR"] { setenv(key, root.appendingPathComponent(key).path, 1) }
         return saved
     }
 
     private func restoreHostEnvironment(_ saved: [String: String]) {
-        for key in ["CFFIXED_USER_HOME", "SKILLSET_HOME", "CODEX_HOME"] {
+        for key in ["CFFIXED_USER_HOME", "SKILLSET_HOME", "CODEX_HOME", "CLAUDE_CONFIG_DIR"] {
             if let value = saved[key] { setenv(key, value, 1) } else { unsetenv(key) }
         }
     }

@@ -22,7 +22,7 @@ def verify(executable):
             library = executable.parent.parent / "Resources/SkillSetLibrary"
         shutil.copytree(library, packaged / "SkillSetLibrary")
         environment = os.environ.copy()
-        for key in ("PACKAGE_RESOURCE_BUNDLE_PATH", "PACKAGE_RESOURCE_BUNDLE_URL", "SKILLSET_REPOSITORY_ROOT"):
+        for key in ("PACKAGE_RESOURCE_BUNDLE_PATH", "PACKAGE_RESOURCE_BUNDLE_URL", "SKILLSET_REPOSITORY_ROOT", "SKILLSET_REPOSITORY_LIBRARY"):
             environment.pop(key, None)
         messages = [
             {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
@@ -86,9 +86,17 @@ def verify(executable):
         if len(found) != 1:
             raise RuntimeError('隔离本机库未检索到同步的 stc 技能')
         skill_id = found[0]['id']
+        if mcp_tool('presets_list', {})['presets']:
+            raise RuntimeError('正常首开不应注入程序自带预设')
+        rules = '# 打包规则\n只使用本机保存的片段。'
+        (root / 'state/templates.json').write_text(json.dumps({
+            'schemaVersion': 1, 'deletedIDs': [], 'records': [{
+                'id': 'package-rules', 'title': '我的打包规则', 'purpose': '', 'body': rules, 'isLocal': True,
+            }],
+        }))
         fixture = {
             'schemaVersion': 2, 'id': 'package-check', 'name': '打包验证', 'description': '',
-            'revision': 1, 'skills': [skill_id], 'instructionFragments': ['base-zh'],
+            'revision': 1, 'skills': [skill_id], 'instructionFragments': ['package-rules'],
             'plugins': [], 'mcpServers': [], 'mergePolicy': 'explicit-selection', 'status': 'local',
         }
         (root / 'state/presets.json').write_text(json.dumps([fixture]))
@@ -103,7 +111,7 @@ def verify(executable):
         deployed = project / '.agents/skills/stc/SKILL.md'
         if deployed.read_bytes() != (library / 'skills/stc/SKILL.md').read_bytes():
             raise RuntimeError('技能部署内容与随包快照不一致')
-        if 'skillset:begin id=project-rules' not in (project / 'AGENTS.md').read_text():
+        if rules not in (project / 'AGENTS.md').read_text():
             raise RuntimeError('规则片段未写入项目')
         cli('objects', 'verify', '--project', registration['id'])
         print(f"MCP 独立打包验证通过：{executable}（{len(names)} 个工具）")

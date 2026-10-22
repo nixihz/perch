@@ -3,6 +3,7 @@ import SkillSetCore
 
 struct PresetsView: View {
     @Bindable var model: AppModel
+    @State private var removal: PresetRecord?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -15,6 +16,17 @@ struct PresetsView: View {
                 presetList.frame(width: AppLayout.listWidth)
                 presetDetail
             }
+        }
+        .confirmationDialog(L10n.tr("删除这个预设？"), isPresented: Binding(
+            get: { removal != nil }, set: { if !$0 { removal = nil } }
+        ), titleVisibility: .visible) {
+            Button(L10n.tr("删除"), role: .destructive) {
+                if let removal { model.removePreset(removal) }
+                removal = nil
+            }
+            Button(L10n.tr("先不删"), role: .cancel) { removal = nil }
+        } message: {
+            Text(L10n.tr("预设将从本机库删除。已载入的项目草稿和已写入的文件保持不变。"))
         }
     }
 
@@ -36,6 +48,12 @@ struct PresetsView: View {
                 }
                 ScrollView {
                     VStack(spacing: 6) {
+                        if model.snapshot.presets.isEmpty {
+                            Text(L10n.tr("还没有预设，点击“新建预设”保存自己的组合。"))
+                                .font(AppFont.secondary).foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.vertical, 12)
+                        }
                         ForEach(model.snapshot.presets) { preset in
                             Button { model.selectedPresetID = preset.id } label: {
                                 HStack(alignment: .top, spacing: 10) {
@@ -146,6 +164,8 @@ struct PresetsView: View {
             model.beginEditingPreset(preset, copy: true)
         }
         .accessibilityIdentifier("presets.duplicate")
+        Button(L10n.tr("删除预设"), role: .destructive) { removal = preset }
+            .accessibilityIdentifier("presets.delete")
     }
 
     private func componentHeader(_ kind: PresetComponent, count: Int) -> some View {

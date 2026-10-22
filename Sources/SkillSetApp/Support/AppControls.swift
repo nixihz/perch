@@ -26,9 +26,7 @@ private struct AppButtonBody: View {
     let kind: AppButtonKind
     let selected: Bool
     @Environment(\.isEnabled) private var isEnabled
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hovered = false
-    @GestureState private var pointerPressed = false
 
     private var foreground: Color {
         if !isEnabled { return .secondary }
@@ -37,7 +35,7 @@ private struct AppButtonBody: View {
     }
 
     private var fill: Color {
-        if kind == .primary { return AppColor.selection.opacity(isEnabled ? 1 : 0.16) }
+        if kind == .primary { return AppColor.selection.opacity(isEnabled ? (configuration.isPressed ? 0.84 : 1) : 0.16) }
         if (configuration.isPressed || selected) && isEnabled { return AppColor.accentSoft }
         if hovered && isEnabled { return AppColor.controlHover }
         return kind == .quiet ? .clear : AppColor.controlSurface
@@ -56,12 +54,7 @@ private struct AppButtonBody: View {
                     .strokeBorder(kind == .quiet ? .clear : selected ? AppColor.accent.opacity(0.4) : AppColor.border.opacity(isEnabled ? 1 : 0.5))
             }
             .contentShape(RoundedRectangle(cornerRadius: AppControl.radius))
-            // 仅指针按压提供位移反馈；键盘触发和减少动效模式保持即时、静止。
-            .scaleEffect(pointerPressed && !reduceMotion && isEnabled ? 0.97 : 1)
-            .animation(reduceMotion ? nil : .timingCurve(0.23, 1, 0.32, 1, duration: 0.12), value: pointerPressed)
-            .simultaneousGesture(DragGesture(minimumDistance: 0).updating($pointerPressed) { _, pressed, _ in
-                pressed = true
-            })
+            // 按压状态由 Button 提供；零距离拖拽会截走 macOS 的鼠标点击。
             .onHover { hovered = $0 }
     }
 }

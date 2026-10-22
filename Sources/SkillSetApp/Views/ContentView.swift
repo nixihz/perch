@@ -15,6 +15,9 @@ struct ContentView: View {
         .sheet(isPresented: $model.planPresented) {
             PlanSheet(model: model)
         }
+        .sheet(item: $model.templateUseRequest, onDismiss: model.presentTemplatePlanIfReady) { request in
+            TemplateUseSheet(model: model, template: request.template)
+        }
         .sheet(item: $model.presetSelection) { request in
             PresetSelectionSheet(model: model, request: request)
         }

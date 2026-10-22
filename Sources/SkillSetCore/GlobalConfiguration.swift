@@ -137,6 +137,11 @@ public struct GlobalConfigurationManager {
         self.locations = locations ?? .detect(stateRoot: paths.applicationSupportRoot)
     }
 
+    /// 引用盘点只需已落盘选择，避免为每个片段重复核验全部全局技能包。
+    public func appliedSelection(host: MCPHost) throws -> GlobalConfigurationDraft {
+        try loadState(host)?.selection ?? GlobalConfigurationDraft()
+    }
+
     public func inspect(host: MCPHost) throws -> GlobalConfigurationInspection {
         try validateSkillsRoot(host)
         let state = try loadState(host)

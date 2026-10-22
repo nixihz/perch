@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import SkillSetCore
 
 struct TemplatesView: View {
@@ -7,6 +8,9 @@ struct TemplatesView: View {
     @State private var query = ""
     @State private var editor: TemplateEditorDraft?
     @State private var removal: TemplateRecord?
+    @State private var references: [TemplateReference] = []
+    @State private var referenceError: String?
+    @State private var copied = false
 
     private var matches: [TemplateRecord] { model.matchingTemplates(query) }
 
@@ -16,7 +20,7 @@ struct TemplatesView: View {
                 PageHeader(
                     eyebrow: "AGENTS SNIPPETS",
                     title: L10n.tr("AGENTS 片段"),
-                    detail: L10n.tr("管理可写入 AGENTS.md 或 CLAUDE.md 的AGENTS 片段。在项目页选择片段，预览并批准后写入。")
+                    detail: L10n.tr("保存常用规则，选择项目或全局配置，预览并批准后写入 AGENTS.md 或 CLAUDE.md。")
                 )
                 Spacer(minLength: 0)
                 Button {
@@ -25,9 +29,33 @@ struct TemplatesView: View {
                 } label: { Label(L10n.tr("新增片段"), systemImage: "plus") }
                 .buttonStyle(AppButtonStyle(kind: .primary)).keyboardShortcut("n", modifiers: [.command])
                 .accessibilityIdentifier("templates.create")
+                .disabled(model.templateLibraryError != nil)
             }
-            if let error = model.templateError, editor == nil {
+            if let error = model.templateLibraryError {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label(L10n.text(error), systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.red)
+                    Text(templateFileURL.path).font(AppFont.code).textSelection(.enabled)
+                    HStack {
+                        Button(L10n.tr("重新读取")) { model.reloadTemplates() }
+                            .accessibilityIdentifier("templates.reload")
+                        Button(L10n.tr("在 Finder 中显示")) {
+                            NSWorkspace.shared.activateFileViewerSelecting([templateFileURL])
+                        }
+                    }
+                }
+                .accessibilityIdentifier("templates.libraryError")
+            } else if let error = model.templateError, editor == nil {
                 Text(L10n.text(error)).font(AppFont.secondary).foregroundStyle(.red).textSelection(.enabled)
+            }
+            if !model.lastTemplateWritePaths.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Label(L10n.tr("规则文件已写入并回读，AI 工具加载待验证。"), systemImage: "checkmark.circle")
+                        .foregroundStyle(AppColor.positive)
+                    Text(model.lastTemplateWritePaths.joined(separator: "\n"))
+                        .font(AppFont.code).textSelection(.enabled)
+                }
+                .accessibilityIdentifier("templates.writeResult")
             }
             HStack(alignment: .top, spacing: AppLayout.columnSpacing) {
                 templateList
@@ -45,12 +73,65 @@ struct TemplatesView: View {
             }
             Button(L10n.tr("先不删"), role: .cancel) { removal = nil }
         } message: {
-            Text(L10n.tr("片段将从本机片段库删除，已写入项目的规则保持不变。引用它的草稿或预设需重新选择片段。"))
+            Text(L10n.tr("片段将从本机片段库删除，已写入的规则文件保持不变。配置和预设中的引用会显示为不可用，需移除引用或重新选择片段后再部署。"))
         }
+        .onChange(of: model.planPresented) { _, presented in if !presented { refreshReferences() } }
+        .task(id: model.selectedTemplateID) { refreshReferences() }
+        .onChange(of: model.snapshot.templates) { _, _ in refreshReferences() }
         .onChange(of: query) { _, _ in selectFirstMatchIfNeeded() }
         .onChange(of: model.selectedTemplateID) { _, _ in showFileMarkers = false }
         .onChange(of: model.snapshot.templates) { _, _ in
             if !matches.contains(where: { $0.id == model.selectedTemplateID }) { query = "" }
+        }
+    }
+
+    private var templateFileURL: URL {
+        TemplateStore(rootURL: model.runtimePaths.applicationSupportRoot).documentURL
+    }
+
+    private func refreshReferences() {
+        copied = false
+        do {
+            references = try model.templateReferences(model.selectedTemplateID)
+            referenceError = nil
+        } catch {
+            references = []
+            referenceError = "使用位置暂时无法读取，请检查项目、全局配置和预设后重试。"
+        }
+    }
+
+    private var usageCard: some View {
+        SurfaceCard {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text(L10n.tr("使用位置")).font(AppFont.heading)
+                    Spacer()
+                    Button(L10n.tr("刷新")) { refreshReferences() }
+                }
+                if let referenceError {
+                    Text(L10n.text(referenceError)).foregroundStyle(.red)
+                } else if references.isEmpty {
+                    Text(L10n.tr("尚未被配置或预设引用。点击“用于配置…”开始使用。"))
+                        .font(AppFont.secondary).foregroundStyle(.secondary)
+                } else {
+                    ForEach(references) { reference in
+                        HStack(alignment: .top) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(reference.name).font(AppFont.body.weight(.semibold))
+                                Text(reference.presetID != nil ? L10n.tr("预设引用")
+                                    : reference.needsUpdate ? L10n.tr("片段有更新或文件有变化 · 需重新预览")
+                                    : reference.isApplied ? (reference.inDraft ? L10n.tr("草稿已选择 · 已写入，加载待验证") : L10n.tr("已写入 · 草稿已取消选择，待批准移除"))
+                                    : L10n.tr("草稿已选择 · 尚未写入"))
+                                    .font(AppFont.secondary).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Button(L10n.tr("查看配置")) { model.showTemplateReference(reference) }
+                        }
+                    }
+                    Text(L10n.tr("编辑片段后需再次预览和批准，已有文件才会更新。删除片段后，配置和预设中的引用会显示为不可用。"))
+                        .font(AppFont.secondary).foregroundStyle(.secondary)
+                }
+            }
         }
     }
 
@@ -95,7 +176,8 @@ struct TemplatesView: View {
                             .buttonStyle(.plain)
                         }
                         if matches.isEmpty {
-                            Text(L10n.text(query.isEmpty ? "还没有片段，点击“新增片段”开始。" : "没有匹配的片段，换个关键词或清空搜索。"))
+                            Text(L10n.text(model.templateLibraryError != nil ? "片段列表暂不可用，请先修复文件并重新读取。"
+                                : query.isEmpty ? "还没有片段，点击“新增片段”开始。" : "没有匹配的片段，换个关键词或清空搜索。"))
                                 .font(AppFont.secondary).foregroundStyle(.secondary).padding(.vertical, 12)
                         }
                     }
@@ -130,6 +212,35 @@ struct TemplatesView: View {
                             Text(UserFacingText.templatePurpose(template))
                                 .font(AppFont.body)
                                 .foregroundStyle(.secondary)
+                            HStack {
+                                Button(L10n.tr("用于配置…")) {
+                                    model.templateError = nil
+                                    model.templateUseRequest = TemplateUseRequest(template: template)
+                                }
+                                .buttonStyle(AppButtonStyle(kind: .primary))
+                                .accessibilityIdentifier("templates.use")
+                                Button(copied ? L10n.tr("已复制正文") : L10n.tr("复制正文")) {
+                                    NSPasteboard.general.clearContents()
+                                    copied = NSPasteboard.general.setString(template.body, forType: .string)
+                                }
+                                .accessibilityIdentifier("templates.copy")
+                                Button(L10n.tr("创建副本")) {
+                                    var draft = TemplateEditorDraft()
+                                    let stem = UserFacingText.templateTitle(template)
+                                    var title = stem + L10n.tr(" 副本")
+                                    var number = 2
+                                    while model.snapshot.templates.contains(where: { $0.title.localizedCaseInsensitiveCompare(title) == .orderedSame }) {
+                                        title = stem + L10n.tr(" 副本 \(number)")
+                                        number += 1
+                                    }
+                                    draft.title = title
+                                    draft.purpose = UserFacingText.templatePurpose(template)
+                                    draft.body = template.body
+                                    model.templateError = nil
+                                    editor = draft
+                                }
+                                .accessibilityIdentifier("templates.duplicate")
+                            }
                             Divider()
                             Text(L10n.tr("写入位置：AGENTS.md 或 CLAUDE.md"))
                                 .font(AppFont.secondary)
@@ -149,6 +260,7 @@ struct TemplatesView: View {
                                 .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 8))
                         }
                     }
+                    usageCard
                     SurfaceCard {
                         VStack(alignment: .leading, spacing: 8) {
                             Text(L10n.tr("栖集会修改哪部分内容"))
@@ -182,8 +294,12 @@ struct TemplatesView: View {
                 }
             }
         } else {
-            EmptyState(icon: "text.badge.checkmark", title: L10n.tr("选择一个AGENTS 片段"), detail: L10n.tr("在左侧选择片段查看正文，或点击“新增片段”创建规则。"))
+            if model.templateLibraryError != nil {
+                EmptyState(icon: "exclamationmark.triangle", title: L10n.tr("片段库暂不可用"),
+                           detail: L10n.tr("修复上方文件后点击“重新读取”，无需重启应用。"))
+            } else {
+                EmptyState(icon: "text.badge.checkmark", title: L10n.tr("选择一个 AGENTS 片段"), detail: L10n.tr("在左侧选择片段查看正文，或点击“新增片段”创建规则。"))
+            }
         }
     }
 }
-
