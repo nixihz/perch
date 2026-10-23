@@ -54,7 +54,7 @@ Sparkle 工具随依赖下载至 `<构建目录>/artifacts/sparkle/Sparkle/bin/`
 2. 配置独立 appcast 地址，递增构建号，以 Developer ID 签名构建 Release 通用包。核对 `codesign -dv --verbose=4` 的 TeamIdentifier、hardened runtime、包版本和公钥。
 3. 将应用打成 ZIP，使用 `xcrun notarytool submit --keychain-profile APP-Notary-2026 --wait` 完成 Apple 公证；执行 `xcrun stapler staple`、`xcrun stapler validate` 和 `spctl --assess --type execute --verbose=4`。将已装订应用与 `/Applications` 链接制作成 DMG，Developer ID 签名后再提交 DMG 公证并装订。官网下载 ZIP 从已装订应用重新生成。
 4. 使用 `python3 script/prepare_sparkle_update.py <已公证DMG> <新的输出目录>` 生成签名 appcast。脚本验证应用版本、公钥、地址、公证和系统信任，再调用 `generate_appcast --account com.xiezhixin.perch` 与 `sign_update --verify`，核对 enclosure URL、版本、长度、Ed25519 签名和最低 macOS 14。签名覆盖最终 DMG 字节，之后不能修改包；脚本拒绝覆盖既有输出目录，也不自动上传。
-5. 先上传唯一 DMG，核对公网完整下载 SHA-256、长度以及 GET/HEAD/Range；备份旧 appcast，再替换清单。清单应返回 `Cache-Control: no-cache`，保留旧包，不覆盖已经公开的构建。
+5. 按[网站部署说明](../website/perch/README.md)，从干净源码提交组装官网、品牌图、唯一 DMG 与 appcast，在同一平台版本中发布；核对五个来源文件、生成元数据、包体积与隔离预览。发布后匿名核对完整下载 SHA-256、长度、GET/HEAD/Range，并独立执行官方 Sparkle 验签。清单应返回 `Cache-Control: no-cache`；旧版本保留在平台发布历史，不覆盖已经公开的构建。
 6. 用前一版正式安装包检查更新，完成下载、安装、重启，并验证项目数据与包内 CLI/MCP。记录签名、公证和线上校验结果后再宣称更新可用。
 
 首次启用需手动安装一个已经内置公钥与地址的版本；先前未包含 Sparkle 的应用无法自行发现此次更新。丢失私钥会影响旧客户端验签，不应直接生成新密钥并覆盖线上公钥。
@@ -133,3 +133,5 @@ python3 -m unittest tests.test_update_packaging tests.test_ui_localization -v
 2026-10-23 build 7 已发布：源码提交 `f9910da1efd94fccd2cb737b74c65aef32639c83` 与 `perch-v0.0.1-build.7` 标签已推送。App 公证 ID 为 `58ac1c4e-56d1-44bc-a61b-887c1d7cd074`，DMG 公证 ID 为 `1a6b15e2-f304-4470-a077-7dd3e95004b3`，均为 Accepted；此前一次提交返回 profile lookup failure，后续 `APP-Notary-2026` 的 history 与 submit 均成功；最初失败的具体原因尚未确认，撤回此前“缺少 profile”的结论。正式 DMG 为 26,833,798 字节，SHA-256 为 `136d435431eddbbe205643c8b1f8a5eb0a7bdd58d34a3a465af3c07c7baeee92`。平台 release ID 为 `7735e864-a8ff-4983-b310-552f2deaae0d`，公网 appcast、首页、品牌图和 DMG 匿名下载逐字节核对通过，官方 Sparkle `sign_update --verify` 通过。完整验证与未完成的跨版本安装边界见 [build 7 记录](releases/perch-0.0.1-7.md)。
 
 2026-10-23 build 8 已发布：独立宿主草稿开关与扫描体验改进，修复保存失败无反馈及扫描失败丢失结果的问题。源码 `0bebe357854e5c9e1ffd2acaaa10763cb22e9a0f`、标签 `perch-v0.0.1-build.8` 已推送；完整 Swift、原生 UI 与 Cucumber 回归均通过。App 与 DMG 经 `APP-Notary-2026` 公证并装订，平台 release ID 为 `c46352b8-933c-44b7-a648-ad00417aab37`。匿名公网字节与官方 Sparkle 验签通过；正式包校验值、公证 ID、测试明细及待完成的 build 7 → 8 安装验收见 [build 8 记录](releases/perch-0.0.1-8.md)。
+
+2026-10-23 build 9 已完成源码提交、标签推送和 Developer ID 通用构建，尚未公证或发布。Mac 锁屏导致原生 BDD 无法读取侧栏；当前命令行亦无法读取已有 `APP-Notary-2026`，原因尚未确认，待本机解锁后复核。线上仍为 build 8。测试结果、产物与续发边界见 [build 9 准备记录](releases/perch-0.0.1-9.md)。
