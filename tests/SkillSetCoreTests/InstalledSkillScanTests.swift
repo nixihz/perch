@@ -3,6 +3,34 @@ import Testing
 @testable import SkillSetCore
 
 struct InstalledSkillScanTests {
+    @Test func linkedRootPreservesInstallPathAndBadRootDoesNotAbortScan() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString).resolvingSymlinksInPath()
+        defer { try? fm.removeItem(at: root) }
+        let real = root.appendingPathComponent("packages")
+        let skill = real.appendingPathComponent("demo")
+        try fm.createDirectory(at: skill, withIntermediateDirectories: true)
+        try Data("---\nname: demo\ndescription: example\n---\nLinked root".utf8).write(to: skill.appendingPathComponent("SKILL.md"))
+        let home = root.appendingPathComponent("home")
+        let linked = home.appendingPathComponent(".agents/skills")
+        try fm.createDirectory(at: linked.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try fm.createSymbolicLink(at: linked, withDestinationURL: real)
+        let badRoot = root.appendingPathComponent("not-a-directory")
+        try Data("file".utf8).write(to: badRoot)
+        let paths = SkillSetRuntimePaths(applicationSupportRoot: root.appendingPathComponent("state"), repositoryRoot: nil)
+        let service = try SkillSetService(paths: paths, globalLocations: .init(home: home, stateRoot: paths.applicationSupportRoot))
+        let scan = try service.scanInstalledSkills(additionalRoots: [badRoot, real])
+        let observed = try #require(scan.first { $0.path == linked.appendingPathComponent("demo").path })
+        #expect(observed.resolvedPath == skill.path)
+        #expect(observed.canImport)
+        #expect(scan.first { $0.path == badRoot.path }?.issue != nil)
+        #expect(scan.contains { $0.path == skill.path && $0.canImport })
+        let imported = try service.importInstalledSkills([observed])
+        #expect(imported.candidates.count == 1)
+        #expect(try fm.destinationOfSymbolicLink(atPath: linked.path) == real.path)
+        #expect(try service.scanInstalledSkills().first { $0.path == observed.path }?.collected == true)
+    }
+
     @Test func sameNamesKeepDifferentContentsAndManagedLinksAreNotImported() throws {
         let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)

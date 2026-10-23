@@ -42,7 +42,7 @@ final class SourceImportWorkflowUITests: XCTestCase {
         XCTAssertFalse(try ui.hasEnabledButton("加入技能库…"))
         try ui.selectSidebarItem("项目")
         try ui.setText(fieldMatching: "skills.search", to: "import-ui")
-        try ui.pressButton(identifier: "projects.skill.\(importedID)")
+        try ui.pressButton(identifier: "projects.skill.\(importedID).codex")
         try ui.previewDeploymentPlan()
         let plan = try ui.waitForSinglePlan()
         XCTAssertTrue(plan.plan.changes.contains { $0.relativePath.contains("import-ui") })

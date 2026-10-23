@@ -497,29 +497,51 @@ final class AppModel {
     }
 
     func isDraftSelected(_ skill: SkillEntry) -> Bool {
-        selectedProject?.draftSkillIDs.contains(skill.id) == true
+        guard let host = selectedProject.flatMap({ MCPHost(rawValue: $0.editingAgent) }) else { return false }
+        return isDraftSelected(skill, host: host)
+    }
+
+    func isDraftSelected(_ skill: SkillEntry, host: MCPHost) -> Bool {
+        selectedProject?.harnessSelections[host.rawValue]?.skillIDs.contains(skill.id) == true
     }
 
     func toggleSkill(_ skill: SkillEntry) {
-        guard !skill.isBlocked else {
-            report("\(skill.slug) 含阻塞问题，未加入草稿")
+        guard let host = selectedProject.flatMap({ MCPHost(rawValue: $0.editingAgent) }) else { return }
+        setSkill(skill, enabled: !isDraftSelected(skill, host: host), host: host)
+    }
+
+    func setSkill(_ skill: SkillEntry, enabled: Bool, host: MCPHost) {
+        guard let index = projects.firstIndex(where: { $0.id == selectedProjectID }) else { return }
+        var proposed = projects[index]
+        var selection = proposed.harnessSelections[host.rawValue] ?? ProjectHarnessSelection()
+        guard selection.skillIDs.contains(skill.id) != enabled else { return }
+        guard !enabled || !skill.isBlocked else {
+            let message: LocalizedText = "\(skill.slug) 含阻塞问题，未加入草稿"
+            setProjectPlanNotice(ProjectPlanNotice(message: host.displayName + " · " + L10n.tr(message), tone: .error), for: proposed.id)
+            report(message)
             return
         }
-        guard let index = projects.firstIndex(where: { $0.id == selectedProjectID }) else { return }
-        if projects[index].draftSkillIDs.contains(skill.id) {
-            projects[index].draftSkillIDs.remove(skill.id)
-        } else {
-            let sameName = projects[index].draftSkillIDs.contains { id in
+        if enabled {
+            let sameName = selection.skillIDs.contains { id in
                 snapshot.catalog.entries.first(where: { $0.id == id })?.slug == skill.slug
             }
             if sameName {
-                report("\(skill.slug) 已有另一个来源，先移除同名条目")
+                let message: LocalizedText = "\(skill.slug) 已有另一个来源，先移除同名条目"
+                setProjectPlanNotice(ProjectPlanNotice(message: host.displayName + " · " + L10n.tr(message), tone: .error), for: proposed.id)
+                report(message)
                 return
             }
-            projects[index].draftSkillIDs.insert(skill.id)
+            selection.skillIDs.append(skill.id)
+            selection.skillIDs.sort()
+            proposed.agents.insert(host.displayName)
+            proposed.adapter = proposed.agents.sorted().joined(separator: " · ")
+        } else {
+            selection.skillIDs.removeAll { $0 == skill.id }
         }
-        projects[index].updateEditingSelection()
-        persistDraft(for: projects[index])
+        proposed.harnessSelections[host.rawValue] = selection
+        // 双宿主行内开关不能改变规则、插件和预览所在的编辑目标。
+        proposed.selectEditingAgent(proposed.editingAgent)
+        persistDraft(for: proposed)
     }
 
     func toggleInstruction(_ template: TemplateRecord) {
@@ -1340,13 +1362,16 @@ final class AppModel {
                 harnessSelections: project.harnessSelections
             )
             if let index = projects.firstIndex(where: { $0.id == project.id }) {
+                projects[index] = project
                 projects[index].pendingChanges = pendingChangeCount(for: projects[index])
             }
             // 草稿已经改变，上一次预览结论不再对应当前内容。
             setProjectPlanNotice(nil, for: project.id)
             report("草稿已保存；尚未写入项目")
         } catch {
-            reportKey(UserFacingText.error(error))
+            let message = UserFacingText.error(error)
+            setProjectPlanNotice(ProjectPlanNotice(message: message, tone: .error), for: project.id)
+            reportKey(message)
         }
     }
 

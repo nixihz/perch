@@ -24,8 +24,17 @@ extension SkillSetService {
         let known = Set(try SkillLibraryStore(rootURL: paths.libraryRoot).load().records.compactMap { $0.sourceOrigin?.contentHash })
         for root in roots where seen.insert(root.standardizedFileURL.path).inserted {
             guard fm.fileExists(atPath: root.path) else { continue }
-            let entries = fm.fileExists(atPath: root.appendingPathComponent("SKILL.md").path)
-                ? [root] : try fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
+            // Foundation 枚举目录软链时可能返回 ENOTDIR；读取真实目录，展示仍保留安装入口。
+            let resolvedRoot = root.resolvingSymlinksInPath().standardizedFileURL
+            let entries: [URL]
+            do {
+                entries = fm.fileExists(atPath: resolvedRoot.appendingPathComponent("SKILL.md").path)
+                    ? [root] : try fm.contentsOfDirectory(at: resolvedRoot, includingPropertiesForKeys: nil)
+            } catch {
+                result.append(.init(path: root.path, resolvedPath: resolvedRoot.path, contentHash: nil,
+                                    managed: false, collected: false, issue: "目录无法读取，请重新选择此目录。"))
+                continue
+            }
             for entry in entries.sorted(by: { $0.path < $1.path }) {
                 let child = entries.count == 1 && entry.path == root.path ? root : root.appendingPathComponent(entry.lastPathComponent)
                 guard seenEntries.insert(child.path).inserted else { continue }

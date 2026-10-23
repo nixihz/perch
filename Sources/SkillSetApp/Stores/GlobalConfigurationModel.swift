@@ -14,6 +14,8 @@ final class GlobalConfigurationModel {
     var takeOverExisting = false
     private(set) var inheritedResources: [MCPHost: [GlobalResourceObservation]] = [:]
     private(set) var inheritanceErrors: [MCPHost: String] = [:]
+    private(set) var skillEditingErrors: [MCPHost: String] = [:]
+    private var skillDrafts: [MCPHost: GlobalConfigurationDraft] = [:]
     let locations: GlobalConfigurationLocations
     private let paths: SkillSetRuntimePaths
 
@@ -35,10 +37,28 @@ final class GlobalConfigurationModel {
 
     func refresh() {
         error = nil
+        inspection = nil
+        operations = []
+        draft = GlobalConfigurationDraft()
+        for target in MCPHost.allCases {
+            do {
+                let observed = try manager.inspect(host: target)
+                inheritedResources[target] = observed.resources
+                inheritanceErrors[target] = nil
+                if target == host { inspection = observed }
+                let loaded = try manager.draft(host: target)
+                skillDrafts[target] = loaded
+                skillEditingErrors[target] = nil
+                if target == host { draft = loaded }
+            } catch {
+                let message = UserFacingText.error(error)
+                skillDrafts[target] = nil
+                skillEditingErrors[target] = message
+                if target == host { self.error = message }
+            }
+        }
         do {
             operations = try manager.history(host: host)
-            inspection = try manager.inspect(host: host)
-            draft = try manager.draft(host: host)
         } catch {
             self.error = UserFacingText.error(error)
         }
@@ -64,10 +84,40 @@ final class GlobalConfigurationModel {
     }
 
     func setSkill(_ id: String, enabled: Bool) {
-        var next = draft
+        setSkill(id, enabled: enabled, host: host)
+    }
+
+    func isSkillSelected(_ id: String, host: MCPHost) -> Bool {
+        skillDrafts[host]?.skillIDs.contains(id) == true
+    }
+
+    func canEditSkills(host: MCPHost) -> Bool {
+        skillDrafts[host] != nil && skillEditingErrors[host] == nil
+    }
+
+    func setSkill(_ skill: SkillEntry, enabled: Bool, host: MCPHost, catalog: [SkillEntry]) {
+        guard !enabled || !skill.isBlocked else {
+            error = L10n.tr("\(skill.slug) 含阻塞问题，未加入草稿")
+            return
+        }
+        if enabled, let selected = skillDrafts[host]?.skillIDs,
+           catalog.contains(where: { $0.id != skill.id && $0.slug == skill.slug && selected.contains($0.id) }) {
+            error = L10n.tr("\(skill.slug) 已有另一个来源，先移除同名条目")
+            return
+        }
+        setSkill(skill.id, enabled: enabled, host: host)
+    }
+
+    func setSkill(_ id: String, enabled: Bool, host: MCPHost) {
+        guard canEditSkills(host: host), var next = skillDrafts[host] else {
+            error = skillEditingErrors[host]
+            return
+        }
+        guard next.skillIDs.contains(id) != enabled else { return }
         next.skillIDs.removeAll { $0 == id }
         if enabled { next.skillIDs.append(id) }
-        save(next)
+        next.skillIDs.sort()
+        save(next, host: host)
     }
 
     func setInstruction(_ id: String, enabled: Bool) {
@@ -78,15 +128,28 @@ final class GlobalConfigurationModel {
     }
 
     private func save(_ next: GlobalConfigurationDraft) {
+        save(next, host: host)
+    }
+
+    private func save(_ next: GlobalConfigurationDraft, host: MCPHost) {
+        guard canEditSkills(host: host) else {
+            error = skillEditingErrors[host]
+            return
+        }
         do {
             try manager.saveDraft(next, host: host)
-            draft = next
+            skillDrafts[host] = next
+            if host == self.host { draft = next }
             error = nil
         } catch { self.error = UserFacingText.error(error) }
     }
 
     func prepareDeployment() -> StoredDeploymentPlan? {
-        prepare {
+        guard canEditSkills(host: host) else {
+            error = skillEditingErrors[host]
+            return nil
+        }
+        return prepare {
             try SkillSetService(paths: paths, globalLocations: locations).makeGlobalPlan(
                 host: host, selection: draft, takeOverExisting: takeOverExisting)
         }

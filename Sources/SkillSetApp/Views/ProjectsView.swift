@@ -439,41 +439,43 @@ struct ProjectsView: View {
                     .foregroundStyle(.secondary)
             }
             SkillSearchField(model: model)
+            Text(L10n.tr("点击右侧图标，分别选择 Codex 和 Claude Code 的技能。选择只保存草稿；切换到对应工具后预览并批准。"))
+                .font(AppFont.secondary)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             ForEach(model.filteredSkills.prefix(12)) { skill in
-                Button {
-                    model.toggleSkill(skill)
-                } label: {
-                    HStack(alignment: .top, spacing: 10) {
-                        Image(systemName: model.isDraftSelected(skill) ? "checkmark.square.fill" : "square")
-                            .foregroundStyle(model.isDraftSelected(skill) ? AppColor.accentText : .secondary)
-                            .font(AppFont.heading)
-                        VStack(alignment: .leading, spacing: 3) {
-                            HStack(spacing: 7) {
-                                Text(skill.slug)
-                                    .font(AppFont.body.weight(.semibold))
-                                Text(skill.sourceId)
-                                    .font(AppFont.metadata.monospaced())
-                                    .foregroundStyle(.secondary)
-                                if skill.isBlocked {
-                                    StatusBadge(text: L10n.tr("阻塞"), tone: .danger)
-                                }
-                            }
-                            Text(skill.description)
-                                .font(AppFont.secondary)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(2)
-                        }
-                        Spacer(minLength: 0)
-                        Text(skill.shortHash)
+                HStack(alignment: .top, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(skill.slug)
+                            .font(AppFont.body.weight(.semibold))
+                            .lineLimit(1)
+                            .help(skill.slug)
+                        Text(skill.sourceId)
                             .font(AppFont.metadata.monospaced())
                             .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                        Text(skill.description)
+                            .font(AppFont.secondary)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                        if skill.isBlocked {
+                            StatusBadge(text: L10n.tr("阻塞"), tone: .danger)
+                        }
                     }
-                    .padding(.vertical, 6)
-                    .contentShape(Rectangle())
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    SkillHostToggles(
+                        skillName: skill.slug,
+                        identifierPrefix: "projects.skill.\(skill.id)",
+                        isSelected: { model.isDraftSelected(skill, host: $0) },
+                        isEnabled: { host in
+                            !model.isWorking && (!skill.isBlocked || model.isDraftSelected(skill, host: host))
+                        },
+                        setSelected: { host, enabled in
+                            model.setSkill(skill, enabled: enabled, host: host)
+                        }
+                    )
                 }
-                .buttonStyle(.plain)
-                .disabled(skill.isBlocked)
-                .accessibilityIdentifier("projects.skill.\(skill.id)")
+                .padding(.vertical, 6)
             }
             if model.filteredSkills.count > 12 {
                 Text(L10n.tr("还有 \(model.filteredSkills.count - 12) 条匹配结果，请到「技能库」查看完整列表。"))

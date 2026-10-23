@@ -80,9 +80,9 @@ struct GlobalConfigurationView: View {
                 HStack {
                     Text(L10n.tr("全局配置草稿")).font(AppFont.heading)
                     Spacer()
-                    Button(L10n.tr("预览变更")) { present(global.prepareDeployment()) }
+                    Button(L10n.tr("预览 \(global.host.displayName) 变更")) { present(global.prepareDeployment()) }
                         .buttonStyle(AppButtonStyle(kind: .primary))
-                        .disabled(model.isWorking || global.inspection == nil)
+                        .disabled(model.isWorking || !global.canEditSkills(host: global.host))
                         .accessibilityIdentifier("global.preview")
                 }
                 Text(L10n.tr("勾选只保存草稿；批准计划后才会写入全局目录。"))
@@ -103,23 +103,49 @@ struct GlobalConfigurationView: View {
                 Text(L10n.tr("软链接指向 ~/.perch 中的固定版本；复制后的文件可独立编辑。"))
                     .font(AppFont.secondary).foregroundStyle(.secondary)
                 SkillSearchField(query: Binding(get: { global.query }, set: { global.query = $0 }))
-                let skills = matchingSkills(model.snapshot.catalog.entries, query: global.query, sourceOrigins: model.sourceOrigins)
-                ScrollView {
-                  VStack(alignment: .leading, spacing: 12) {
-                    ForEach(skills) { skill in
-                    Toggle(isOn: Binding(get: { global.draft.skillIDs.contains(skill.id) }, set: { global.setSkill(skill.id, enabled: $0) })) {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(skill.slug).font(AppFont.body.weight(.semibold))
-                            Text(skill.id).font(AppFont.metadata).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-                            Text(skill.description).font(AppFont.secondary).foregroundStyle(.secondary)
+                Text(L10n.tr("点击右侧图标，分别选择 Codex 和 Claude Code 的技能。选择只保存草稿；切换到对应工具后预览并批准。"))
+                    .font(AppFont.secondary).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                ForEach(MCPHost.allCases.filter { $0 != global.host }) { host in
+                    if let error = global.skillEditingErrors[host] {
+                        HStack(alignment: .top) {
+                            Text(host.displayName + ": " + L10n.text(error))
+                                .font(AppFont.secondary).foregroundStyle(.red)
+                            Spacer()
+                            Button(L10n.tr("重新扫描")) { global.refresh() }
                         }
                     }
-                    .toggleStyle(.checkbox)
-                    .disabled(skill.isBlocked || global.inspection == nil)
-                    .accessibilityIdentifier("global.skill.\(skill.id)")
+                }
+                let skills = matchingSkills(model.snapshot.catalog.entries, query: global.query, sourceOrigins: model.sourceOrigins)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 12) {
+                        ForEach(skills) { skill in
+                            HStack(alignment: .top, spacing: 10) {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(skill.slug).font(AppFont.body.weight(.semibold)).lineLimit(1).help(skill.slug)
+                                    Text(skill.id).font(AppFont.metadata).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                                    Text(skill.description).font(AppFont.secondary).foregroundStyle(.secondary).lineLimit(2)
+                                    if skill.isBlocked {
+                                        StatusBadge(text: L10n.tr("阻塞"), tone: .danger)
+                                    }
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                SkillHostToggles(
+                                    skillName: skill.slug,
+                                    identifierPrefix: "global.skill.\(skill.id)",
+                                    isSelected: { global.isSkillSelected(skill.id, host: $0) },
+                                    isEnabled: { host in
+                                        !model.isWorking && global.canEditSkills(host: host)
+                                            && (!skill.isBlocked || global.isSkillSelected(skill.id, host: host))
+                                    },
+                                    setSelected: { host, enabled in
+                                        global.setSkill(skill, enabled: enabled, host: host, catalog: model.snapshot.catalog.entries)
+                                    }
+                                )
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                  }
-                  .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .frame(height: skills.isEmpty ? 0 : min(280, CGFloat(skills.count) * 90))
                 if skills.isEmpty { Text(L10n.tr("没有匹配的技能，请调整搜索或先加入技能库。")) }
