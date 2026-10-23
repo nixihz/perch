@@ -11,6 +11,9 @@ struct SkillContentView: View {
     var body: some View {
         SurfaceCard {
             VStack(alignment: .leading, spacing: 16) {
+                if model.isLoadingSkillDocument {
+                    ProgressView(L10n.tr("正在读取技能…")).controlSize(.small)
+                }
                 if canBrowseFiles {
                     Picker(L10n.tr("阅读内容"), selection: $showsFiles) {
                         Text(L10n.tr("正文")).tag(false)
@@ -29,7 +32,7 @@ struct SkillContentView: View {
                 } else {
                     Text("SKILL.md").font(AppFont.heading)
                     if !model.selectedSkillDocument.isEmpty { document(model.selectedSkillDocument) }
-                    else {
+                    else if !model.isLoadingSkillDocument {
                         Text(L10n.tr("暂无可读取的正文，请核对来源文件。"))
                             .font(AppFont.secondary).foregroundStyle(.secondary)
                     }
@@ -42,7 +45,7 @@ struct SkillContentView: View {
         VStack(alignment: .leading, spacing: 0) {
             if let error = model.skillFilesError {
                 Text(L10n.text(error)).font(AppFont.secondary).foregroundStyle(.red)
-                Button(L10n.tr("重新读取")) { model.loadSelectedSkillDocument() }
+                Button(L10n.tr("重新读取")) { Task { await model.loadSelectedSkillDocumentInBackground() } }
                     .padding(.top, 12)
             } else if model.selectedSkillFiles.isEmpty {
                 Text(L10n.tr("此技能没有附属文件。"))

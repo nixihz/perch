@@ -8,6 +8,7 @@ struct AIAccessView: View {
     @State private var showLaunchDetails = false
     @State private var showTechnicalDetails = false
     @State private var showProgramDetails = false
+    @State private var refreshRevision = 0
 
     private var installation: MCPAccessInstallation? { model.mcpAccessInstallation }
     private var inspection: MCPConfigurationInspection? { model.mcpAccessInspection(host: host, scope: scope) }
@@ -15,7 +16,7 @@ struct AIAccessView: View {
         .inspect(inspection, installation: installation)
     }
     private var canPrepare: Bool {
-        installation != nil && connection != .external && connection != .unreadable && !model.isWorking
+        installation != nil && connection != .external && connection != .unreadable && !model.isWorking && !model.isRefreshingAIAccess
             && (scope == .user || model.selectedProject != nil)
     }
 
@@ -37,12 +38,12 @@ struct AIAccessView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .task { model.refreshAIAccess() }
+        .task(id: model.selectedProjectID + ":" + String(refreshRevision)) {
+            await model.refreshAIAccessInBackground()
+        }
         .onChange(of: host) { model.aiAccessError = nil }
-        .onChange(of: scope) { model.refreshAIAccess() }
-        .onChange(of: model.selectedProjectID) { model.refreshAIAccess() }
         .onChange(of: model.planPresented) {
-            if !model.planPresented { model.refreshAIAccess() }
+            if !model.planPresented { refreshRevision += 1 }
         }
     }
 
@@ -57,7 +58,8 @@ struct AIAccessView: View {
                         text: installation == nil ? L10n.tr("未找到完整程序") : L10n.tr("已找到程序"),
                         tone: installation == nil ? .warning : .neutral
                     )
-                    Button(L10n.tr("重新检测")) { model.refreshAIAccess() }
+                    Button(L10n.tr("重新检测")) { refreshRevision += 1 }
+                        .disabled(model.isRefreshingAIAccess)
                         .buttonStyle(AppButtonStyle())
                         .accessibilityIdentifier("aiAccess.refresh")
                 }
@@ -117,15 +119,19 @@ struct AIAccessView: View {
                             .font(AppFont.secondary).foregroundStyle(.orange)
                     }
                 }
-                HStack(spacing: 8) {
-                    StatusBadge(text: connectionTitle, tone: connection == .configured ? .neutral : .warning)
-                    if installation == nil {
-                        StatusBadge(text: L10n.tr("未找到完整程序"), tone: .danger)
+                if model.isRefreshingAIAccess {
+                    ProgressView(L10n.tr("正在读取接入状态…")).controlSize(.small)
+                } else {
+                    HStack(spacing: 8) {
+                        StatusBadge(text: connectionTitle, tone: connection == .configured ? .neutral : .warning)
+                        if installation == nil {
+                            StatusBadge(text: L10n.tr("未找到完整程序"), tone: .danger)
+                        }
                     }
+                    Text(connectionDetail)
+                        .font(AppFont.body)
+                        .foregroundStyle(.secondary)
                 }
-                Text(connectionDetail)
-                    .font(AppFont.body)
-                    .foregroundStyle(.secondary)
                 if let inspection {
                     KeyValueLine(key: scope == .project ? L10n.tr("项目级配置") : L10n.tr("用户级配置"), value: inspection.configPath, monospaced: true)
                 }
@@ -140,7 +146,8 @@ struct AIAccessView: View {
                 if installation == nil {
                     Text(L10n.tr("未找到完整的 MCP 程序。请重新构建或安装栖集，再重新检测。"))
                         .font(AppFont.secondary).foregroundStyle(.orange)
-                    Button(L10n.tr("重新检测")) { model.refreshAIAccess() }
+                    Button(L10n.tr("重新检测")) { refreshRevision += 1 }
+                        .disabled(model.isRefreshingAIAccess)
                 }
                 if let draft = installation?.draft(host: host, scope: scope, paths: model.runtimePaths) {
                     DisclosureGroup(L10n.tr("查看启动命令与参数"), isExpanded: $showLaunchDetails) {

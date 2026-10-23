@@ -10,7 +10,7 @@ extension GlobalConfigurationManager {
         let root = locations.transactionRoot(host)
         let statePath = relative(locations.stateURL(host), root: root)
         guard let stateStep = journal.steps.first(where: { $0.relativePath == statePath }) else {
-            throw GlobalConfigurationError.corruptState
+            throw GlobalConfigurationError.verificationFailed(.missingStateStep, path: paths.operationsRoot.appendingPathComponent(operationID.uuidString + "/journal.json").path)
         }
         let operationRoot = paths.operationsRoot.appendingPathComponent(operationID.uuidString)
         let previous: GlobalConfigurationState
@@ -18,7 +18,7 @@ extension GlobalConfigurationManager {
             let backup = operationRoot.appendingPathComponent("backup/\(statePath)")
             guard try hash(backup) == beforeHash else { throw GlobalConfigurationError.baselineMissing }
             do { previous = try JSONDecoder().decode(GlobalConfigurationState.self, from: Data(contentsOf: backup)) }
-            catch { throw GlobalConfigurationError.corruptState }
+            catch { throw GlobalConfigurationError.verificationFailed(.invalidBackup, path: backup.path) }
         } else {
             previous = GlobalConfigurationState(host: host, skillsPath: locations.skillsRoot(host).path,
                 rulesPath: locations.rulesURL(host).path, selection: GlobalConfigurationDraft(), managed: [:])
@@ -43,7 +43,7 @@ extension GlobalConfigurationManager {
                 if let expected = step.afterHash, try hash(after) != expected { throw GlobalConfigurationError.baselineMissing }
                 let written = step.afterHash == nil ? Data() : try Data(contentsOf: after)
                 let original = step.beforeHash == nil ? nil : try Data(contentsOf: backup)
-                let restored = try GlobalRuleEditing.restore(current: try dataIfPresent(target) ?? Data(), written: written, original: original)
+                let restored = try GlobalRuleEditing.restore(current: try dataIfPresent(target) ?? Data(), written: written, original: original, path: target.path)
                 try builder.write(restored, to: target, summary: "撤销此次规则变更，保留块外编辑")
             } else {
                 guard actual == step.afterHash else { throw FileTransactionError.rollbackConflict(target.path) }
@@ -61,7 +61,7 @@ extension GlobalConfigurationManager {
             let actual = try builder.observe(target)
             if target == locations.rulesURL(host) {
                 guard let data = try dataIfPresent(target),
-                      try ruleBody(data).map({ SkillAssetCopier.sha256(Data($0.utf8)) }) == resource.hash else {
+                      try ruleBody(data, path: target.path).map({ SkillAssetCopier.sha256(Data($0.utf8)) }) == resource.hash else {
                     throw DeploymentError.managedRuleDrift(path)
                 }
             } else if actual != resource.hash { throw DeploymentError.managedSkillDrift(path) }

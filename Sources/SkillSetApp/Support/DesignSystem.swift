@@ -92,7 +92,8 @@ struct PageHeader: View {
     let eyebrow: String
     let title: String
     let detail: String
-    var body: some View {
+
+    var heading: some View {
         VStack(alignment: .leading, spacing: 7) {
             Text(eyebrow.uppercased())
                 .font(AppFont.metadata.weight(.semibold))
@@ -101,6 +102,35 @@ struct PageHeader: View {
             Text(title)
                 .font(AppFont.pageTitle)
                 .foregroundStyle(AppColor.ink)
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            heading
+            Text(detail)
+                .font(AppFont.body)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// 添加入口固定在标题右侧，辅助入口由调用方排列在主操作左侧。
+struct PageActionHeader<Actions: View>: View {
+    let eyebrow: String
+    let title: String
+    let detail: String
+    @ViewBuilder var actions: () -> Actions
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .top, spacing: 12) {
+                PageHeader(eyebrow: eyebrow, title: title, detail: detail).heading
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .layoutPriority(1)
+                HStack(spacing: 8, content: actions)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
             Text(detail)
                 .font(AppFont.body)
                 .foregroundStyle(.secondary)

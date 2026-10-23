@@ -9,11 +9,21 @@ struct ProjectsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: AppLayout.columnSpacing) {
-                PageHeader(
+                PageActionHeader(
                     eyebrow: "PROJECT WORKSPACE",
                     title: L10n.tr("为项目配置技能"),
                     detail: L10n.tr("把需要的技能和规则用于本机项目。先选择配置，再审阅并批准写入。")
-                )
+                ) {
+                    Button {
+                        chooseProject()
+                    } label: {
+                        Label(L10n.tr("添加项目"), systemImage: "plus")
+                            .frame(minHeight: 32)
+                    }
+                    .buttonStyle(AppButtonStyle(kind: .primary))
+                    .accessibilityIdentifier("projects.addProject")
+                    .help(L10n.tr("添加本机项目"))
+                }
 
                 Text(L10n.tr("1. 添加项目 → 2. 选择技能或使用预设 → 3. 预览并批准"))
                     .font(AppFont.secondary)
@@ -30,8 +40,9 @@ struct ProjectsView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .task {
-            model.refreshPendingPlans()
-            model.globalConfiguration.refreshInheritance()
+            async let plans: Void = model.refreshPendingPlansInBackground()
+            async let inheritance: Void = model.globalConfiguration.refreshInheritanceInBackground()
+            _ = await (plans, inheritance)
         }
     }
 
@@ -42,46 +53,47 @@ struct ProjectsView: View {
                     Text(L10n.tr("项目"))
                         .font(AppFont.heading)
                     Spacer()
-                    Button {
-                        chooseProject()
-                    } label: {
-                        Label(L10n.tr("添加项目"), systemImage: "plus")
-                            .frame(minHeight: 32)
-                    }
-                    .buttonStyle(AppButtonStyle())
-                    .accessibilityIdentifier("projects.addProject")
-                    .help(L10n.tr("添加本机项目"))
                 }
-                ForEach(model.projects) { project in
-                    Button {
-                        model.selectedProjectID = project.id
-                    } label: {
-                        HStack(spacing: 10) {
-                            Image(systemName: project.id == model.selectedProjectID ? "folder.fill" : "folder")
-                                .foregroundStyle(project.id == model.selectedProjectID ? AppColor.accentText : .secondary)
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(project.name)
-                                    .font(AppFont.body.weight(.semibold))
-                                    .foregroundStyle(.primary)
-                                Text(L10n.tr("\(project.allDraftSkillIDs.count) 个技能 · \(L10n.text(project.adapter))"))
-                                    .font(AppFont.secondary)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer(minLength: 0)
-                            if project.pendingChanges > 0 {
-                                Text("\(project.pendingChanges)")
-                                    .font(AppFont.metadata.weight(.bold))
-                                    .foregroundStyle(AppColor.accentText)
-                                    .padding(5)
-                                    .background(AppColor.accentSoft, in: Circle())
+                if !model.projects.isEmpty {
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 4) {
+                            ForEach(model.projects) { project in
+                                Button {
+                                    model.selectedProjectID = project.id
+                                } label: {
+                                    HStack(spacing: 10) {
+                                        Image(systemName: project.id == model.selectedProjectID ? "folder.fill" : "folder")
+                                            .foregroundStyle(project.id == model.selectedProjectID ? AppColor.accentText : .secondary)
+                                        VStack(alignment: .leading, spacing: 3) {
+                                            Text(project.name)
+                                                .font(AppFont.body.weight(.semibold))
+                                                .lineLimit(1)
+                                                .foregroundStyle(.primary)
+                                            Text(L10n.tr("\(project.allDraftSkillIDs.count) 个技能 · \(L10n.text(project.adapter))"))
+                                                .font(AppFont.secondary)
+                                                .lineLimit(2)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        Spacer(minLength: 0)
+                                        if project.pendingChanges > 0 {
+                                            Text("\(project.pendingChanges)")
+                                                .font(AppFont.metadata.weight(.bold))
+                                                .foregroundStyle(AppColor.accentText)
+                                                .padding(5)
+                                                .background(AppColor.accentSoft, in: Circle())
+                                        }
+                                    }
+                                    .padding(.vertical, 7)
+                                    .padding(.horizontal, 8)
+                                    .selectionRow(project.id == model.selectedProjectID)
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .help(project.path)
                             }
                         }
-                        .padding(.vertical, 7)
-                        .padding(.horizontal, 8)
-                        .selectionRow(project.id == model.selectedProjectID)
-                        .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .frame(height: min(360, CGFloat(model.projects.count) * 74))
                 }
                 Divider()
                 Text(L10n.tr("技能和规则只写入当前项目"))

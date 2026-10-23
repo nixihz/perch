@@ -7,8 +7,18 @@ struct PresetsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            PageHeader(eyebrow: "PRESETS", title: L10n.tr("用户预设"),
-                       detail: L10n.tr("保存常用的技能、插件、MCP 服务和规则组合，再选择项目使用。"))
+            PageActionHeader(eyebrow: "PRESETS", title: L10n.tr("用户预设"),
+                       detail: L10n.tr("保存常用的技能、插件、MCP 服务和规则组合，再选择项目使用。")) {
+                    Button { model.beginNewPreset() } label: {
+                        Label(L10n.tr("新建预设"), systemImage: "plus")
+                            .frame(minHeight: 32)
+                            .contentShape(Rectangle())
+                    }
+                        .buttonStyle(AppButtonStyle(kind: .primary)).keyboardShortcut("n", modifiers: .command)
+                        .help(L10n.tr("新建预设"))
+                        .accessibilityLabel(L10n.tr("新建预设"))
+                        .accessibilityIdentifier("presets.new")
+            }
             if let error = model.presetError {
                 Label(L10n.text(error), systemImage: "exclamationmark.circle").font(AppFont.secondary).foregroundStyle(.red)
             }
@@ -36,15 +46,6 @@ struct PresetsView: View {
                 HStack {
                     Text(L10n.tr("已保存预设")).font(AppFont.heading)
                     Spacer()
-                    Button { model.beginNewPreset() } label: {
-                        Label(L10n.tr("新建预设"), systemImage: "plus")
-                            .frame(minHeight: 32)
-                            .contentShape(Rectangle())
-                    }
-                        .buttonStyle(AppButtonStyle(kind: .quiet)).keyboardShortcut("n", modifiers: .command)
-                        .help(L10n.tr("新建预设"))
-                        .accessibilityLabel(L10n.tr("新建预设"))
-                        .accessibilityIdentifier("presets.new")
                 }
                 ScrollView {
                     VStack(spacing: 6) {

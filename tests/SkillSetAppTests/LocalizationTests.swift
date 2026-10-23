@@ -5,6 +5,33 @@ import SkillSetCore
 
 @MainActor
 final class LocalizationTests: XCTestCase {
+    func testBackgroundLoadingAndRetainedResultsHaveEnglishText() {
+        for key in ["正在读取配置…", "正在读取技能…", "正在读取使用位置…", "正在读取接入状态…",
+                    "正在读取插件内容…", "显示上次读取结果。", "内容是否相同待核对"] {
+            let english = L10n.text(key, language: .english)
+            XCTAssertFalse(containsChinese(english), english)
+            XCTAssertNotEqual(english, key)
+        }
+    }
+
+    func testGlobalVerificationReasonsTranslateWithoutChangingPaths() {
+        let reasons: [GlobalVerificationReason] = [.invalidDraft, .invalidState, .unsupportedSchema, .hostMismatch,
+            .skillsPathMismatch, .rulesPathMismatch, .unmanagedPath, .missingReceipt, .invalidRulesEncoding,
+            .missingStateStep, .invalidBackup, .invalidRuleMarkers]
+        for reason in reasons {
+            for path in ["", "/local/项目 100%/record.json"] {
+                let source = UserFacingText.error(GlobalConfigurationError.verificationFailed(reason, path: path))
+                let english = L10n.text(source, language: .english)
+                XCTAssertTrue(english.hasPrefix("Global configuration verification failed:"), english)
+                XCTAssertFalse(containsChinese(english.replacingOccurrences(of: path, with: "")), english)
+                if !path.isEmpty { XCTAssertTrue(english.contains("File: " + path)) }
+                XCTAssertEqual(L10n.text(source, language: .chinese), source)
+            }
+        }
+        let external = "全局配置核验失败：外部程序自报成功。\n文件：/local/file\n已停止当前操作，请核对上述内容后重试。"
+        XCTAssertEqual(L10n.text(external, language: .english), external, "未知原因不能被解析成 Core 的核验结论")
+    }
+
     func testPreviouslyStoredStatusCanBeRenderedInEitherLanguageWithoutTranslatingArguments() {
         let skillName = "中文协作"
         let message: LocalizedText = "已登记 \(skillName)；未修改项目文件"

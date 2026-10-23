@@ -34,8 +34,29 @@ final class AppModel {
         }
     }
     var query = ""
-    var selectedProjectID = ""
-    var selectedSkillID: String?
+    var selectedProjectID = "" {
+        didSet {
+            guard selectedProjectID != oldValue else { return }
+            // 选择变化时立即撤下旧范围，不能等新页面的 task 开始后才清理。
+            mcpRefreshID = UUID()
+            isRefreshingMCPConfigurations = false
+            mcpConfigInspections = []
+            mcpServers = []
+            selectedMCPID = ""
+        }
+    }
+    var selectedSkillID: String? {
+        didSet {
+            guard selectedSkillID != oldValue else { return }
+            skillDocumentRequest = UUID()
+            isLoadingSkillDocument = false
+            selectedSkillDocument = ""
+            selectedSkillFiles = []
+            libraryError = nil
+            skillFilesError = nil
+            closeSkillFile()
+        }
+    }
     var selectedMCPID = ""
     var selectedPluginID = ""
     var selectedSourceID = ""
@@ -80,6 +101,8 @@ final class AppModel {
     private(set) var skillsShError: String?
     private(set) var isSearchingSkillsSh = false
     private(set) var installingSkillsShID: String?
+    private(set) var isLoadingSkillDocument = false
+    private var skillDocumentRequest = UUID()
     var selectedSkillDocument = ""
     var selectedSkillFiles: [SkillPackageFile] = []
     var skillFilesError: String?
@@ -88,6 +111,13 @@ final class AppModel {
     var skillFilePreviewError: String?
     var hiddenSkillCount = 0
     var aiAccessError: LocalizedText?
+    private(set) var mcpAccessInstallation: MCPAccessInstallation?
+    private(set) var isRefreshingMCPConfigurations = false
+    private(set) var isRefreshingAIAccess = false
+    private var mcpRefreshID = UUID()
+    private var mcpConfigurationsProjectID = ""
+    private var pendingPlansRefreshID = UUID()
+    private var aiAccessRefreshID = UUID()
 
     private let projectStore: ProjectStore
     private let draftStore: ProjectDraftStore
@@ -153,15 +183,45 @@ final class AppModel {
     private var libraryStore: SkillLibraryStore { SkillLibraryStore(rootURL: runtimePaths.libraryRoot) }
 
     func loadSelectedSkillDocument() {
+        skillDocumentRequest = UUID()
+        isLoadingSkillDocument = false
         libraryError = nil
-        selectedSkillDocument = ""
-        selectedSkillFiles = []
         skillFilesError = nil
-        closeSkillFile()
         guard let skill = selectedSkill else { return }
         do { selectedSkillDocument = try libraryStore.document(for: skill, repositoryRoot: runtimePaths.repositoryRoot) }
         catch { libraryError = UserFacingText.error(error) }
-        do { selectedSkillFiles = try libraryStore.attachedFiles(for: skill, repositoryRoot: runtimePaths.repositoryRoot) }
+        do {
+            selectedSkillFiles = try libraryStore.attachedFiles(for: skill, repositoryRoot: runtimePaths.repositoryRoot)
+            closeSkillFile()
+        }
+        catch { skillFilesError = UserFacingText.error(error) }
+    }
+
+    /// 文件读取和目录枚举不占用主线程；请求标识阻止旧技能覆盖新选择。
+    func loadSelectedSkillDocumentInBackground() async {
+        guard !Task.isCancelled else { return }
+        let request = UUID()
+        skillDocumentRequest = request
+        guard let skill = selectedSkill else { isLoadingSkillDocument = false; return }
+        isLoadingSkillDocument = true
+        let paths = runtimePaths
+        let result = await Task.detached(priority: .userInitiated) {
+            let store = SkillLibraryStore(rootURL: paths.libraryRoot)
+            let document = Result { try store.document(for: skill, repositoryRoot: paths.repositoryRoot) }
+            let files = Result { try store.attachedFiles(for: skill, repositoryRoot: paths.repositoryRoot) }
+            return (document, files)
+        }.value
+        guard skillDocumentRequest == request else { return }
+        isLoadingSkillDocument = false
+        guard !Task.isCancelled, selectedSkillID == skill.id else { return }
+        libraryError = nil
+        skillFilesError = nil
+        do { selectedSkillDocument = try result.0.get() }
+        catch { libraryError = UserFacingText.error(error) }
+        do {
+            selectedSkillFiles = try result.1.get()
+            closeSkillFile()
+        }
         catch { skillFilesError = UserFacingText.error(error) }
     }
 
@@ -842,13 +902,22 @@ final class AppModel {
     }
 
     func refreshPendingPlans() {
-        do {
-            pendingPlans = try planStore.list().filter { record in
-                record.approvalState != .applied && !record.isExpired(at: Date())
-            }
-        } catch {
-            reportKey(UserFacingText.error(error))
-        }
+        pendingPlansRefreshID = UUID()
+        do { pendingPlans = try PageSnapshotReader.pendingPlans(paths: runtimePaths) }
+        catch { reportKey(UserFacingText.error(error)) }
+    }
+
+    func refreshPendingPlansInBackground() async {
+        guard !Task.isCancelled else { return }
+        let request = UUID()
+        pendingPlansRefreshID = request
+        let paths = runtimePaths
+        let result = await Task.detached(priority: .userInitiated) {
+            Result { try PageSnapshotReader.pendingPlans(paths: paths) }
+        }.value
+        guard pendingPlansRefreshID == request, !Task.isCancelled else { return }
+        do { pendingPlans = try result.get() }
+        catch { reportKey(UserFacingText.error(error)) }
     }
 
     func reviewPlan(_ record: StoredDeploymentPlan) {
@@ -890,7 +959,7 @@ final class AppModel {
     func showLibrarySkill(_ id: String) {
         query = ""
         selectedSkillID = id
-        loadSelectedSkillDocument()
+        // 正文由技能页的可取消任务加载，跳转不重复遍历技能目录。
         section = .skills
     }
 
@@ -1120,33 +1189,53 @@ final class AppModel {
     }
 
     func refreshMCPConfigurations() {
+        mcpRefreshID = UUID()
+        isRefreshingMCPConfigurations = false
         guard let service else { return }
-        do {
-            let projectID = UUID(uuidString: selectedProjectID)
-            mcpConfigInspections = try service.mcpConfigurations(projectID: projectID)
-            mcpServers = mcpConfigInspections.flatMap { inspection in
-                inspection.servers.map { server in
-                    MCPServerRecord(
-                        id: server.id,
-                        name: server.name,
-                        host: server.host.displayName,
-                        transport: server.transport,
-                        scope: "\(server.scope.displayName) · \(server.configPath)",
-                        command: server.command,
-                        args: server.argumentCount == 0 ? [] : ["<\(server.argumentCount) 个参数已收起>"],
-                        envKeys: server.envKeys,
-                        state: server.managed ? "管理器受管" : "仅观察",
-                        note: server.managed
-                            ? "由栖集写入；修改仍要重新生成并通过本机审批。"
-                            : "已有配置；可编辑或删除，批准计划后生效。"
-                    )
-                }
+        do { applyMCPConfigurations(try service.mcpConfigurations(projectID: UUID(uuidString: selectedProjectID))) }
+        catch { reportKey(UserFacingText.error(error)) }
+    }
+
+    func refreshMCPConfigurationsInBackground() async {
+        guard !Task.isCancelled, service != nil else { return }
+        let request = UUID()
+        mcpRefreshID = request
+        isRefreshingMCPConfigurations = true
+        let paths = runtimePaths, locations = globalConfiguration.locations, projectID = selectedProjectID
+        if mcpConfigurationsProjectID != projectID { mcpConfigInspections = []; mcpServers = [] }
+        let result = await Task.detached(priority: .userInitiated) {
+            Result { try PageSnapshotReader.mcpConfigurations(paths: paths, locations: locations, projectID: projectID) }
+        }.value
+        guard mcpRefreshID == request else { return }
+        isRefreshingMCPConfigurations = false
+        guard !Task.isCancelled, selectedProjectID == projectID else { return }
+        do { applyMCPConfigurations(try result.get()) }
+        catch { reportKey(UserFacingText.error(error)) }
+    }
+
+    private func applyMCPConfigurations(_ inspections: [MCPConfigurationInspection]) {
+        mcpConfigurationsProjectID = selectedProjectID
+        mcpConfigInspections = inspections
+        mcpServers = mcpConfigInspections.flatMap { inspection in
+            inspection.servers.map { server in
+                MCPServerRecord(
+                    id: server.id,
+                    name: server.name,
+                    host: server.host.displayName,
+                    transport: server.transport,
+                    scope: "\(server.scope.displayName) · \(server.configPath)",
+                    command: server.command,
+                    args: server.argumentCount == 0 ? [] : ["<\(server.argumentCount) 个参数已收起>"],
+                    envKeys: server.envKeys,
+                    state: server.managed ? "管理器受管" : "仅观察",
+                    note: server.managed
+                        ? "由栖集写入；修改仍要重新生成并通过本机审批。"
+                        : "已有配置；可编辑或删除，批准计划后生效。"
+                )
             }
-            if !mcpServers.contains(where: { $0.id == selectedMCPID }) {
-                selectedMCPID = mcpServers.first?.id ?? ""
-            }
-        } catch {
-            reportKey(UserFacingText.error(error))
+        }
+        if !mcpServers.contains(where: { $0.id == selectedMCPID }) {
+            selectedMCPID = mcpServers.first?.id ?? ""
         }
     }
 
@@ -1189,24 +1278,48 @@ final class AppModel {
         _ = makeMCPConfigPlan(draft, existingServer: server, remove: true)
     }
 
-    var mcpAccessInstallation: MCPAccessInstallation? {
-        MCPAccessInstallation.detect(bundleURL: Bundle.main.bundleURL, repositoryRoot: runtimePaths.repositoryRoot)
-    }
-
     func mcpAccessInspection(host: MCPHost, scope: MCPConfigurationScope = .user) -> MCPConfigurationInspection? {
-        mcpConfigInspections.first { $0.host == host && $0.scope == scope }
+        guard mcpConfigurationsProjectID == selectedProjectID else { return nil }
+        return mcpConfigInspections.first { $0.host == host && $0.scope == scope }
     }
 
     func refreshAIAccess() {
+        aiAccessRefreshID = UUID()
+        isRefreshingAIAccess = false
+        mcpAccessInstallation = MCPAccessInstallation.detect(bundleURL: Bundle.main.bundleURL, repositoryRoot: runtimePaths.repositoryRoot)
         aiAccessError = nil
         refreshMCPConfigurations()
         refreshPendingPlans()
     }
 
+    func refreshAIAccessInBackground() async {
+        guard !Task.isCancelled else { return }
+        let request = UUID()
+        aiAccessRefreshID = request
+        isRefreshingAIAccess = true
+        aiAccessError = nil
+        let bundleURL = Bundle.main.bundleURL, root = runtimePaths.repositoryRoot
+        async let configuration: Void = refreshMCPConfigurationsInBackground()
+        async let plans: Void = refreshPendingPlansInBackground()
+        let installation = await Task.detached(priority: .userInitiated) {
+            MCPAccessInstallation.detect(bundleURL: bundleURL, repositoryRoot: root)
+        }.value
+        _ = await (configuration, plans)
+        guard aiAccessRefreshID == request else { return }
+        isRefreshingAIAccess = false
+        guard !Task.isCancelled else { return }
+        mcpAccessInstallation = installation
+    }
+
     @discardableResult
     func prepareAIAccess(host: MCPHost, scope: MCPConfigurationScope = .user) -> Bool {
+        aiAccessRefreshID = UUID()
+        isRefreshingAIAccess = false
         aiAccessError = nil
+        // 预览前重新核对程序，页面缓存不能代替执行边界的验证。
+        mcpAccessInstallation = MCPAccessInstallation.detect(bundleURL: Bundle.main.bundleURL, repositoryRoot: runtimePaths.repositoryRoot)
         guard let installation = mcpAccessInstallation else {
+            preparedPlan = nil
             aiAccessError = "未找到完整的 MCP 程序。请重新构建或安装栖集，再重新检测。"
             return false
         }

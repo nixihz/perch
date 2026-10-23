@@ -8,21 +8,31 @@ struct TemplatesView: View {
     @State private var query = ""
     @State private var editor: TemplateEditorDraft?
     @State private var removal: TemplateRecord?
-    @State private var references: [TemplateReference] = []
-    @State private var referenceError: String?
+    @State private var referenceState = DetailSnapshotModel<String, [TemplateReference]>()
     @State private var copied = false
+    @State private var referenceRevision = 0
 
-    private var matches: [TemplateRecord] { model.matchingTemplates(query) }
+    private var references: [TemplateReference] {
+        referenceState.key == model.selectedTemplateID ? referenceState.snapshot ?? [] : []
+    }
+
+    private var referenceError: String? {
+        referenceState.key == model.selectedTemplateID ? referenceState.error : nil
+    }
+
+    @AppStorage("templates.sortOrder") private var sortOrder: TemplateSortOrder = .original
+
+    private var matches: [TemplateRecord] {
+        sortOrder.sorted(model.matchingTemplates(query)) { $0.isLocal ? $0.title : L10n.text($0.title) }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .top) {
-                PageHeader(
-                    eyebrow: "AGENTS SNIPPETS",
-                    title: L10n.tr("AGENTS 片段"),
-                    detail: L10n.tr("保存常用规则，选择项目或全局配置，预览并批准后写入 AGENTS.md 或 CLAUDE.md。")
-                )
-                Spacer(minLength: 0)
+            PageActionHeader(
+                eyebrow: "AGENTS SNIPPETS",
+                title: L10n.tr("AGENTS 片段"),
+                detail: L10n.tr("保存常用规则，选择项目或全局配置，预览并批准后写入 AGENTS.md 或 CLAUDE.md。")
+            ) {
                 Button {
                     model.templateError = nil
                     editor = TemplateEditorDraft()
@@ -76,8 +86,10 @@ struct TemplatesView: View {
             Text(L10n.tr("片段将从本机片段库删除，已写入的规则文件保持不变。配置和预设中的引用会显示为不可用，需移除引用或重新选择片段后再部署。"))
         }
         .onChange(of: model.planPresented) { _, presented in if !presented { refreshReferences() } }
-        .task(id: model.selectedTemplateID) { refreshReferences() }
-        .onChange(of: model.snapshot.templates) { _, _ in refreshReferences() }
+        .task(id: ReferenceRequest(templateID: model.selectedTemplateID,
+                                   templates: model.snapshot.templates, revision: referenceRevision)) {
+            await loadReferences()
+        }
         .onChange(of: query) { _, _ in selectFirstMatchIfNeeded() }
         .onChange(of: model.selectedTemplateID) { _, _ in showFileMarkers = false }
         .onChange(of: model.snapshot.templates) { _, _ in
@@ -89,14 +101,24 @@ struct TemplatesView: View {
         TemplateStore(rootURL: model.runtimePaths.applicationSupportRoot).documentURL
     }
 
+    private struct ReferenceRequest: Hashable {
+        let templateID: String
+        let templates: [TemplateRecord]
+        let revision: Int
+    }
+
     private func refreshReferences() {
         copied = false
-        do {
-            references = try model.templateReferences(model.selectedTemplateID)
-            referenceError = nil
-        } catch {
-            references = []
-            referenceError = "使用位置暂时无法读取，请检查项目、全局配置和预设后重试。"
+        referenceRevision += 1
+    }
+
+    private func loadReferences() async {
+        let id = model.selectedTemplateID
+        copied = false
+        await referenceState.load(for: id, errorMessage: { _ in
+            "使用位置暂时无法读取，请检查项目、全局配置和预设后重试。"
+        }) {
+            try await model.templateReferencesInBackground(id)
         }
     }
 
@@ -107,13 +129,23 @@ struct TemplatesView: View {
                     Text(L10n.tr("使用位置")).font(AppFont.heading)
                     Spacer()
                     Button(L10n.tr("刷新")) { refreshReferences() }
+                        .disabled(referenceState.isLoading)
+                }
+                if referenceState.isLoading {
+                    ProgressView(L10n.tr("正在读取使用位置…")).controlSize(.small)
                 }
                 if let referenceError {
                     Text(L10n.text(referenceError)).foregroundStyle(.red)
-                } else if references.isEmpty {
+                    if !references.isEmpty {
+                        Text(L10n.tr("显示上次读取结果。"))
+                            .font(AppFont.secondary).foregroundStyle(.secondary)
+                    }
+                }
+                if referenceState.key == model.selectedTemplateID, referenceState.snapshot != nil,
+                   references.isEmpty && !referenceState.isLoading && referenceError == nil {
                     Text(L10n.tr("尚未被配置或预设引用。点击“用于配置…”开始使用。"))
                         .font(AppFont.secondary).foregroundStyle(.secondary)
-                } else {
+                } else if !references.isEmpty {
                     ForEach(references) { reference in
                         HStack(alignment: .top) {
                             VStack(alignment: .leading, spacing: 4) {
@@ -148,6 +180,12 @@ struct TemplatesView: View {
                     .font(AppFont.heading)
                 AppSearchField(query: $query, prompt: L10n.tr("搜索名称、说明或正文"),
                                label: L10n.tr("搜索片段"), identifier: "templates.search")
+                AppPicker(title: L10n.tr("片段排序"), selection: $sortOrder, valueLabel: L10n.text(sortOrder.title)) {
+                    ForEach(TemplateSortOrder.allCases, id: \.self) { order in
+                        Text(L10n.text(order.title)).tag(order)
+                    }
+                }
+                .accessibilityIdentifier("templates.sortOrder")
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(matches) { template in

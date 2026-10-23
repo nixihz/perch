@@ -1,8 +1,8 @@
 import Foundation
 import SkillSetCore
 
-struct MCPAccessInstallation {
-    enum Origin: Equatable {
+struct MCPAccessInstallation: Sendable {
+    enum Origin: Equatable, Sendable {
         case bundled, development
     }
 

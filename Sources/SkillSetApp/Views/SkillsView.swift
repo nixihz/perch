@@ -9,15 +9,30 @@ struct SkillsView: View {
     @State private var scanning = false
     @State private var checkedSkillIDs: Set<String> = []
 
+    @State private var filter: SkillLibraryFilter = .all
+    @State private var sourceID = ""
+
+    private var libraryIndex: SkillLibraryIndex { SkillLibraryIndex(entries: model.snapshot.catalog.entries) }
+    private var visibleSkills: [SkillEntry] {
+        let index = libraryIndex
+        return model.filteredSkills.filter {
+            (sourceID.isEmpty || $0.sourceId == sourceID) && index.matches($0, filter: filter)
+        }
+    }
+
+    private func reconcileSelection() {
+        if !visibleSkills.contains(where: { $0.id == model.selectedSkillID }) {
+            model.selectedSkillID = visibleSkills.first?.id
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .top, spacing: 12) {
-                PageHeader(
-                    eyebrow: "SKILL CATALOG",
-                    title: L10n.tr("技能库"),
-                    detail: L10n.tr("搜索、阅读和编辑技能。要让 AI 在项目中使用技能，请到「项目」选择并预览变更。")
-                )
-                Spacer(minLength: 0)
+            PageActionHeader(
+                eyebrow: "SKILL CATALOG",
+                title: L10n.tr("技能库"),
+                detail: L10n.tr("搜索、阅读和编辑技能。要让 AI 在项目中使用技能，请到「项目」选择并预览变更。")
+            ) {
                 Button(L10n.tr("扫描已安装技能…")) { scanning = true }
                     .accessibilityIdentifier("skills.scan-installed")
                 Button {
@@ -74,7 +89,11 @@ struct SkillsView: View {
         .onChange(of: model.snapshot.catalog.entries.map(\.id)) { _, ids in
             checkedSkillIDs.formIntersection(ids)
         }
-        .onChange(of: model.selectedSkillID, initial: true) { _, _ in model.loadSelectedSkillDocument() }
+        .onChange(of: visibleSkills.map(\.id), initial: true) { _, _ in reconcileSelection() }
+        .onChange(of: model.selectedSkillID) { _, _ in reconcileSelection() }
+        .task(id: model.selectedSkill.map { $0.id + ":" + $0.contentHash }) {
+            await model.loadSelectedSkillDocumentInBackground()
+        }
     }
 
     private var skillList: some View {
@@ -84,16 +103,42 @@ struct SkillsView: View {
                     Text(L10n.tr("技能列表"))
                         .font(AppFont.heading)
                     Spacer()
-                    Text(L10n.tr("\(model.filteredSkills.count) 个匹配"))
+                    Text(L10n.tr("\(visibleSkills.count) 个匹配"))
                         .font(AppFont.secondary)
                         .foregroundStyle(.secondary)
                 }
                 SkillSearchField(model: model)
+                HStack(spacing: 8) {
+                    AppPicker(title: L10n.tr("筛选技能"), selection: $filter, valueLabel: L10n.text(filter.title), showsLabel: false) {
+                        ForEach(SkillLibraryFilter.allCases, id: \.self) { option in
+                            Text(L10n.text(option.title)).tag(option)
+                        }
+                    }
+                    .accessibilityIdentifier("skills.filter")
+                    AppPicker(title: L10n.tr("技能来源"), selection: $sourceID,
+                              valueLabel: sourceID.isEmpty ? L10n.tr("全部来源") : sourceID, showsLabel: false) {
+                        Text(L10n.tr("全部来源")).tag("")
+                        ForEach(Set(model.snapshot.catalog.entries.map(\.sourceId)).sorted(), id: \.self) { source in
+                            Text(source).tag(source)
+                        }
+                    }
+                    .accessibilityIdentifier("skills.sourceFilter")
+                }
+                if filter != .all || !sourceID.isEmpty || !model.query.isEmpty {
+                    Button(L10n.tr("清空筛选")) {
+                        filter = .all; sourceID = ""; model.updateQuery("")
+                    }
+                    .accessibilityIdentifier("skills.clearFilters")
+                }
+                if visibleSkills.isEmpty {
+                    Text(L10n.tr("没有匹配的技能，请清空筛选或调整搜索。"))
+                        .font(AppFont.secondary).foregroundStyle(.secondary)
+                }
                 HStack {
                     Button(L10n.tr("全选匹配项")) {
-                        checkedSkillIDs.formUnion(model.filteredSkills.map(\.id))
+                        checkedSkillIDs.formUnion(visibleSkills.map(\.id))
                     }
-                    .disabled(model.filteredSkills.isEmpty)
+                    .disabled(visibleSkills.isEmpty)
                     Button(L10n.tr("清空勾选")) { checkedSkillIDs.removeAll() }
                         .disabled(checkedSkillIDs.isEmpty)
                     Spacer(minLength: 0)
@@ -107,7 +152,7 @@ struct SkillsView: View {
                 .accessibilityIdentifier("skills.removeChecked")
                 ScrollView {
                     LazyVStack(spacing: 0) {
-                        ForEach(model.filteredSkills) { skill in
+                        ForEach(visibleSkills) { skill in
                             HStack(alignment: .top, spacing: 0) {
                                 Toggle(isOn: Binding(
                                     get: { checkedSkillIDs.contains(skill.id) },
@@ -198,6 +243,30 @@ struct SkillsView: View {
                                 Text(L10n.tr("保存在本机。到「项目」选择这个技能，预览变更后再写入项目。"))
                                     .font(AppFont.secondary).foregroundStyle(.secondary)
                             }
+                            let namesakes = libraryIndex.namesakes(of: skill)
+                            if !namesakes.isEmpty {
+                                DisclosureGroup(L10n.tr("同名条目（\(namesakes.count)）")) {
+                                    Text(L10n.tr("按 SKILL.md 名称比较，忽略大小写及首尾空格；未声明名称时使用目录名。重名不代表内容相同。"))
+                                        .font(AppFont.secondary).foregroundStyle(.secondary)
+                                    ForEach(namesakes) { other in
+                                        Button {
+                                            filter = .all; sourceID = ""; model.updateQuery("")
+                                            model.selectedSkillID = other.id
+                                        } label: {
+                                            VStack(alignment: .leading, spacing: 4) {
+                                                Text(other.id)
+                                                if let sameContent = SkillLibraryIndex.hasSameContent(other, skill) {
+                                                    Text(sameContent ? L10n.tr("内容相同") : L10n.tr("内容不同"))
+                                                        .font(AppFont.secondary)
+                                                } else {
+                                                    Text(L10n.tr("内容是否相同待核对"))
+                                                        .font(AppFont.secondary)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                             Divider()
                             KeyValueLine(key: L10n.tr("版本"), value: skill.declaredVersion ?? L10n.tr("未声明"))
                             KeyValueLine(key: L10n.tr("文件大小"), value: L10n.tr("\(skill.fileCount) 文件 · \(L10n.byteCount(Int64(skill.bytes)))"))
@@ -261,7 +330,7 @@ struct SkillsView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         } else {
-            EmptyState(icon: "wand.and.stars", title: L10n.tr("没有匹配的技能"), detail: L10n.tr("请清空搜索，或到「技能来源」预览其他仓库。"))
+            EmptyState(icon: "wand.and.stars", title: L10n.tr("没有匹配的技能"), detail: L10n.tr("请清空筛选，或到「技能来源」预览其他仓库。"))
         }
     }
 }

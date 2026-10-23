@@ -86,7 +86,7 @@ struct SidebarList: NSViewRepresentable {
         }
 
         func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
-            Self.rows[row].item == nil ? 30 : 52
+            Self.rows[row].item == nil ? 30 : 40
         }
 
         func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
@@ -130,13 +130,11 @@ struct SidebarList: NSViewRepresentable {
 
         private func configure(_ cell: SidebarDestinationCell, item: NavigationItem, selected: Bool) {
             cell.titleLabel.stringValue = item.title
-            cell.subtitleLabel.stringValue = item == .skills ? L10n.tr("\(skillCount) 个技能，可搜索和编辑") : item.subtitle
+            cell.setAccessibilityLabel(item.title)
+            cell.toolTip = item.title
             cell.icon.image = NSImage(systemSymbolName: item.systemImage, accessibilityDescription: nil)
             cell.titleLabel.textColor = NSColor(selected ? AppColor.onSelection : AppColor.ink)
-            cell.subtitleLabel.textColor = selected ? NSColor(AppColor.onSelection) : .secondaryLabelColor
             cell.icon.contentTintColor = NSColor(selected ? AppColor.onSelection : AppColor.accentText)
-            cell.setAccessibilityLabel("\(item.title)，\(cell.subtitleLabel.stringValue)")
-            cell.toolTip = "\(item.title)\n\(cell.subtitleLabel.stringValue)"
         }
     }
 }
@@ -152,19 +150,17 @@ final class SidebarSelectionRow: NSTableRowView {
 
 final class SidebarDestinationCell: NSTableCellView {
     let titleLabel = NSTextField(labelWithString: "")
-    let subtitleLabel = NSTextField(labelWithString: "")
     let icon = NSImageView()
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         titleLabel.font = .systemFont(ofSize: 15, weight: .medium)
-        subtitleLabel.font = .systemFont(ofSize: 13)
-        for label in [titleLabel, subtitleLabel] {
+        for label in [titleLabel] {
             label.lineBreakMode = .byTruncatingTail
             label.maximumNumberOfLines = 1
             label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         }
-        let labels = NSStackView(views: [titleLabel, subtitleLabel])
+        let labels = NSStackView(views: [titleLabel])
         labels.orientation = .vertical
         labels.alignment = .leading
         labels.spacing = 2
@@ -181,7 +177,6 @@ final class SidebarDestinationCell: NSTableCellView {
             labels.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
             // 让文本字段跟随行宽收缩，省略号才能在实际可见边界内绘制。
             titleLabel.trailingAnchor.constraint(equalTo: labels.trailingAnchor),
-            subtitleLabel.trailingAnchor.constraint(equalTo: labels.trailingAnchor),
             labels.centerYAnchor.constraint(equalTo: centerYAnchor)
         ])
         textField = titleLabel

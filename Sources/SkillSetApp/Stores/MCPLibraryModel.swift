@@ -2,7 +2,7 @@ import Foundation
 import Observation
 import SkillSetCore
 
-struct MCPLibraryUsageTarget: Identifiable {
+struct MCPLibraryUsageTarget: Identifiable, Sendable {
     let id: String
     let host: MCPHost
     let projectID: UUID?
@@ -26,6 +26,7 @@ final class MCPLibraryModel {
     private(set) var candidates: [MCPLibraryScanCandidate] = []
     private(set) var usageTargets: [MCPLibraryUsageTarget] = []
     private(set) var usageError: String?
+    private var usageRefreshID = UUID()
     private var preferredUsageTargetID: String?
     private(set) var lastSavedID: UUID?
     private(set) var lastImportedIDs: [UUID] = []
@@ -75,6 +76,7 @@ final class MCPLibraryModel {
     }
 
     func loadSelection(host: MCPHost, projectID: UUID?) {
+        usageRefreshID = UUID()
         do {
             selections[store.selectionKey(host: host, projectID: projectID)] = try store.selectedIDs(host: host, projectID: projectID)
             error = nil
@@ -83,6 +85,7 @@ final class MCPLibraryModel {
 
     @discardableResult
     func select(_ id: UUID, enabled: Bool, host: MCPHost, projectID: UUID?) -> Bool {
+        usageRefreshID = UUID()
         do {
             if enabled, !entries.contains(where: { $0.id == id }) { throw MCPLibraryError.missingSelection }
             var ids = try store.selectedIDs(host: host, projectID: projectID)
@@ -95,34 +98,53 @@ final class MCPLibraryModel {
         } catch { self.error = UserFacingText.error(error); return false }
     }
 
-    func refreshUsage() {
-        usageError = nil
-        do {
-            let resolved = locations ?? .detect(stateRoot: paths.applicationSupportRoot)
-            let projects = try ProjectStore(rootURL: paths.applicationSupportRoot).list()
-            var targets: [MCPLibraryUsageTarget] = []
-            let contexts: [(UUID?, String?, URL?)] = [(nil, nil, nil)] + projects.map {
-                ($0.id, $0.name, URL(fileURLWithPath: $0.canonicalPath))
-            }
-            for (projectID, projectName, root) in contexts {
-                let manager = MCPConfigurationManager(projectRoot: root, applicationSupportRoot: paths.applicationSupportRoot,
-                    environment: ["CODEX_HOME": resolved.codexRoot.path], homeDirectory: resolved.home)
-                for target in manager.targets() where target.scope == (projectID == nil ? .user : .project) {
-                    let inspection = manager.inspect(target)
-                    let selected = try store.selectedIDs(host: target.host, projectID: projectID)
-                    let applied = try store.applied(configPath: target.configPath)
-                    selections[store.selectionKey(host: target.host, projectID: projectID)] = selected
-                    targets.append(MCPLibraryUsageTarget(id: store.selectionKey(host: target.host, projectID: projectID),
-                        host: target.host, projectID: projectID, projectName: projectName, configPath: target.configPath,
-                        selectedIDs: selected, appliedEntries: applied?.entries ?? [], observedNames: inspection.servers.map(\.name),
-                        issue: UserFacingText.mcpStatus(inspection)))
-                }
-            }
-            usageTargets = targets
-        } catch {
-            usageTargets = []
-            usageError = UserFacingText.error(error)
+    nonisolated private static func readUsage(paths: SkillSetRuntimePaths, locations: GlobalConfigurationLocations?) throws -> [MCPLibraryUsageTarget] {
+        let store = MCPLibraryStore(rootURL: paths.applicationSupportRoot)
+        let resolved = locations ?? .detect(stateRoot: paths.applicationSupportRoot)
+        let projects = try ProjectStore(rootURL: paths.applicationSupportRoot).list()
+        var targets: [MCPLibraryUsageTarget] = []
+        let contexts: [(UUID?, String?, URL?)] = [(nil, nil, nil)] + projects.map {
+            ($0.id, $0.name, URL(fileURLWithPath: $0.canonicalPath))
         }
+        for (projectID, projectName, root) in contexts {
+            let manager = MCPConfigurationManager(projectRoot: root, applicationSupportRoot: paths.applicationSupportRoot,
+                environment: ["CODEX_HOME": resolved.codexRoot.path], homeDirectory: resolved.home)
+            for target in manager.targets() where target.scope == (projectID == nil ? .user : .project) {
+                let inspection = manager.inspect(target)
+                let selected = try store.selectedIDs(host: target.host, projectID: projectID)
+                let applied = try store.applied(configPath: target.configPath)
+                targets.append(MCPLibraryUsageTarget(id: store.selectionKey(host: target.host, projectID: projectID),
+                    host: target.host, projectID: projectID, projectName: projectName, configPath: target.configPath,
+                    selectedIDs: selected, appliedEntries: applied?.entries ?? [], observedNames: inspection.servers.map(\.name),
+                    issue: UserFacingText.mcpStatus(inspection)))
+            }
+        }
+        return targets
+    }
+
+    private func applyUsage(_ result: Result<[MCPLibraryUsageTarget], Error>) {
+        do {
+            usageTargets = try result.get()
+            for target in usageTargets { selections[target.id] = target.selectedIDs }
+            usageError = nil
+        } catch { usageError = UserFacingText.error(error) }
+    }
+
+    func refreshUsage() {
+        usageRefreshID = UUID()
+        applyUsage(Result { try Self.readUsage(paths: paths, locations: locations) })
+    }
+
+    func refreshUsageInBackground() async {
+        guard !Task.isCancelled else { return }
+        let request = UUID()
+        usageRefreshID = request
+        let paths = paths, locations = locations
+        let result = await Task.detached(priority: .userInitiated) {
+            Result { try Self.readUsage(paths: paths, locations: locations) }
+        }.value
+        guard usageRefreshID == request, !Task.isCancelled else { return }
+        applyUsage(result)
     }
 
     func prepareUse(_ entry: MCPLibraryEntry, host: MCPHost, projectID: UUID?) -> StoredDeploymentPlan? {

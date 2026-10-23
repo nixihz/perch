@@ -1,8 +1,11 @@
 import Foundation
 import Darwin
+import OSLog
 import SkillSetCore
 
 enum UserFacingText {
+    private static let errorLogger = Logger(subsystem: "com.xiezhixin.perch", category: "ApplicationError")
+
     @MainActor
     static func templateTitle(_ template: TemplateRecord, language: AppLanguage? = nil) -> String {
         template.isLocal ? template.title : L10n.text(template.title, language: language)
@@ -66,6 +69,19 @@ enum UserFacingText {
 
     // 异常的附带文本可能来自系统或外部进程，不能作为界面文案直接展示。
     static func error(_ error: Error) -> String {
+        let message = errorMessage(error)
+        let code = (error as? any SkillSetCodedError)?.code ?? "UNCLASSIFIED"
+        let systemError = error as NSError
+        errorLogger.error("code=\(code, privacy: .public) type=\(String(reflecting: type(of: error)), privacy: .public) domain=\(systemError.domain, privacy: .public) systemCode=\(systemError.code) message=\(message, privacy: .private)")
+        return message
+    }
+
+    private static func errorMessage(_ error: Error) -> String {
+        // 只展示由 Core 定义的原因与文件路径，不回显解码器或外部进程的原始异常。
+        if let globalError = error as? GlobalConfigurationError,
+           case .verificationFailed = globalError {
+            return globalError.localizedDescription
+        }
         let code = (error as? any SkillSetCodedError)?.code
             ?? (error as? MCPConfigurationError)?.code
             ?? (error as? PluginInventoryError)?.code

@@ -26,12 +26,16 @@ struct GlobalConfigurationView: View {
                 .frame(width: geometry.size.width, alignment: .leading)
             }
         }
-        .task { global.refresh() }
+        .task { await global.refreshInBackground() }
         .accessibilityIdentifier("global.configuration")
     }
 
     private var configurationCards: some View {
         VStack(alignment: .leading, spacing: AppLayout.columnSpacing) {
+            if global.isRefreshing {
+                ProgressView(L10n.tr("正在读取配置…"))
+                    .controlSize(.small)
+            }
             draftCard
             MCPSelectionCard(model: model, host: global.host, projectID: nil)
             PluginConfigurationCard(model: model, host: global.host)
@@ -44,32 +48,38 @@ struct GlobalConfigurationView: View {
         SurfaceCard {
             VStack(alignment: .leading, spacing: 14) {
                 Text(L10n.tr("AI 工具")).font(AppFont.heading)
-                ForEach(MCPHost.allCases) { host in
-                    Button { global.selectHost(host) } label: {
-                        HStack {
-                            Text(host.displayName)
-                            Spacer()
-                            if global.host == host { Image(systemName: "checkmark") }
+                HStack(spacing: 8) {
+                    ForEach(MCPHost.allCases) { host in
+                        Button { global.selectHost(host, inBackground: true) } label: {
+                            HStack {
+                                Text(host.displayName)
+                                Spacer()
+                                if global.host == host { Image(systemName: "checkmark") }
+                            }
+                            .padding(10)
+                            .selectionRow(global.host == host)
+                            .contentShape(Rectangle())
                         }
-                        .padding(10)
-                        .selectionRow(global.host == host)
-                        .contentShape(Rectangle())
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("global.host.\(host.rawValue)")
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("global.host.\(host.rawValue)")
                 }
                 Divider()
-                Text(L10n.tr("技能目录")).font(AppFont.secondary.weight(.semibold))
-                path(global.locations.skillsRoot(global.host).path)
-                Text(L10n.tr("规则文件")).font(AppFont.secondary.weight(.semibold))
-                path(global.locations.rulesURL(global.host).path)
-                Text(L10n.tr("本机管理记录")).font(AppFont.secondary.weight(.semibold))
-                path(global.locations.stateRoot.appendingPathComponent("global").path)
-                Divider()
-                Text(L10n.tr("在下方选择 MCP 服务和插件，分别预览配置计划。"))
-                    .font(AppFont.secondary).foregroundStyle(.secondary)
-                Button(L10n.tr("管理 MCP 服务")) { model.section = .mcp }
-                Button(L10n.tr("管理插件来源")) { model.section = .plugins }
+                KeyValueLine(key: L10n.tr("技能目录"), value: global.locations.skillsRoot(global.host).path, monospaced: true)
+                KeyValueLine(key: L10n.tr("规则文件"), value: global.locations.rulesURL(global.host).path, monospaced: true)
+                DisclosureGroup {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(L10n.tr("本机管理记录")).font(AppFont.secondary.weight(.semibold))
+                        path(global.locations.stateRoot.appendingPathComponent("global").path)
+                        Text(L10n.tr("在下方选择 MCP 服务和插件，分别预览配置计划。"))
+                            .font(AppFont.secondary).foregroundStyle(.secondary)
+                        Button(L10n.tr("管理 MCP 服务")) { model.section = .mcp }
+                        Button(L10n.tr("管理插件来源")) { model.section = .plugins }
+                    }
+                    .padding(.top, 10)
+                } label: {
+                    Text(L10n.tr("本机管理记录")).font(AppFont.secondary)
+                }
             }
         }
     }
@@ -112,13 +122,20 @@ struct GlobalConfigurationView: View {
                             Text(host.displayName + ": " + L10n.text(error))
                                 .font(AppFont.secondary).foregroundStyle(.red)
                             Spacer()
-                            Button(L10n.tr("重新扫描")) { global.refresh() }
+                            Button(L10n.tr("重新扫描")) { Task { await global.refreshInBackground() } }
                         }
                     }
                 }
                 let skills = matchingSkills(model.snapshot.catalog.entries, query: global.query, sourceOrigins: model.sourceOrigins)
+                HStack {
+                    Text(L10n.tr("\(skills.count) 个匹配"))
+                    Spacer()
+                    Text(global.host.displayName + " · " + L10n.tr("\(global.draft.skillIDs.count) 个技能"))
+                }
+                .font(AppFont.metadata)
+                .foregroundStyle(.secondary)
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 12) {
+                    LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(skills) { skill in
                             HStack(alignment: .top, spacing: 10) {
                                 VStack(alignment: .leading, spacing: 3) {
@@ -143,6 +160,8 @@ struct GlobalConfigurationView: View {
                                     }
                                 )
                             }
+                            .padding(.vertical, 10)
+                            Divider()
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -193,7 +212,7 @@ struct GlobalConfigurationView: View {
                 HStack {
                     Text(L10n.tr("全局文件现状")).font(AppFont.heading)
                     Spacer()
-                    Button(L10n.tr("重新扫描")) { global.refresh() }
+                    Button(L10n.tr("重新扫描")) { Task { await global.refreshInBackground() } }
                 }
                 ForEach(global.inspection?.resources ?? []) { resource in
                     VStack(alignment: .leading, spacing: 5) {

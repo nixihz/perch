@@ -95,6 +95,36 @@ final class SkillFileBrowserTests: XCTestCase {
         }
     }
 
+    func testBackgroundReadSwitchesDocumentAndReportsMissingFiles() async throws {
+        try await withFixture { model, root in
+            await model.loadSelectedSkillDocumentInBackground()
+            XCTAssertTrue(model.selectedSkillDocument.contains("技能正文"))
+            XCTAssertEqual(model.selectedSkillFiles.count, 3)
+            model.selectedSkillID = "workspace/single"
+            await model.loadSelectedSkillDocumentInBackground()
+            XCTAssertTrue(model.selectedSkillDocument.contains("单文件正文"))
+            XCTAssertTrue(model.selectedSkillFiles.isEmpty)
+            try FileManager.default.removeItem(at: root.appendingPathComponent("repo/skills/single"))
+            await model.loadSelectedSkillDocumentInBackground()
+            XCTAssertTrue(model.selectedSkillDocument.contains("单文件正文"), "同一技能刷新失败保留上次可读取的正文")
+            XCTAssertNotNil(model.libraryError)
+            XCTAssertFalse(model.isLoadingSkillDocument)
+        }
+    }
+
+    func testCancelledBackgroundReadDoesNotPublishDocument() async throws {
+        try await withFixture { model, _ in
+            let task = Task { await model.loadSelectedSkillDocumentInBackground() }
+            task.cancel()
+            await task.value
+            XCTAssertTrue(model.selectedSkillDocument.isEmpty)
+            XCTAssertTrue(model.selectedSkillFiles.isEmpty)
+            XCTAssertFalse(model.isLoadingSkillDocument)
+            await model.loadSelectedSkillDocumentInBackground()
+            XCTAssertTrue(model.selectedSkillDocument.contains("技能正文"))
+        }
+    }
+
     private func settle(_ view: NSView) async throws {
         try await Task.sleep(for: .milliseconds(120))
         view.layoutSubtreeIfNeeded()

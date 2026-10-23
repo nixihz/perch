@@ -19,15 +19,11 @@ struct MCPObservedServersView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            PageHeader(
+            PageActionHeader(
                 eyebrow: "MCP SERVERS",
                 title: L10n.tr("AI 工具中的 MCP 配置"),
                 detail: L10n.tr("查看 Codex 和 Claude Code 的 MCP 配置。修改前先生成计划，等你在本机批准；不会读取凭据值或启动服务。")
-            )
-            HStack(spacing: 8) {
-                Text(L10n.tr("\(model.mcpConfigInspections.count) 个配置目标 · \(model.mcpServers.count) 个服务"))
-                    .font(AppFont.secondary).foregroundStyle(.secondary)
-                Spacer()
+            ) {
                 Button {
                     editingServer = nil
                     configPresented = true
@@ -36,6 +32,14 @@ struct MCPObservedServersView: View {
                 }
                 .buttonStyle(AppButtonStyle(kind: .primary))
                 .tint(AppColor.accent)
+            }
+            HStack(spacing: 8) {
+                if model.isRefreshingMCPConfigurations {
+                    ProgressView().controlSize(.small).accessibilityLabel(L10n.tr("正在读取配置…"))
+                }
+                Text(L10n.tr("\(model.mcpConfigInspections.count) 个配置目标 · \(model.mcpServers.count) 个服务"))
+                    .font(AppFont.secondary).foregroundStyle(.secondary)
+                Spacer()
             }
             if let project = model.selectedProject {
                 Text(L10n.tr("显示全局配置与项目：\(project.name)"))
@@ -66,11 +70,8 @@ struct MCPObservedServersView: View {
         } message: {
             Text(L10n.tr("只移除选中的服务配置，不卸载程序。预览并批准计划后才会写入；用户级配置会影响该工具的全部项目。"))
         }
-        .task {
-            model.refreshMCPConfigurations()
-        }
-        .onChange(of: model.selectedProjectID) {
-            model.refreshMCPConfigurations()
+        .task(id: model.selectedProjectID) {
+            await model.refreshMCPConfigurationsInBackground()
         }
     }
 
@@ -345,4 +346,3 @@ struct MCPConfigSheet: View {
         .frame(width: 600, height: 620)
     }
 }
-

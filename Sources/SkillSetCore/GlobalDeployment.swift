@@ -75,7 +75,7 @@ extension GlobalConfigurationManager {
             desired.insert(rules.path)
             _ = try builder.observe(rules)
             let original = try dataIfPresent(rules)
-            let observedBody = try original.flatMap { try ruleBody($0) }
+            let observedBody = try original.flatMap { try ruleBody($0, path: rules.path) }
             let old = current?.managed[rules.path]
             if let old, observedBody.map({ SkillAssetCopier.sha256(Data($0.utf8)) }) != old.hash {
                 throw DeploymentError.managedRuleDrift(rules.path)
@@ -133,9 +133,9 @@ extension GlobalConfigurationManager {
         let actual = try builder.observe(target)
         if target == locations.rulesURL(host) {
             let current = try dataIfPresent(target)
-            guard let current, try ruleBody(current).map({ SkillAssetCopier.sha256(Data($0.utf8)) }) == resource.hash,
+            guard let current, try ruleBody(current, path: target.path).map({ SkillAssetCopier.sha256(Data($0.utf8)) }) == resource.hash,
                   let written = resource.writtenRules else { throw DeploymentError.managedRuleDrift(target.path) }
-            let restored = try GlobalRuleEditing.restore(current: current, written: written, original: resource.originalRules)
+            let restored = try GlobalRuleEditing.restore(current: current, written: written, original: resource.originalRules, path: target.path)
             try builder.write(restored, to: target, summary: "恢复接管前规则，保留后续块外编辑")
         } else {
             guard actual == resource.hash else { throw DeploymentError.managedSkillDrift(target.path) }
@@ -234,36 +234,48 @@ final class GlobalPlanBuilder {
 }
 
 enum GlobalRuleEditing {
-    static func restore(current: Data, written: Data, original: Data?) throws -> Data? {
+    static func body(in text: String, path: String) throws -> String? {
+        do { return try ManagedBlocks.extract(original: text, id: GlobalConfigurationManager.blockID) }
+        catch is ManagedBlockError {
+            throw GlobalConfigurationError.verificationFailed(.invalidRuleMarkers, path: path)
+        }
+    }
+
+    static func restore(current: Data, written: Data, original: Data?, path: String = "") throws -> Data? {
         if current == written { return original }
         guard let text = String(data: current, encoding: .utf8),
               let expected = String(data: written, encoding: .utf8),
-              original == nil || String(data: original!, encoding: .utf8) != nil else { throw GlobalConfigurationError.corruptState }
-        let id = GlobalConfigurationManager.blockID
-        let currentBody = try ManagedBlocks.extract(original: text, id: id)
-        let expectedBody = try ManagedBlocks.extract(original: expected, id: id)
+              original == nil || String(data: original!, encoding: .utf8) != nil else { throw GlobalConfigurationError.verificationFailed(.invalidRulesEncoding, path: path) }
+        let currentBody = try body(in: text, path: path)
+        let expectedBody = try body(in: expected, path: path)
         guard currentBody == expectedBody else { throw DeploymentError.managedRuleDrift("global-rules") }
         let originalText = original.flatMap { String(data: $0, encoding: .utf8) } ?? ""
         // 按原始标记范围替换，保留块外的空白和新增内容。
-        let originalBlock = try blockRange(originalText).map { String(originalText[$0]) } ?? ""
-        if let range = try blockRange(text) {
-            return Data(text.replacingCharacters(in: range, with: originalBlock).utf8)
+        let originalBlock = try blockRange(originalText, path: path).map { Data(originalText.utf8).subdata(in: $0) } ?? Data()
+        if let range = try blockRange(text, path: path) {
+            var restored = current
+            restored.replaceSubrange(range, with: originalBlock)
+            return restored
         }
         if originalBlock.isEmpty { return current }
-        return Data((text + (text.isEmpty || text.hasSuffix("\n") ? "" : "\n") + originalBlock).utf8)
+        var restored = current
+        if !text.isEmpty && !text.hasSuffix("\n") { restored.append(contentsOf: [0x0a]) }
+        restored.append(originalBlock)
+        return restored
     }
 
-    private static func blockRange(_ text: String) throws -> Range<String.Index>? {
+    private static func blockRange(_ text: String, path: String) throws -> Range<Int>? {
         let id = GlobalConfigurationManager.blockID
-        guard try ManagedBlocks.extract(original: text, id: id) != nil else { return nil }
-        var start: String.Index?
-        var cursor = text.startIndex
+        guard try body(in: text, path: path) != nil else { return nil }
+        var start: Int?
+        var cursor = 0
         for line in text.components(separatedBy: "\n") {
-            let end = text.index(cursor, offsetBy: line.count)
+            // CRLF 在 Swift 中是一个 Character；按 UTF-8 字节定位，避免越过规则块破坏用户正文。
+            let end = cursor + line.utf8.count
             if line.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("<!-- skillset:begin id=\(id) schema=") { start = cursor }
             if line.trimmingCharacters(in: .whitespacesAndNewlines) == ManagedBlocks.endMarker(id: id), let start { return start..<end }
-            cursor = end < text.endIndex ? text.index(after: end) : end
+            cursor = end + 1
         }
-        throw GlobalConfigurationError.corruptState
+        throw GlobalConfigurationError.verificationFailed(.invalidRuleMarkers, path: path)
     }
 }

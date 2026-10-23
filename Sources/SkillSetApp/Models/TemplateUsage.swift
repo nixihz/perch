@@ -6,7 +6,7 @@ enum TemplateUseTarget: Hashable {
     case global(MCPHost)
 }
 
-enum TemplateReferenceTarget: Hashable {
+enum TemplateReferenceTarget: Hashable, Sendable {
     case project(String, MCPHost)
     case global(MCPHost)
 }
@@ -16,7 +16,7 @@ struct TemplateUseRequest: Identifiable {
     var id: String { template.id }
 }
 
-struct TemplateReference: Identifiable {
+struct TemplateReference: Identifiable, Sendable {
     let id: String
     let name: String
     let inDraft: Bool
@@ -39,7 +39,23 @@ struct TemplateUsePreview: Equatable {
 extension AppModel {
     /// 使用位置读取持久化引用；盘点失败时报告未知，不把它显示为未使用。
     func templateReferences(_ id: String) throws -> [TemplateReference] {
-        let paths = runtimePaths
+        try Self.readTemplateReferences(id, paths: runtimePaths, locations: globalConfiguration.locations, snapshot: snapshot)
+    }
+
+    func templateReferencesInBackground(_ id: String) async throws -> [TemplateReference] {
+        try Task.checkCancellation()
+        let paths = runtimePaths, locations = globalConfiguration.locations, snapshot = snapshot
+        let references = try await Task.detached(priority: .userInitiated) {
+            try Self.readTemplateReferences(id, paths: paths, locations: locations, snapshot: snapshot)
+        }.value
+        try Task.checkCancellation()
+        return references
+    }
+
+    nonisolated private static func readTemplateReferences(
+        _ id: String, paths: SkillSetRuntimePaths, locations: GlobalConfigurationLocations, snapshot: AppSnapshot
+    ) throws -> [TemplateReference] {
+        guard !id.isEmpty else { return [] }
         let drafts = ProjectDraftStore(rootURL: paths.applicationSupportRoot)
         var references: [TemplateReference] = []
         for project in try ProjectStore(rootURL: paths.applicationSupportRoot).list() {
@@ -65,7 +81,7 @@ extension AppModel {
                 }
             }
         }
-        let global = GlobalConfigurationManager(paths: paths, locations: globalConfiguration.locations)
+        let global = GlobalConfigurationManager(paths: paths, locations: locations)
         for host in MCPHost.allCases {
             let inDraft = try global.draft(host: host).instructionIDs.contains(id)
             let selection = try global.appliedSelection(host: host)
@@ -73,7 +89,7 @@ extension AppModel {
             let expectedBodies = selection.instructionIDs.compactMap { selectedID in
                 snapshot.templates.first { $0.id == selectedID }?.body
             }
-            let rulesURL = globalConfiguration.locations.rulesURL(host)
+            let rulesURL = locations.rulesURL(host)
             let text = FileManager.default.fileExists(atPath: rulesURL.path) ? try String(contentsOf: rulesURL, encoding: .utf8) : ""
             let actualBody = try ManagedBlocks.extract(original: text, id: "global-rules")
             let expectedBody = expectedBodies.joined(separator: "\n\n").trimmingCharacters(in: .whitespacesAndNewlines)

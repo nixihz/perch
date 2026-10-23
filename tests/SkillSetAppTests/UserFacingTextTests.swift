@@ -29,6 +29,14 @@ final class UserFacingTextTests: XCTestCase {
         XCTAssertEqual(UserFacingText.planSummary(actualChange), rawDiff)
     }
 
+    func testGlobalVerificationShowsSpecificReasonAndFile() {
+        let error = GlobalConfigurationError.verificationFailed(.missingReceipt, path: "/local/global/codex.json")
+        let message = UserFacingText.error(error)
+        XCTAssertTrue(message.contains("找不到与当前管理记录内容指纹匹配的已完成操作凭证"))
+        XCTAssertTrue(message.contains("/local/global/codex.json"))
+        XCTAssertFalse(message.contains("已有文件保持不变"))
+    }
+
     func testMCPStatusKeepsOwnershipSeparateFromLoadingAndRejectsUnknownInput() {
         let managed = UserFacingText.mcpState("管理器受管")
         let existing = UserFacingText.mcpState("仅观察")

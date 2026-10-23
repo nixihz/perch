@@ -11,11 +11,36 @@ struct SourcesView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            PageHeader(
+            PageActionHeader(
                 eyebrow: "SOURCE REGISTRY",
                 title: L10n.tr("技能来源"),
                 detail: L10n.tr("配置来源后同步到 ~/.perch，全部技能可在技能库搜索；也可浏览 skills.sh 目录，将技能安装到本机技能库。")
-            )
+            ) {
+                Button {
+                    browsingSkillsSh = true
+                } label: {
+                    Label("skills.sh", systemImage: "sparkle.magnifyingglass")
+                        .frame(minHeight: 32)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(AppButtonStyle(kind: .quiet))
+                .help(L10n.tr("浏览 skills.sh"))
+                .accessibilityLabel(L10n.tr("浏览 skills.sh"))
+                .accessibilityIdentifier("sources.skillsSh.browse")
+                .disabled(model.isWorking)
+                Button {
+                    editor = SourceEditorDraft()
+                } label: {
+                    Label(L10n.tr("添加技能来源"), systemImage: "plus")
+                        .frame(minHeight: 32)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(AppButtonStyle(kind: .primary))
+                .help(L10n.tr("添加技能来源"))
+                .accessibilityLabel(L10n.tr("添加技能来源"))
+                .accessibilityIdentifier("sources.add")
+                .disabled(model.isWorking)
+            }
 
             if let error = model.sourceImportError, importingSkill == nil {
                 Text(L10n.text(error)).font(AppFont.secondary).foregroundStyle(.red)
@@ -64,30 +89,6 @@ struct SourcesView: View {
                 Text(L10n.tr("技能来源"))
                     .font(AppFont.heading)
                 Spacer()
-                Button {
-                    browsingSkillsSh = true
-                } label: {
-                    Label("skills.sh", systemImage: "sparkle.magnifyingglass")
-                        .frame(minHeight: 32)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(AppButtonStyle(kind: .quiet))
-                .help(L10n.tr("浏览 skills.sh"))
-                .accessibilityLabel(L10n.tr("浏览 skills.sh"))
-                .accessibilityIdentifier("sources.skillsSh.browse")
-                .disabled(model.isWorking)
-                Button {
-                    editor = SourceEditorDraft()
-                } label: {
-                    Label(L10n.tr("添加技能来源"), systemImage: "plus")
-                        .frame(minHeight: 32)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(AppButtonStyle(kind: .quiet))
-                .help(L10n.tr("添加技能来源"))
-                .accessibilityLabel(L10n.tr("添加技能来源"))
-                .accessibilityIdentifier("sources.add")
-                .disabled(model.isWorking)
             }
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {

@@ -46,14 +46,30 @@ public struct GlobalConfigurationLocations: Sendable {
     }
 }
 
+public enum GlobalVerificationReason: String, Sendable {
+    case invalidDraft = "全局草稿格式无效或缺少必需字段"
+    case invalidState = "全局管理记录格式无效或缺少必需字段"
+    case unsupportedSchema = "全局管理记录的数据版本不受支持"
+    case hostMismatch = "管理记录中的 AI 工具与当前工具不一致"
+    case skillsPathMismatch = "管理记录中的技能目录与当前目录不一致"
+    case rulesPathMismatch = "管理记录中的规则文件路径与当前路径不一致"
+    case unmanagedPath = "管理记录包含当前工具管理范围以外的路径"
+    case missingReceipt = "找不到与当前管理记录内容指纹匹配的已完成操作凭证"
+    case invalidRulesEncoding = "规则内容不是有效的 UTF-8 文本"
+    case missingStateStep = "撤销操作的日志缺少全局管理记录变更步骤"
+    case invalidBackup = "操作备份中的全局管理记录格式无效"
+    case invalidRuleMarkers = "规则内容的起止标记无法配对"
+}
+
 public enum GlobalConfigurationError: Error, LocalizedError, SkillSetCodedError {
     case corruptState
+    case verificationFailed(GlobalVerificationReason, path: String)
     case baselineMissing
     case staleOperation
 
     public var code: String {
         switch self {
-        case .corruptState: "GLOBAL_STATE_CORRUPT"
+        case .corruptState, .verificationFailed: "GLOBAL_STATE_CORRUPT"
         case .baselineMissing: "GLOBAL_BASELINE_MISSING"
         case .staleOperation: "GLOBAL_OPERATION_STALE"
         }
@@ -61,6 +77,8 @@ public enum GlobalConfigurationError: Error, LocalizedError, SkillSetCodedError 
     public var errorDescription: String? {
         switch self {
         case .corruptState: "全局管理记录损坏或缺少本机操作凭证，请先检查操作历史。"
+        case let .verificationFailed(reason, path):
+            "全局配置核验失败：\(reason.rawValue)。\(path.isEmpty ? "" : "\n文件：\(path)")\n已停止当前操作，请核对上述内容后重试。"
         case .baselineMissing: "原始备份缺失或已改变，已停止还原。"
         case .staleOperation: "已有后续全局变更，请先撤销后续操作。"
         }
@@ -166,7 +184,7 @@ public struct GlobalConfigurationManager {
         let rules = locations.rulesURL(host)
         try check(rules, root: root)
         if let data = try dataIfPresent(rules) {
-            let body = try ruleBody(data)
+            let body = try ruleBody(data, path: rules.path)
             let record = state?.managed[rules.path]
             resources.append(GlobalResourceObservation(path: rules.path, managed: record != nil,
                 modified: record.map { $0.hash != body.map { SkillAssetCopier.sha256(Data($0.utf8)) } } ?? false,
@@ -184,7 +202,7 @@ public struct GlobalConfigurationManager {
         try check(url, root: locations.transactionRoot(host))
         guard let data = try dataIfPresent(url) else { return try loadState(host)?.selection ?? GlobalConfigurationDraft() }
         do { return try JSONDecoder().decode(GlobalConfigurationDraft.self, from: data) }
-        catch { throw GlobalConfigurationError.corruptState }
+        catch { throw GlobalConfigurationError.verificationFailed(.invalidDraft, path: url.path) }
     }
 
     public func saveDraft(_ draft: GlobalConfigurationDraft, host: MCPHost) throws {
@@ -213,14 +231,20 @@ public struct GlobalConfigurationManager {
         guard let data = try dataIfPresent(url) else { return nil }
         let state: GlobalConfigurationState
         do { state = try JSONDecoder().decode(GlobalConfigurationState.self, from: data) }
-        catch { throw GlobalConfigurationError.corruptState }
+        catch { throw GlobalConfigurationError.verificationFailed(.invalidState, path: url.path) }
         let statePath = relative(url, root: locations.transactionRoot(host))
-        guard state.schemaVersion == 1, state.host == host,
-              state.skillsPath == locations.skillsRoot(host).path, state.rulesPath == locations.rulesURL(host).path,
-              state.managed.keys.allSatisfy({ allowedResource(URL(fileURLWithPath: $0), host: host) }),
-              history.contains(where: { $0.state == "applied" && $0.steps.contains { $0.relativePath == statePath && $0.afterHash == SkillAssetCopier.sha256(data) } }) else {
-            throw GlobalConfigurationError.corruptState
+        // 分别报告失败条件，避免把路径变化与缺少凭证都显示成数据损坏。
+        func require(_ condition: Bool, _ reason: GlobalVerificationReason) throws {
+            guard condition else { throw GlobalConfigurationError.verificationFailed(reason, path: url.path) }
         }
+        try require(state.schemaVersion == 1, .unsupportedSchema)
+        try require(state.host == host, .hostMismatch)
+        try require(state.skillsPath == locations.skillsRoot(host).path, .skillsPathMismatch)
+        try require(state.rulesPath == locations.rulesURL(host).path, .rulesPathMismatch)
+        try require(state.managed.keys.allSatisfy({ allowedResource(URL(fileURLWithPath: $0), host: host) }), .unmanagedPath)
+        try require(history.contains(where: { $0.state == "applied" && $0.steps.contains {
+            $0.relativePath == statePath && $0.afterHash == SkillAssetCopier.sha256(data)
+        } }), .missingReceipt)
         return state
     }
 
@@ -328,8 +352,8 @@ public struct GlobalConfigurationManager {
         encoder.outputFormatting = [.sortedKeys, .prettyPrinted, .withoutEscapingSlashes]
         return try encoder.encode(value)
     }
-    func ruleBody(_ data: Data) throws -> String? {
-        guard let text = String(data: data, encoding: .utf8) else { throw GlobalConfigurationError.corruptState }
-        return try ManagedBlocks.extract(original: text, id: Self.blockID)
+    func ruleBody(_ data: Data, path: String = "") throws -> String? {
+        guard let text = String(data: data, encoding: .utf8) else { throw GlobalConfigurationError.verificationFailed(.invalidRulesEncoding, path: path) }
+        return try GlobalRuleEditing.body(in: text, path: path)
     }
 }

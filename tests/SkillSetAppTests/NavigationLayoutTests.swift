@@ -143,6 +143,13 @@ final class NavigationLayoutTests: XCTestCase {
                 model.section = section
                 try await settle(controller.view)
                 let context = "\(section.rawValue) @ \(size) / \(appearance.rawValue)"
+                if let destination = ProcessInfo.processInfo.environment["SKILLSET_ACCEPTANCE_SCREENSHOT_DIR"],
+                   appearance == .aqua, size.width == 1080,
+                   let bitmap = controller.view.bitmapImageRepForCachingDisplay(in: controller.view.bounds) {
+                    controller.view.cacheDisplay(in: controller.view.bounds, to: bitmap)
+                    let url = URL(fileURLWithPath: destination).appendingPathComponent("acceptance-\(section.rawValue).png")
+                    try bitmap.representation(using: .png, properties: [:])?.write(to: url)
+                }
                 let table = try sidebarTable(in: controller.view)
                 let sidebar = try XCTUnwrap(table.enclosingScrollView)
                 assertInsideWindow(sidebar, window: window, context: context)

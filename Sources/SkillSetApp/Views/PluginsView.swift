@@ -6,14 +6,18 @@ struct PluginsView: View {
     @Bindable var model: AppModel
     @State private var sources: [SourcePreviewRecord] = []
     @State private var selectedID: UUID?
-    @State private var inventory: PluginInventorySnapshot?
-    @State private var evidence: PluginImportEvidence?
+    @State private var detailState = DetailSnapshotModel<UUID, PluginSourceDetailSnapshot>()
     @State private var editing: SourcePreviewRecord?
     @State private var editorPresented = false
     @State private var scanPresented = false
     @State private var deleting: SourcePreviewRecord?
     @State private var query = ""
     @State private var error: String?
+    @State private var detailRevision = 0
+
+    private var inventory: PluginInventorySnapshot? { detailState.key == selectedID ? detailState.snapshot?.inventory : nil }
+    private var evidence: PluginImportEvidence? { detailState.key == selectedID ? detailState.snapshot?.evidence : nil }
+    private var detailError: String? { detailState.key == selectedID ? detailState.error : nil }
 
     private var library: PluginSourceLibrary { PluginSourceLibrary(stateRoot: model.runtimePaths.applicationSupportRoot) }
     private var selected: SourcePreviewRecord? { sources.first { $0.id == selectedID } }
@@ -23,8 +27,16 @@ struct PluginsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            PageHeader(eyebrow: "PLUGIN SOURCES", title: L10n.tr("插件来源"),
-                detail: L10n.tr("保存插件仓库或本地包，也可扫描本机插件后收录。需要使用时，再到全局配置或项目选择范围并预览计划。"))
+            PageActionHeader(eyebrow: "PLUGIN SOURCES", title: L10n.tr("插件来源"),
+                detail: L10n.tr("保存插件仓库或本地包，也可扫描本机插件后收录。需要使用时，再到全局配置或项目选择范围并预览计划。")) {
+                Button(L10n.tr("扫描本机插件…")) { scanPresented = true }
+                    .accessibilityIdentifier("plugins.scan")
+                Button { editing = nil; editorPresented = true } label: {
+                    Label(L10n.tr("添加插件来源"), systemImage: "plus")
+                }
+                .buttonStyle(AppButtonStyle(kind: .primary))
+                .accessibilityIdentifier("plugins.source.add")
+            }
             if let error { Text(L10n.text(error)).font(AppFont.secondary).foregroundStyle(.red) }
             HStack(alignment: .top, spacing: AppLayout.columnSpacing) {
                 SurfaceCard {
@@ -32,14 +44,10 @@ struct PluginsView: View {
                         HStack {
                             Text(L10n.tr("插件来源")).font(AppFont.heading)
                             Spacer()
-                            Button { editing = nil; editorPresented = true } label: { Image(systemName: "plus") }
-                                .help(L10n.tr("添加插件来源"))
-                                .accessibilityIdentifier("plugins.source.add")
                         }
                         AppSearchField(query: $query, prompt: L10n.tr("搜索名称或来源"),
                             label: L10n.tr("搜索插件来源"), identifier: "plugins.source.search")
-                        Button(L10n.tr("扫描本机插件…")) { scanPresented = true }
-                            .accessibilityIdentifier("plugins.scan")
+
                         if filtered.isEmpty {
                             Text(L10n.tr("还没有匹配的插件来源。添加仓库、本地目录，或扫描本机插件。"))
                                 .font(AppFont.secondary).foregroundStyle(.secondary)
@@ -66,6 +74,17 @@ struct PluginsView: View {
             }
         }
         .task { reload() }
+        .task(id: DetailRequest(sourceID: selectedID, revision: detailRevision)) {
+            guard let selectedID else { detailState.reset(); return }
+            let root = model.runtimePaths.applicationSupportRoot
+            await detailState.load(for: selectedID) {
+                try await Task.detached(priority: .userInitiated) {
+                    let library = PluginSourceLibrary(stateRoot: root)
+                    return PluginSourceDetailSnapshot(inventory: try library.inventory(selectedID),
+                                                      evidence: try library.evidence(selectedID))
+                }.value
+            }
+        }
         .sheet(isPresented: $editorPresented) {
             PluginSourceEditor(library: library, source: editing) { source in reload(preferred: source.id) }
         }
@@ -109,7 +128,18 @@ struct PluginsView: View {
                     SurfaceCard {
                         VStack(alignment: .leading, spacing: 12) {
                             Text(L10n.tr("来源中的插件")).font(AppFont.heading)
-                            if inventory?.records.isEmpty != false {
+                            if detailState.isLoading {
+                                ProgressView(L10n.tr("正在读取插件内容…")).controlSize(.small)
+                            }
+                            if let error = detailError {
+                                Text(L10n.text(error)).font(AppFont.secondary).foregroundStyle(.red)
+                                if inventory != nil {
+                                    Text(L10n.tr("显示上次读取结果。"))
+                                        .font(AppFont.secondary).foregroundStyle(.secondary)
+                                }
+                                Button(L10n.tr("重新读取")) { detailRevision += 1 }
+                            }
+                            if inventory?.records.isEmpty == true && !detailState.isLoading && detailError == nil {
                                 Text(L10n.tr("没有发现可识别的插件清单；该来源仍可保留，宿主兼容性需要另行核对。"))
                                     .font(AppFont.secondary).foregroundStyle(.secondary)
                             }
@@ -172,18 +202,25 @@ struct PluginsView: View {
             sources = try library.sources()
             selectedID = preferred ?? selectedID
             if let source = sources.first(where: { $0.id == selectedID }) ?? sources.first { select(source) }
-            else { selectedID = nil; inventory = nil; evidence = nil }
+            else { selectedID = nil; detailState.reset() }
             error = nil
         } catch { self.error = UserFacingText.error(error) }
     }
 
     private func select(_ source: SourcePreviewRecord) {
         selectedID = source.id
-        inventory = nil
-        evidence = nil
-        do { inventory = try library.inventory(source.id); evidence = try library.evidence(source.id); error = nil }
-        catch { self.error = UserFacingText.error(error) }
+        detailRevision += 1
     }
+
+    private struct DetailRequest: Hashable {
+        let sourceID: UUID?
+        let revision: Int
+    }
+}
+
+private struct PluginSourceDetailSnapshot: Sendable {
+    let inventory: PluginInventorySnapshot
+    let evidence: PluginImportEvidence?
 }
 
 private struct PluginSourceEditor: View {

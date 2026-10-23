@@ -62,15 +62,10 @@ struct SidebarView: View {
                     HStack(spacing: 10) {
                         Image(systemName: "gearshape")
                             .foregroundStyle(AppColor.accentText)
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(L10n.text("设置"))
-                                .font(AppFont.secondary.weight(.semibold))
-                            Text(L10n.text("外观与语言"))
-                                .font(AppFont.metadata)
-                                .foregroundStyle(.secondary)
-                        }
-                        .lineLimit(1)
-                        .truncationMode(.tail)
+                        Text(L10n.text("设置"))
+                            .font(AppFont.secondary.weight(.semibold))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
                         Spacer(minLength: 0)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)

@@ -51,6 +51,7 @@ final class SourceImportWorkflowTests: XCTestCase {
             model.removeSourcePreview(preview.id)
             model.showLibrarySkill(entry.id)
             XCTAssertEqual(model.section, .skills)
+            await model.loadSelectedSkillDocumentInBackground()
             XCTAssertTrue(model.selectedSkillDocument.contains("来源正文"))
             XCTAssertTrue(model.selectedSkillFiles.contains { $0.path == "references/guide.md" })
             XCTAssertEqual(model.sourceOrigins[entry.id]?.commit, preview.resolvedCommit)

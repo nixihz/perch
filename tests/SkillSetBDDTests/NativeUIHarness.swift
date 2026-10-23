@@ -156,9 +156,7 @@ final class NativeUIHarness {
         }
         running.activate(options: .activateAllWindows)
         try waitUntil("主窗口出现") {
-            !self.nodes().filter {
-                $0.role == kAXWindowRole as String
-            }.isEmpty
+            try self.hasWindow()
         }
         // 主窗口先于内容树出现，提前操作会让场景误报侧栏缺失。
         try waitUntil("侧栏出现") {
@@ -173,9 +171,7 @@ final class NativeUIHarness {
     }
 
     func hasWindow() throws -> Bool {
-        !nodes().filter {
-            $0.role == kAXWindowRole as String
-        }.isEmpty
+        !windows().isEmpty
     }
 
     func hasCodexMCPConfiguration() -> Bool {
@@ -933,14 +929,37 @@ final class NativeUIHarness {
     }
 
     private func nodes() -> [NativeUINode] {
-        collect(from: application)
+        // AXWindows 不一定包含在应用的 AXChildren 中；应用根仍保留菜单与弹出内容。
+        collect(from: windows() + [application])
+    }
+
+    private func windows() -> [AXUIElement] {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            application, kAXWindowsAttribute as CFString, &value
+        ) == .success else { return [] }
+        return (value as? [AXUIElement]) ?? []
     }
 
     private func collect(from root: AXUIElement) -> [NativeUINode] {
+        collect(from: [root])
+    }
+
+    private func collect(from roots: [AXUIElement]) -> [NativeUINode] {
         var output: [NativeUINode] = []
-        var queue = [root]
+        var queue: [AXUIElement] = []
+        // AXChildren 可能存在重复边；CFEqual 按远端 AX 元素身份比较，而非本地代理地址。
+        var callbacks = kCFTypeSetCallBacks
+        guard let visited = CFSetCreateMutable(nil, 0, &callbacks) else { return [] }
+        func enqueue(_ element: AXUIElement) {
+            let pointer = Unmanaged.passUnretained(element).toOpaque()
+            guard queue.count < 20_000, !CFSetContainsValue(visited, pointer) else { return }
+            CFSetAddValue(visited, pointer)
+            queue.append(element)
+        }
+        roots.forEach(enqueue)
         var index = 0
-        while index < queue.count && output.count < 20_000 {
+        while index < queue.count {
             let element = queue[index]
             index += 1
             output.append(NativeUINode(
@@ -953,7 +972,7 @@ final class NativeUIHarness {
                 placeholder: stringAttribute(element, kAXPlaceholderValueAttribute),
                 enabled: boolAttribute(element, kAXEnabledAttribute)
             ))
-            queue.append(contentsOf: children(of: element))
+            children(of: element).forEach(enqueue)
         }
         return output
     }

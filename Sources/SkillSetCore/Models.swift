@@ -591,8 +591,12 @@ public struct MCPConfigDraft: Hashable, Sendable {
 
 public func matchingSkills(_ entries: [SkillEntry], query: String, sourceID: String? = nil, sourceOrigins: [String: SourceSkillOrigin] = [:]) -> [SkillEntry] {
     let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines).localizedLowercase
+    if normalized.isEmpty && sourceID == nil { return entries }
     return entries.filter { entry in
+        guard sourceID == nil || entry.sourceId == sourceID else { return false }
+        // 空搜索直接返回，避免切页与选择时反复拼接并转换整个目录的文本。
+        guard !normalized.isEmpty else { return true }
         let searchable = "\(entry.id) \(entry.slug) \(entry.path) \(entry.description) \(entry.declaredName) \(sourceOrigins[entry.id]?.url ?? "") \(sourceOrigins[entry.id]?.path ?? "")".localizedLowercase
-        return (sourceID == nil || entry.sourceId == sourceID) && (normalized.isEmpty || searchable.contains(normalized))
+        return searchable.contains(normalized)
     }
 }

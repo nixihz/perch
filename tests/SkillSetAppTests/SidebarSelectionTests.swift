@@ -52,7 +52,10 @@ final class SidebarSelectionTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(80))
         XCTAssertEqual(table.selectedRow, 12, "菜单快捷键改变绑定时，原生侧栏必须同步")
         let skillCell = try XCTUnwrap(table.view(atColumn: 0, row: 5, makeIfNecessary: true) as? SidebarDestinationCell)
-        XCTAssertEqual(skillCell.subtitleLabel.stringValue, AppPreferences.shared.language.resolved() == .english ? "151 skills to search and edit" : "151 个技能，可搜索和编辑")
+        XCTAssertEqual(skillCell.titleLabel.stringValue, NavigationItem.skills.title)
+        XCTAssertEqual(skillCell.accessibilityLabel(), NavigationItem.skills.title)
+        XCTAssertEqual(skillCell.subviews.flatMap { ($0 as? NSStackView)?.arrangedSubviews ?? [] }.compactMap { $0 as? NSTextField }.count, 1,
+                       "导航仅显示主标题")
 
         selected = .settings
         controller.rootView = SidebarList(selection: binding, skillCount: 152)

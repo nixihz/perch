@@ -31,7 +31,7 @@ struct MCPServersView: View {
             if tab == "observed" { MCPObservedServersView(model: model) }
             else { libraryContent }
         }
-        .task { library.refresh(); library.refreshUsage() }
+        .task { library.refresh(); await library.refreshUsageInBackground() }
         .sheet(item: $editor) { entry in
             MCPLibraryEditorSheet(library: library, entry: entry) { saved in
                 query = ""; selectedID = saved.id; savedFeedback = true
@@ -67,11 +67,8 @@ struct MCPServersView: View {
 
     private var libraryContent: some View {
         VStack(alignment: .leading, spacing: 18) {
-            PageHeader(eyebrow: "MCP LIBRARY", title: L10n.tr("MCP 配置库"),
-                detail: L10n.tr("保存连接 → 选择项目或全局范围 → 预览并批准。配置库负责复用，AI 工具负责加载服务。"))
-            HStack {
-                Text(L10n.tr("\(library.entries.count) 个服务")).font(AppFont.secondary).foregroundStyle(.secondary)
-                Spacer()
+            PageActionHeader(eyebrow: "MCP LIBRARY", title: L10n.tr("MCP 配置库"),
+                detail: L10n.tr("保存连接 → 选择项目或全局范围 → 预览并批准。配置库负责复用，AI 工具负责加载服务。")) {
                 Button(L10n.tr("扫描已有配置…")) { library.scan(); scanPresented = true }
                     .accessibilityIdentifier("mcp.library.scan")
                 Button { savedFeedback = false; editor = MCPLibraryEntry() } label: {
@@ -79,6 +76,10 @@ struct MCPServersView: View {
                 }
                 .buttonStyle(AppButtonStyle(kind: .primary))
                 .accessibilityIdentifier("mcp.library.add")
+            }
+            HStack {
+                Text(L10n.tr("\(library.entries.count) 个服务")).font(AppFont.secondary).foregroundStyle(.secondary)
+                Spacer()
             }
             if let error = library.error { Text(L10n.text(error)).foregroundStyle(.red) }
             HStack(alignment: .top, spacing: AppLayout.columnSpacing) {

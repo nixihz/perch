@@ -15,6 +15,9 @@ final class GlobalConfigurationModel {
     private(set) var inheritedResources: [MCPHost: [GlobalResourceObservation]] = [:]
     private(set) var inheritanceErrors: [MCPHost: String] = [:]
     private(set) var skillEditingErrors: [MCPHost: String] = [:]
+    private(set) var isRefreshing = false
+    private var refreshID = UUID()
+    private var inheritanceID = UUID()
     private var skillDrafts: [MCPHost: GlobalConfigurationDraft] = [:]
     let locations: GlobalConfigurationLocations
     private let paths: SkillSetRuntimePaths
@@ -26,49 +29,131 @@ final class GlobalConfigurationModel {
 
     private var manager: GlobalConfigurationManager { GlobalConfigurationManager(paths: paths, locations: locations) }
 
-    func selectHost(_ host: MCPHost) {
+    func selectHost(_ host: MCPHost, inBackground: Bool = false) {
         self.host = host
         takeOverExisting = false
         inspection = nil
         operations = []
         draft = GlobalConfigurationDraft()
-        refresh()
+        if inBackground {
+            // 先封住空草稿的编辑窗口；排队中的切换也不能抢回后续同步刷新的代次。
+            let request = UUID()
+            refreshID = request
+            isRefreshing = true
+            Task {
+                guard refreshID == request else { return }
+                await refreshInBackground()
+            }
+        } else { refresh() }
+    }
+
+    private struct HostSnapshot: Sendable {
+        let host: MCPHost
+        let inspection: Result<GlobalConfigurationInspection, Error>
+        let draft: Result<GlobalConfigurationDraft, Error>
+        let history: Result<[GlobalOperationRecord], Error>
+    }
+
+    nonisolated private static func read(paths: SkillSetRuntimePaths, locations: GlobalConfigurationLocations) -> [HostSnapshot] {
+        let manager = GlobalConfigurationManager(paths: paths, locations: locations)
+        return MCPHost.allCases.map { host in
+            HostSnapshot(host: host, inspection: Result { try manager.inspect(host: host) },
+                         draft: Result { try manager.draft(host: host) },
+                         history: Result { try manager.history(host: host) })
+        }
     }
 
     func refresh() {
+        refreshID = UUID()
+        inheritanceID = UUID()
+        isRefreshing = false
+        apply(Self.read(paths: paths, locations: locations), inheritanceRequest: inheritanceID)
+    }
+
+    /// 页面进入只发起后台读取；保留上次结果，避免切页时闪空和阻塞导航。
+    func refreshInBackground() async {
+        guard !Task.isCancelled else { return }
+        let id = UUID()
+        refreshID = id
+        let inheritanceRequest = UUID()
+        inheritanceID = inheritanceRequest
+        isRefreshing = true
+        let paths = paths, locations = locations
+        let result = await Task.detached(priority: .userInitiated) {
+            Self.read(paths: paths, locations: locations)
+        }.value
+        guard refreshID == id else { return }
+        isRefreshing = false
+        guard !Task.isCancelled else { return }
+        apply(result, inheritanceRequest: inheritanceRequest)
+    }
+
+    private func apply(_ snapshots: [HostSnapshot], inheritanceRequest: UUID) {
         error = nil
-        inspection = nil
-        operations = []
-        draft = GlobalConfigurationDraft()
-        for target in MCPHost.allCases {
+        for snapshot in snapshots {
+            let target = snapshot.host
             do {
-                let observed = try manager.inspect(host: target)
-                inheritedResources[target] = observed.resources
-                inheritanceErrors[target] = nil
+                let observed = try snapshot.inspection.get()
+                if inheritanceID == inheritanceRequest {
+                    inheritedResources[target] = observed.resources
+                    inheritanceErrors[target] = nil
+                }
                 if target == host { inspection = observed }
-                let loaded = try manager.draft(host: target)
+            } catch {
+                if inheritanceID == inheritanceRequest {
+                    inheritedResources[target] = nil
+                    inheritanceErrors[target] = UserFacingText.error(error)
+                }
+                if target == host { inspection = nil; self.error = UserFacingText.error(error) }
+            }
+            do {
+                // 盘点失败时继续阻止草稿编辑，不能把无法核对的宿主显示为可配置。
+                _ = try snapshot.inspection.get()
+                let loaded = try snapshot.draft.get()
                 skillDrafts[target] = loaded
                 skillEditingErrors[target] = nil
                 if target == host { draft = loaded }
             } catch {
-                let message = UserFacingText.error(error)
                 skillDrafts[target] = nil
-                skillEditingErrors[target] = message
-                if target == host { self.error = message }
+                skillEditingErrors[target] = UserFacingText.error(error)
+                if target == host { draft = GlobalConfigurationDraft(); self.error = UserFacingText.error(error) }
+            }
+            if target == host {
+                do { operations = try snapshot.history.get() }
+                catch { operations = []; self.error = UserFacingText.error(error) }
             }
         }
-        do {
-            operations = try manager.history(host: host)
-        } catch {
-            self.error = UserFacingText.error(error)
-        }
-        refreshInheritance()
     }
 
     func refreshInheritance() {
-        for host in MCPHost.allCases {
+        inheritanceID = UUID()
+        applyInheritance(Self.readInheritance(paths: paths, locations: locations))
+    }
+
+    nonisolated private static func readInheritance(paths: SkillSetRuntimePaths, locations: GlobalConfigurationLocations)
+        -> [MCPHost: Result<[GlobalResourceObservation], Error>] {
+        let manager = GlobalConfigurationManager(paths: paths, locations: locations)
+        return Dictionary(uniqueKeysWithValues: MCPHost.allCases.map { host in
+            (host, Result { try manager.inspect(host: host).resources })
+        })
+    }
+
+    func refreshInheritanceInBackground() async {
+        guard !Task.isCancelled else { return }
+        let id = UUID()
+        inheritanceID = id
+        let paths = paths, locations = locations
+        let result = await Task.detached(priority: .userInitiated) {
+            Self.readInheritance(paths: paths, locations: locations)
+        }.value
+        guard inheritanceID == id, !Task.isCancelled else { return }
+        applyInheritance(result)
+    }
+
+    private func applyInheritance(_ results: [MCPHost: Result<[GlobalResourceObservation], Error>]) {
+        for (host, result) in results {
             do {
-                inheritedResources[host] = try manager.inspect(host: host).resources
+                inheritedResources[host] = try result.get()
                 inheritanceErrors[host] = nil
             } catch {
                 inheritedResources[host] = nil
@@ -92,7 +177,7 @@ final class GlobalConfigurationModel {
     }
 
     func canEditSkills(host: MCPHost) -> Bool {
-        skillDrafts[host] != nil && skillEditingErrors[host] == nil
+        !isRefreshing && skillDrafts[host] != nil && skillEditingErrors[host] == nil
     }
 
     func setSkill(_ skill: SkillEntry, enabled: Bool, host: MCPHost, catalog: [SkillEntry]) {

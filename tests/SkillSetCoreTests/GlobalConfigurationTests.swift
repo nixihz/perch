@@ -284,6 +284,121 @@ struct GlobalConfigurationTests {
         #expect(try !f.manager.inspect(host: .claudeCode).hasManagement)
         #expect(try f.manager.history(host: .claudeCode).isEmpty)
     }
+
+    @Test(arguments: ["indented", "crlf"])
+    func restoringAcceptedRuleMarkersPreservesOutsideEditsAndCanBeUndone(format: String) throws {
+        let f = try GlobalFixture()
+        defer { f.cleanup() }
+        let newline = format == "crlf" ? "\r\n" : "\n"
+        let indentation = format == "indented" ? " \t" : ""
+        let original = ["用户前言", indentation + "<!-- skillset:begin id=global-rules schema=2 -->",
+            "原始规则", indentation + "<!-- skillset:end id=global-rules -->", "用户结尾", ""].joined(separator: newline)
+        try f.write(original, to: f.rules)
+        _ = try f.apply(f.plan(takeOver: true))
+        let outsideEdit = "\n用户新增内容\n"
+        let deployed = try f.read(f.rules)
+        try f.write(deployed + outsideEdit, to: f.rules)
+
+        let restoration = try f.apply(f.manager.makeRestorePlan(host: f.host, mode: .baseline))
+        #expect(try Data(contentsOf: f.rules) == Data((original + outsideEdit).utf8))
+        #expect(!f.exists(f.skill))
+        #expect(try !f.manager.inspect(host: f.host).hasManagement)
+
+        _ = try f.apply(f.manager.makeUndoPlan(host: f.host, operationID: restoration.operationID))
+        #expect(try Data(contentsOf: f.rules) == Data((deployed + outsideEdit).utf8))
+        #expect(try f.manager.inspect(host: f.host).hasManagement)
+        #expect(try f.read(f.skill.appendingPathComponent("SKILL.md")).contains("第一版"))
+    }
+}
+
+struct GlobalVerificationDiagnosticsTests {
+    @Test(arguments: ["json", "schema", "host", "skillsPath", "rulesPath", "managed", "receipt"])
+    func inspectionReportsSpecificFailureWithoutChangingFiles(kind: String) throws {
+        let f = try GlobalFixture()
+        defer { f.cleanup() }
+        _ = try f.apply(f.plan())
+        let url = f.locations.stateURL(f.host)
+        var object = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        let expected: GlobalVerificationReason
+        switch kind {
+        case "json": expected = .invalidState
+        case "schema": object["schemaVersion"] = 999; expected = .unsupportedSchema
+        case "host": object["host"] = "claude-code"; expected = .hostMismatch
+        case "skillsPath": object["skillsPath"] = "/changed/skills"; expected = .skillsPathMismatch
+        case "rulesPath": object["rulesPath"] = "/changed/AGENTS.md"; expected = .rulesPathMismatch
+        case "managed":
+            var managed = try #require(object["managed"] as? [String: Any])
+            managed["/outside/skill"] = managed.values.first
+            object["managed"] = managed; expected = .unmanagedPath
+        default: object["revision"] = UUID().uuidString; expected = .missingReceipt
+        }
+        let changed = kind == "json" ? Data("{".utf8) : try JSONSerialization.data(withJSONObject: object)
+        try changed.write(to: url)
+        let rulesBefore = try Data(contentsOf: f.rules)
+        do {
+            _ = try f.manager.inspect(host: f.host)
+            Issue.record("应拒绝核验失败的状态")
+        } catch let GlobalConfigurationError.verificationFailed(reason, path) {
+            #expect(reason == expected)
+            #expect(path == url.path)
+        }
+        #expect(try Data(contentsOf: url) == changed)
+        #expect(try Data(contentsOf: f.rules) == rulesBefore)
+    }
+
+    @Test
+    func invalidRuleEncodingReportsRuleFileInsteadOfManagementRecord() throws {
+        let f = try GlobalFixture()
+        defer { f.cleanup() }
+        try f.write("", to: f.rules)
+        let bytes = Data([0xff, 0xfe, 0x00])
+        try bytes.write(to: f.rules)
+        do {
+            _ = try f.manager.inspect(host: f.host)
+            Issue.record("应拒绝非 UTF-8 规则")
+        } catch let GlobalConfigurationError.verificationFailed(reason, path) {
+            #expect(reason == .invalidRulesEncoding)
+            #expect(path == f.rules.path)
+        }
+        #expect(try Data(contentsOf: f.rules) == bytes)
+        #expect(!f.exists(f.locations.stateURL(f.host)))
+    }
+
+    @Test(arguments: ["missing-end", "duplicate", "mismatched-end"])
+    func malformedRulesReportTheirPathAndLeaveExistingFilesUntouched(kind: String) throws {
+        let f = try GlobalFixture()
+        defer { f.cleanup() }
+        _ = try f.apply(f.plan())
+        let deployed = try f.read(f.rules)
+        let changed: String
+        switch kind {
+        case "missing-end": changed = deployed.replacingOccurrences(of: ManagedBlocks.endMarker(id: "global-rules"), with: "")
+        case "duplicate": changed = deployed + "\n" + deployed
+        default: changed = deployed.replacingOccurrences(of: ManagedBlocks.endMarker(id: "global-rules"), with: ManagedBlocks.endMarker(id: "other-rules"))
+        }
+        try f.write(changed, to: f.rules)
+        let state = try Data(contentsOf: f.locations.stateURL(f.host))
+        let skill = try SkillAssetCopier.analyze(from: f.skill).contentHash
+        let plans = try FileManager.default.contentsOfDirectory(atPath: f.paths.plansRoot.path).sorted()
+        let operations: [() throws -> Void] = [
+            { _ = try f.manager.inspect(host: f.host) },
+            { _ = try f.plan() },
+            { _ = try f.manager.makeRestorePlan(host: f.host, mode: .baseline) }
+        ]
+        for operation in operations {
+            do {
+                try operation()
+                Issue.record("应拒绝标记损坏的规则文件")
+            } catch let GlobalConfigurationError.verificationFailed(reason, path) {
+                #expect(reason == .invalidRuleMarkers)
+                #expect(path == f.rules.path)
+            }
+        }
+        #expect(try Data(contentsOf: f.rules) == Data(changed.utf8))
+        #expect(try Data(contentsOf: f.locations.stateURL(f.host)) == state)
+        #expect(try SkillAssetCopier.analyze(from: f.skill).contentHash == skill)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: f.paths.plansRoot.path).sorted() == plans)
+    }
 }
 
 private struct GlobalFixture {

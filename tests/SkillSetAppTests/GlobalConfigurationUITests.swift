@@ -6,6 +6,29 @@ import SkillSetCore
 
 @MainActor
 final class GlobalConfigurationUITests: XCTestCase {
+    func testCancelledRefreshKeepsDraftAndNextRefreshReadsExternalChange() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("global-refresh-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let paths = SkillSetRuntimePaths(applicationSupportRoot: root.appendingPathComponent("state"), repositoryRoot: nil)
+        let locations = GlobalConfigurationLocations(home: root.appendingPathComponent("home"), stateRoot: paths.applicationSupportRoot)
+        let manager = GlobalConfigurationManager(paths: paths, locations: locations)
+        let model = GlobalConfigurationModel(paths: paths, locations: locations)
+        await model.refreshInBackground()
+        XCTAssertTrue(model.canEditSkills(host: .codex))
+        var changed = GlobalConfigurationDraft()
+        changed.skillIDs = ["external-change"]
+        try manager.saveDraft(changed, host: .codex)
+        let task = Task { await model.refreshInBackground() }
+        task.cancel()
+        await task.value
+        XCTAssertTrue(model.draft.skillIDs.isEmpty)
+        XCTAssertFalse(model.isRefreshing)
+        await model.refreshInBackground()
+        XCTAssertEqual(model.draft.skillIDs, ["external-change"])
+        XCTAssertNil(model.error)
+        XCTAssertNotNil(model.inspection)
+    }
+
     func testDraftPlanCancellationApprovalAndRestoreThroughSharedModel() async throws {
         let root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent("global-ui-\(UUID())")
         let home = root.appendingPathComponent("home")
