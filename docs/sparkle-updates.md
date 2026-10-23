@@ -20,7 +20,7 @@
 
 ## 配置与构建
 
-公开配置放在 `config/updates.json`。当前发布构建为 `0.0.1 (7)`，保留原 Bundle ID 与 Sparkle 公钥，使用新平台清单地址重新签名、公证；每次正式发包都递增 `build`，同一个构建号不能重发不同内容。此版本是桌面整包版本，与 skill revision、项目锁版本无关。
+公开配置放在 `config/updates.json`。当前线上构建为 `0.0.1 (6)`；`0.0.1 (7)` 已完成源码提交、标签和签名产物，等待恢复本机公证 profile 后发布。发布仍保留原 Bundle ID 与 Sparkle 公钥，使用新平台清单地址重新签名、公证；每次正式发包都递增 `build`，同一个构建号不能重发不同内容。此版本是桌面整包版本，与 skill revision、项目锁版本无关。
 
 可直接修改该 JSON，或通过以下环境变量覆盖：
 
@@ -129,3 +129,5 @@ python3 -m unittest tests.test_update_packaging tests.test_ui_localization -v
 2026-10-23 已发布 `0.0.1 (6)`：独立 Harness 配置、MCP 使用入口及配置关系图。App 与 DMG 均通过 Developer ID 签名、公证、装订和 Gatekeeper；公网清单与完整安装包匹配本地字节，官方 Sparkle 验签通过。平台 release ID 为 `8175cd1d-0cd5-4de5-9431-eb90e95b8b59`。源码、tag、校验值、测试及待验收边界见 [build 6 发布记录](releases/perch-0.0.1-6.md)。
 
 平台清单中的 `access: public` 不足以证明匿名公开：实例 `visibility` 也须为 `public`。发版前后必须用不带 Cookie/Token 的 GET 验证 RSS XML 和实际 DMG，拒绝将登录跳转后的 HTML 200 当作成功。本轮已恢复此前误设为 personal 的 Perch 可见性。
+
+2026-10-23 build 7 发布准备：源码和 `perch-v0.0.1-build.7` 标签已推送，App 与草稿 DMG 已通过 Developer ID 签名及通用架构验证；本机缺少 `APP-Notary-2026` 钥匙串 profile，Apple 公证提交失败，尚未生成 Sparkle appcast 或上传平台，线上仍为 build 6。验证、产物与续办边界见 [build 7 记录](releases/perch-0.0.1-7.md)。
