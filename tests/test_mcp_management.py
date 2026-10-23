@@ -1,0 +1,220 @@
+"""通过真实 stdio 服务验证管理操作、实时读取和审批边界，全部使用隔离目录。"""
+import json
+import os
+from pathlib import Path
+import subprocess
+import tempfile
+import unittest
+
+ROOT = Path(__file__).resolve().parents[1]
+CLI = Path(os.environ.get("SKILLSET_CLI", ROOT / ".build/debug/skillset"))
+
+
+class MCPManagementTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix="perch-management-", dir=ROOT)
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name).resolve()
+        self.state = self.root / "state"
+        self.project = self.root / "project"
+        self.project.mkdir()
+        (self.root / "codex").mkdir()
+        self.env = dict(os.environ, SKILLSET_HOME=str(self.root), CODEX_HOME=str(self.root / "codex"))
+        self.env.pop("SKILLSET_REPOSITORY_LIBRARY", None)
+        self.process = subprocess.Popen([str(CLI), "--state", str(self.state), "mcp", "serve", "--transport", "stdio"],
+            cwd=self.root, env=self.env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        self.addCleanup(self.close)
+        self.sequence = 0
+        self.rpc("initialize")
+
+    def close(self):
+        self.process.stdin.close()
+        self.process.wait(timeout=10)
+        self.process.stdout.close()
+        self.process.stderr.close()
+
+    def rpc(self, method, params=None):
+        self.sequence += 1
+        self.process.stdin.write(json.dumps({"jsonrpc": "2.0", "id": self.sequence, "method": method, "params": params or {}}) + "\n")
+        self.process.stdin.flush()
+        line = self.process.stdout.readline()
+        self.assertTrue(line, "服务意外退出")
+        response = json.loads(line)
+        self.assertEqual(response["id"], self.sequence)
+        return response["result"]
+
+    def tool(self, name, arguments=None, error=None):
+        result = self.rpc("tools/call", {"name": name, "arguments": arguments or {}})
+        self.assertEqual(result["isError"], error is not None, result)
+        value = result["structuredContent"]
+        if error:
+            self.assertEqual(value["code"], error, result)
+        return value
+
+    def document(self, name="sample", body="执行检查。"):
+        return f"---\nname: {name}\ndescription: 管理测试\n---\n\n# 技能\n\n{body}\n"
+
+    def approve_apply(self, plan):
+        self.tool("deployment_apply", {"planId": plan["planId"], "planDigest": plan["digest"]}, error="APPROVAL_REQUIRED")
+        approved = subprocess.run([str(CLI), "--state", str(self.state), "approve", plan["planId"], "--digest", plan["digest"], "--json"],
+            env=self.env, capture_output=True, text=True, timeout=30)
+        self.assertEqual(approved.returncode, 0, approved.stdout + approved.stderr)
+        self.tool("deployment_apply", {"planId": plan["planId"], "planDigest": plan["digest"]})
+
+    def test_skill_crud_is_live_and_deletion_retains_installed_version(self):
+        skill = self.tool("skills_create", {"slug": "sample", "document": self.document()})["skill"]
+        self.tool("skills_create", {"slug": "sample", "document": self.document()}, error="LIBRARY_DUPLICATE")
+        self.tool("skills_update", {"skillId": skill["id"], "document": "invalid"}, error="LIBRARY_DOCUMENT_INVALID")
+        self.assertEqual(self.tool("skills_get", {"skillId": skill["id"]})["document"], self.document())
+        edited = self.document(body="检查新的行为。")
+        saved = self.tool("skills_update", {"skillId": skill["id"], "document": edited})["skill"]
+        self.assertNotEqual(saved["contentHash"], skill["contentHash"])
+        project = self.tool("projects_create", {"projectPath": str(self.project), "agents": ["codex"]})["project"]
+        plan = self.tool("deployment_plan", {"projectId": project["id"], "skillIds": [skill["id"]], "agents": ["codex"], "installMethod": "copy"})
+        self.assertEqual(list(self.project.iterdir()), [])
+        self.approve_apply(plan)
+        installed = self.project / ".agents/skills/sample/SKILL.md"
+        self.assertEqual(installed.read_text(), edited)
+        self.tool("skills_delete", {"skillId": skill["id"]})
+        self.assertEqual(self.tool("skills_search", {"query": "sample"})["skills"], [])
+        self.tool("skills_get", {"skillId": skill["id"]}, error="RESOURCE_NOT_FOUND")
+        self.tool("skills_delete", {"skillId": skill["id"]}, error="RESOURCE_NOT_FOUND")
+        self.assertEqual(installed.read_text(), edited)
+        self.assertTrue((self.state / "skills" / saved["path"]).exists())
+
+    def test_template_preset_crud_and_live_deployment(self):
+        template = self.tool("templates_create", {"title": "协作", "body": "使用中文。", "purpose": "测试"})["template"]
+        preset = self.tool("presets_create", {"name": "协作预设", "instructionIds": [template["id"]]})["preset"]
+        self.tool("templates_update", {"templateId": template["id"], "body": "保留用户改动。"})
+        self.tool("presets_update", {"presetId": preset["id"], "description": "更新说明"})
+        loaded = self.tool("presets_get", {"presetId": preset["id"]})["preset"]
+        self.assertEqual(loaded["instructionFragments"], [template["id"]])
+        self.assertEqual(loaded["revision"], 2)
+        project = self.tool("projects_create", {"projectPath": str(self.project), "agents": ["codex"]})["project"]
+        plan = self.tool("presets_install", {"projectId": project["id"], "presetId": preset["id"]})
+        self.approve_apply(plan)
+        self.assertIn("保留用户改动。", (self.project / "AGENTS.md").read_text())
+        self.tool("templates_delete", {"templateId": template["id"]})
+        self.assertEqual(self.tool("templates_list")["templates"], [])
+        self.tool("presets_install", {"projectId": project["id"], "presetId": preset["id"]}, error="INSTRUCTION_NOT_FOUND")
+        self.tool("presets_delete", {"presetId": preset["id"]})
+        self.assertEqual(self.tool("presets_list")["presets"], [])
+        self.assertIn("保留用户改动。", (self.project / "AGENTS.md").read_text())
+
+    def test_source_update_hide_restore_import_and_delete(self):
+        source = self.root / "source"
+        source.mkdir()
+        (source / "SKILL.md").write_text(self.document())
+        (source / "helper.txt").write_text("附属文件")
+        preview = self.tool("sources_preview", {"url": str(source)})
+        entry = self.tool("skills_search", {"query": "sample"})["skills"][0]
+        self.tool("skills_update", {"skillId": entry["id"], "document": self.document()}, error="LIBRARY_READ_ONLY_SOURCE")
+        self.tool("skills_delete", {"skillId": entry["id"]})
+        self.assertEqual(self.tool("skills_search", {"query": "sample"})["skills"], [])
+        self.tool("skills_restore_hidden")
+        self.assertEqual(len(self.tool("skills_search", {"query": "sample"})["skills"]), 1)
+        personal = self.tool("sources_import_skill", {"previewId": preview["id"], "path": preview["candidates"][0]["path"], "slug": "copy"})["skill"]
+        self.assertEqual((self.state / "skills" / personal["path"] / "helper.txt").read_text(), "附属文件")
+        self.tool("sources_import_skill", {"previewId": preview["id"], "path": "../escape"}, error="SOURCE_IMPORT_UNAVAILABLE")
+        updated = self.tool("sources_update", {"previewId": preview["id"]})["preview"]
+        self.assertNotEqual(updated["id"], preview["id"])
+        self.tool("sources_delete", {"previewId": updated["id"]})
+        self.assertEqual(self.tool("sources_list")["previews"], [])
+        self.assertEqual([e["id"] for e in self.tool("skills_search", {"query": ""})["skills"]], [personal["id"]])
+
+    def test_mcp_library_selection_apply_edit_and_remove(self):
+        entry = self.tool("mcp_library_create", {"name": "example", "transport": "stdio", "commandOrURL": "/usr/bin/true", "args": ["one"]})["entry"]
+        self.tool("mcp_library_update", {"entryId": entry["id"], "args": ["two"]})
+        self.tool("mcp_library_selection_set", {"host": "codex", "entryIds": [entry["id"]]})
+        plan = self.tool("mcp_library_plan", {"host": "codex"})
+        target = self.root / "codex/config.toml"
+        self.assertFalse(target.exists())
+        self.approve_apply(plan)
+        self.assertIn('"two"', target.read_text())
+        update = self.tool("mcp_config_update_plan", {"host": "codex", "scope": "user", "name": "example", "args": ["three"]})
+        self.approve_apply(update)
+        self.assertIn('"three"', target.read_text())
+        remove = self.tool("mcp_config_delete_plan", {"host": "codex", "scope": "user", "name": "example"})
+        self.approve_apply(remove)
+        self.assertNotIn("mcp_servers.example", target.read_text())
+        self.tool("mcp_library_delete", {"entryId": entry["id"]})
+        self.assertEqual(self.tool("mcp_library_list")["entries"], [])
+        self.tool("mcp_library_plan", {"host": "codex"}, error="MCP_LIBRARY_SELECTION_MISSING")
+        self.tool("mcp_library_selection_set", {"host": "codex", "entryIds": []})
+        self.assertEqual(self.tool("mcp_library_selection_get", {"host": "codex"})["entryIds"], [])
+
+    def test_global_application_and_project_metadata(self):
+        template = self.tool("templates_create", {"title": "全局", "body": "执行后核验。"})["template"]
+        plan = self.tool("global_config_plan", {"host": "codex", "skillIds": [], "instructionIds": [template["id"]]})
+        self.approve_apply(plan)
+        self.assertIn("执行后核验。", (self.root / "codex/AGENTS.md").read_text())
+        self.assertEqual(self.tool("global_config_get", {"host": "codex"})["selection"]["instructionIDs"], [template["id"]])
+        remove = self.tool("global_config_plan", {"host": "codex", "skillIds": [], "instructionIds": []})
+        self.approve_apply(remove)
+        project = self.tool("projects_create", {"projectPath": str(self.project)})["project"]
+        self.tool("projects_update", {"projectId": project["id"], "name": "新名称", "agents": ["claude-code"]})
+        listed = self.tool("projects_list")["projects"]
+        self.assertEqual(listed[0]["name"], "新名称")
+        self.tool("projects_delete", {"projectId": project["id"]})
+        self.assertEqual(self.tool("projects_list")["projects"], [])
+        self.assertTrue(self.project.exists())
+
+    def test_mixed_preset_draft_and_fragment_application_preserve_other_host(self):
+        project = self.tool("projects_create", {"projectPath": str(self.project)})["project"]
+        self.assertIsNone(self.tool("projects_draft_get", {"projectId": project["id"]})["draft"])
+        template = self.tool("templates_create", {"title": "规则", "body": "检查可观察结果。"})["template"]
+        connection = {"name": "example", "host": "codex", "scope": "project", "transport": "stdio", "commandOrURL": "/usr/bin/true", "args": [], "envKeys": []}
+        preset = self.tool("presets_create", {"name": "混合", "instructionIds": [template["id"]], "mcpServers": [connection]})["preset"]
+        applied = self.tool("presets_apply_draft", {"projectId": project["id"], "presetId": preset["id"], "host": "claude-code"})
+        self.assertEqual(applied["status"], "draft-only")
+        draft = self.tool("projects_draft_get", {"projectId": project["id"]})["draft"]
+        self.assertEqual(draft["mcpServers"], [connection])
+        self.assertEqual(draft["harnessSelections"]["claude-code"]["instructionIDs"], [template["id"]])
+        self.assertEqual(list(self.project.iterdir()), [])
+        first = self.tool("templates_apply_plan", {"projectId": project["id"], "host": "codex", "instructionIds": [template["id"]]})
+        self.approve_apply(first)
+        second = self.tool("deployment_harness_plan", {"projectId": project["id"], "host": "claude-code", "skillIds": [], "instructionIds": [template["id"]]})
+        self.approve_apply(second)
+        self.assertIn("检查可观察结果。", (self.project / "AGENTS.md").read_text())
+        self.assertIn("检查可观察结果。", (self.project / "CLAUDE.md").read_text())
+        remove = self.tool("deployment_harness_plan", {"projectId": project["id"], "host": "codex", "skillIds": [], "instructionIds": []})
+        self.approve_apply(remove)
+        self.assertIn("检查可观察结果。", (self.project / "CLAUDE.md").read_text())
+        self.assertFalse((self.project / ".codex/config.toml").exists())
+
+    def test_plugin_source_crud_preserves_previous_snapshot_on_failed_update(self):
+        source = self.root / "plugin"
+        (source / ".claude-plugin").mkdir(parents=True)
+        manifest = source / ".claude-plugin/plugin.json"
+        manifest.write_text(json.dumps({"name": "example", "version": "1.0"}))
+        saved = self.tool("plugin_sources_create", {"url": str(source)})["source"]
+        fetched = self.tool("plugin_sources_get", {"sourceId": saved["id"]})
+        self.assertEqual(fetched["inventory"]["records"][0]["name"], "example")
+        failure = self.rpc("tools/call", {"name": "plugin_sources_update", "arguments": {"sourceId": saved["id"], "url": str(self.root / "missing")}})
+        self.assertTrue(failure["isError"])
+        self.assertEqual(self.tool("plugin_sources_list")["sources"][0]["id"], saved["id"])
+        manifest.write_text(json.dumps({"name": "example", "version": "2.0"}))
+        updated = self.tool("plugin_sources_update", {"sourceId": saved["id"], "url": str(source)})["source"]
+        self.assertNotEqual(updated["resolvedCommit"], saved["resolvedCommit"])
+        self.tool("plugin_sources_delete", {"sourceId": updated["id"]})
+        self.assertEqual(self.tool("plugin_sources_list")["sources"], [])
+        self.assertTrue(manifest.exists())
+
+    def test_schema_rejects_unknown_fields_bad_types_and_nested_fields(self):
+        cases = [
+            ("skills_delete", {"skillId": "personal/example", "confirmed": True}),
+            ("skills_create", {"slug": 9, "document": self.document()}),
+            ("skills_search", {"query": "", "limit": True}),
+            ("skills_search", {"query": "", "limit": 201}),
+            ("projects_create", {"projectPath": str(self.project), "agents": ["unknown"]}),
+            ("mcp_library_delete", {"entryId": "invalid"}),
+            ("presets_create", {"name": "错误", "mcpServers": [{"name": "x", "secret": "reject"}]}),
+        ]
+        for name, args in cases:
+            with self.subTest(name=name, args=args):
+                self.tool(name, args, error="INVALID_ARGUMENTS")
+        self.assertFalse(self.state.exists())
+
+
+if __name__ == "__main__":
+    unittest.main()

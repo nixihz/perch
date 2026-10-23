@@ -21,6 +21,11 @@ struct MCPLibraryUsageTarget: Identifiable, Sendable {
 @MainActor
 @Observable
 final class MCPLibraryModel {
+    private struct OverwriteApprovalKey: Hashable {
+        let selectionKey: String
+        let name: String
+    }
+
     private(set) var entries: [MCPLibraryEntry] = []
     private(set) var selections: [String: [UUID]] = [:]
     private(set) var candidates: [MCPLibraryScanCandidate] = []
@@ -28,6 +33,7 @@ final class MCPLibraryModel {
     private(set) var usageError: String?
     private var usageRefreshID = UUID()
     private var preferredUsageTargetID: String?
+    private var approvedOverwriteNames: Set<OverwriteApprovalKey> = []
     private(set) var lastSavedID: UUID?
     private(set) var lastImportedIDs: [UUID] = []
     var error: String?
@@ -66,6 +72,28 @@ final class MCPLibraryModel {
         selections[store.selectionKey(host: host, projectID: projectID)] ?? []
     }
 
+    func externalConflicts(host: MCPHost, projectID: UUID?) -> [MCPLibraryEntry] {
+        guard let target = usageTargets.first(where: { $0.host == host && $0.projectID == projectID }) else { return [] }
+        let appliedNames = Set(target.appliedEntries.map(\.name))
+        return entries.filter {
+            selectedIDs(host: host, projectID: projectID).contains($0.id) &&
+            target.observedNames.contains($0.name) && !appliedNames.contains($0.name)
+        }
+    }
+
+    func approveExternalOverwrite(host: MCPHost, projectID: UUID?, names: [String]) {
+        let selectionKey = store.selectionKey(host: host, projectID: projectID)
+        approvedOverwriteNames.formUnion(names.map { OverwriteApprovalKey(selectionKey: selectionKey, name: $0) })
+        error = nil
+    }
+
+    func takeApprovedOverwriteNames(host: MCPHost, projectID: UUID?) -> Set<String> {
+        let selectionKey = store.selectionKey(host: host, projectID: projectID)
+        let approvals = approvedOverwriteNames.filter { $0.selectionKey == selectionKey }
+        approvedOverwriteNames.subtract(approvals)
+        return Set(approvals.map(\.name))
+    }
+
     func preferUsageTarget(host: MCPHost, projectID: UUID?) {
         preferredUsageTargetID = store.selectionKey(host: host, projectID: projectID)
     }
@@ -93,6 +121,10 @@ final class MCPLibraryModel {
             if enabled { ids.append(id) }
             try store.saveSelection(ids, host: host, projectID: projectID)
             selections[store.selectionKey(host: host, projectID: projectID)] = ids
+            if !enabled, let entry = entries.first(where: { $0.id == id }) {
+                approvedOverwriteNames.remove(OverwriteApprovalKey(
+                    selectionKey: store.selectionKey(host: host, projectID: projectID), name: entry.name))
+            }
             error = nil
             return true
         } catch { self.error = UserFacingText.error(error); return false }
@@ -150,7 +182,8 @@ final class MCPLibraryModel {
     func prepareUse(_ entry: MCPLibraryEntry, host: MCPHost, projectID: UUID?) -> StoredDeploymentPlan? {
         guard select(entry.id, enabled: true, host: host, projectID: projectID) else { return nil }
         do {
-            let plan = try SkillSetService(paths: paths, globalLocations: locations).makeMCPLibraryPlan(host: host, projectID: projectID)
+            let plan = try SkillSetService(paths: paths, globalLocations: locations).makeMCPLibraryPlan(
+                host: host, projectID: projectID, overwritingNames: takeApprovedOverwriteNames(host: host, projectID: projectID))
             refreshUsage()
             return plan
         } catch { self.error = UserFacingText.error(error); refreshUsage(); return nil }

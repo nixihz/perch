@@ -181,7 +181,15 @@ final class GlobalPlanBuilder {
     func requireState(_ state: GlobalConfigurationState?) throws {
         let path = manager.relative(manager.locations.stateURL(host), root: root)
         let expected = try state.map { SkillAssetCopier.sha256(try manager.encode($0)) }
-        guard observations[path]?.contentHash == expected else { throw FileTransactionError.staleFile(path) }
+        if state?.didRepairPaths == true {
+            // 旧状态的 JSON 仍需以历史收据为准；路径迁移只改变内存中的目标映射。
+            guard let actual = observations[path]?.contentHash,
+                  manager.hasStateReceipt(actual, host: host, journals: try manager.journals(host)) else {
+                throw FileTransactionError.staleFile(path)
+            }
+        } else {
+            guard observations[path]?.contentHash == expected else { throw FileTransactionError.staleFile(path) }
+        }
     }
     @discardableResult
     func observe(_ url: URL) throws -> String? {

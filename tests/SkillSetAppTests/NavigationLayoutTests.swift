@@ -6,6 +6,19 @@ import SkillSetCore
 
 @MainActor
 final class NavigationLayoutTests: XCTestCase {
+    func testMainSplitUsesThinDividerForToolbarAlignment() async throws {
+        let model = AppModel(snapshot: AppSnapshot.load())
+        let controller = NSHostingController(rootView: ContentView(model: model))
+        let window = makeWindow(controller, size: NSSize(width: 1080, height: 700))
+        defer { window.close() }
+
+        try await settle(controller.view)
+
+        let split = try XCTUnwrap(descendants(of: controller.view).compactMap { $0 as? NSSplitView }.first)
+        XCTAssertEqual(split.dividerStyle, .thin)
+        XCTAssertEqual(split.dividerThickness, 1, accuracy: 0.1)
+    }
+
     func testExistingProjectSkillStatusFitsMinimumWindowAndKeepsLastItemReachable() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("skillset-project-ui-\(UUID().uuidString)")
         let variables = ["CFFIXED_USER_HOME", "SKILLSET_HOME", "CODEX_HOME"]

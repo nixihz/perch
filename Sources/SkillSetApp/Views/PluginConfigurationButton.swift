@@ -9,17 +9,19 @@ struct PluginConfigurationCard: View {
     var body: some View {
         SurfaceCard {
             VStack(alignment: .leading, spacing: 12) {
-                Text(host.displayName + " · " + L10n.tr("插件配置")).font(AppFont.heading)
+                ConfigurationSectionHeader {
+                    Text(L10n.tr("插件配置")).font(AppFont.heading)
+                } actions: {
+                    PluginConfigurationButton(model: model, host: host, projectID: projectID)
+                }
+                Text(host.displayName).font(AppFont.secondary).foregroundStyle(.secondary)
                 Text(projectID == nil ? L10n.tr("使用范围：这个 AI 工具的所有项目。") : L10n.tr("仅配置当前项目；全局插件仍可能生效。"))
                     .font(AppFont.secondary).foregroundStyle(.secondary)
                 if projectID != nil && host == .codex {
                     Text(L10n.tr("Codex 插件目前只支持用户范围，请到全局配置中管理。"))
                         .font(AppFont.secondary).foregroundStyle(.secondary)
                 }
-                HStack {
-                    PluginConfigurationButton(model: model, host: host, projectID: projectID)
-                    Button(L10n.tr("管理插件来源")) { model.section = .plugins }
-                }
+                Button(L10n.tr("管理插件来源")) { model.section = .plugins }
             }
         }
     }

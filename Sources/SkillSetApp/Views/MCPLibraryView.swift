@@ -253,6 +253,7 @@ private struct MCPLibraryUseSheet: View {
     let entry: MCPLibraryEntry
     let onPlan: (StoredDeploymentPlan) -> Void
     @State private var targetID = ""
+    @State private var overwriteConfirmationPresented = false
     @Environment(\.dismiss) private var dismiss
     private var library: MCPLibraryModel { model.mcpLibrary }
     private var target: MCPLibraryUsageTarget? { library.usageTargets.first { $0.id == targetID } }
@@ -300,18 +301,41 @@ private struct MCPLibraryUseSheet: View {
                 Button(L10n.tr("取消")) { dismiss() }.keyboardShortcut(.cancelAction)
                 Spacer()
                 Button(L10n.tr("加入草稿并预览…")) {
-                    guard let target, let plan = library.prepareUse(entry, host: target.host, projectID: target.projectID) else { return }
-                    onPlan(plan)
-                    dismiss()
+                    guard let target else { return }
+                    if target.observedNames.contains(entry.name) &&
+                        !target.appliedEntries.contains(where: { $0.name == entry.name }) {
+                        overwriteConfirmationPresented = true
+                    } else {
+                        prepareUse(target: target)
+                    }
                 }
                 .buttonStyle(AppButtonStyle(kind: .primary)).keyboardShortcut(.defaultAction)
                 .disabled(target == nil || model.isWorking)
                 .accessibilityIdentifier("mcp.library.use.preview")
             }
-        }.appControls().padding(26).frame(width: 660, height: 580)
+        }
+        .confirmationDialog(L10n.tr("确认覆盖外部 MCP 服务？"), isPresented: $overwriteConfirmationPresented,
+                            titleVisibility: .visible) {
+            Button(L10n.tr("确认覆盖并预览"), role: .destructive) {
+                guard let target else { return }
+                library.approveExternalOverwrite(host: target.host, projectID: target.projectID, names: [entry.name])
+                prepareUse(target: target)
+            }
+            Button(L10n.tr("取消"), role: .cancel) {}
+        } message: {
+            let path = target?.configPath ?? L10n.tr("目标配置")
+            Text(L10n.tr("将替换 \(entry.name) 在 \(path) 中的现有内容。原文件会按计划保留备份；如果文件在审批前发生变化，计划会失效。"))
+        }
+        .appControls().padding(26).frame(width: 660, height: 580)
         .onAppear {
             targetID = library.initialUsageTargetID(fallbackHost: model.globalConfiguration.host)
         }
+    }
+
+    private func prepareUse(target: MCPLibraryUsageTarget) {
+        guard let plan = library.prepareUse(entry, host: target.host, projectID: target.projectID) else { return }
+        onPlan(plan)
+        dismiss()
     }
 
     private func targetTitle(_ target: MCPLibraryUsageTarget) -> String {

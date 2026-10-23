@@ -64,7 +64,7 @@ stdio MCP 使用同一服务边界：
 .build/debug/skillset mcp serve --transport stdio
 ```
 
-MCP 服务名为 `perch`，首版协议为 legacy `2025-11-25`，提供 17 个工具：预设列表、技能搜索、项目技能与预设安装，以及项目、来源预览、计划、审批状态、apply、operation、离线对象、MCP 配置、Plugin 盘点和 Plugin 生命周期计划。`skills_install` / `presets_install` 接收已登记项目的绝对路径或 ID，追加技能与规则并返回待批准计划；含插件或 MCP 的混合预设转本机完整审阅。`deployment_apply` 只执行已由 UI/CLI 批准且 digest 完全一致的计划。MCP 不能批准计划，也不能替用户确认安装/更新包风险。
+MCP 服务名为 `perch`，首版协议为 legacy `2025-11-25`，提供 59 个工具，覆盖技能库、规则片段、预设、来源、项目、MCP 配置库与插件来源管理，以及项目/全局应用计划、apply、operation、离线对象核验和 Plugin 生命周期计划。库 CRUD 即时生效，删除不卸载已部署内容；完整工具矩阵见 [MCP 契约](docs/specs/mcp.md)。`skills_install` / `presets_install` 接收已登记项目的绝对路径或 ID，追加技能与规则并返回待批准计划；含插件或 MCP 的混合预设转本机完整审阅。`deployment_apply` 只执行已由 UI/CLI 批准且 digest 完全一致的计划。MCP 不能批准计划，也不能替用户确认安装/更新包风险。
 
 ## 设计与规范
 

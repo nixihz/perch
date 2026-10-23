@@ -312,6 +312,47 @@ struct GlobalConfigurationTests {
 }
 
 struct GlobalVerificationDiagnosticsTests {
+    @Test
+    func signedLegacyHostPathsAreRepairedBeforeTheNextApprovedPlan() throws {
+        let f = try GlobalFixture()
+        defer { f.cleanup() }
+        let applied = try f.apply(f.plan())
+        let stateURL = f.locations.stateURL(f.host)
+        var object = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: stateURL)) as? [String: Any])
+        let legacySkills = f.root.appendingPathComponent("legacy-skills").path
+        let legacyRules = f.root.appendingPathComponent("legacy-codex/AGENTS.md").path
+        object["skillsPath"] = legacySkills
+        object["rulesPath"] = legacyRules
+        var managed = try #require(object["managed"] as? [String: Any])
+        managed[f.skill.path.replacingOccurrences(of: f.locations.skillsRoot(f.host).path, with: legacySkills)] = managed.removeValue(forKey: f.skill.path)
+        managed[legacyRules] = managed.removeValue(forKey: f.rules.path)
+        object["managed"] = managed
+        let changed = try JSONSerialization.data(withJSONObject: object)
+        try changed.write(to: stateURL, options: .atomic)
+
+        let journalURL = f.paths.operationsRoot.appendingPathComponent(applied.operationID.uuidString).appendingPathComponent("journal.json")
+        var journal = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: journalURL)) as? [String: Any])
+        var steps = try #require(journal["steps"] as? [[String: Any]])
+        let statePath = f.manager.relative(stateURL, root: URL(fileURLWithPath: try #require(journal["projectPath"] as? String)))
+        for index in steps.indices where steps[index]["relativePath"] as? String == statePath {
+            steps[index]["afterHash"] = SkillAssetCopier.sha256(changed)
+        }
+        journal["steps"] = steps
+        try JSONSerialization.data(withJSONObject: journal).write(to: journalURL, options: .atomic)
+
+        let inspection = try f.manager.inspect(host: f.host)
+        #expect(inspection.resources.first { $0.path == f.skill.path }?.managed == true)
+        #expect(inspection.resources.first { $0.path == f.rules.path }?.managed == true)
+
+        _ = try f.revise()
+        let next = try f.apply(f.plan())
+        _ = next
+        let repaired = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: stateURL)) as? [String: Any])
+        #expect(repaired["skillsPath"] as? String == f.locations.skillsRoot(f.host).path)
+        #expect(repaired["rulesPath"] as? String == f.locations.rulesURL(f.host).path)
+        #expect((repaired["managed"] as? [String: Any])?[f.skill.path] != nil)
+    }
+
     @Test(arguments: ["json", "schema", "host", "skillsPath", "rulesPath", "managed", "receipt"])
     func inspectionReportsSpecificFailureWithoutChangingFiles(kind: String) throws {
         let f = try GlobalFixture()

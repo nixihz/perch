@@ -212,6 +212,54 @@ final class TemplateWorkflowTests: XCTestCase {
         }
     }
 
+    func testEditingReferencedSnippetInvalidatesOpenRulePlan() throws {
+        try fixture { root, paths, locations in
+            let project = root.appendingPathComponent("实时关联项目")
+            try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+            let model = AppModel(runtimePaths: paths, globalLocations: locations)
+            XCTAssertTrue(model.registerProject(project))
+            let template = try save(model, name: "实时规则", body: "旧正文。")
+            model.toggleInstruction(template)
+            model.prepareDeploymentPlan()
+            let oldPlanID = try XCTUnwrap(model.preparedPlan?.id)
+            XCTAssertTrue(model.planPresented)
+
+            var edited = TemplateEditorDraft(template: template)
+            edited.body = "新正文。"
+            XCTAssertTrue(model.saveTemplate(edited), model.templateError ?? "")
+
+            XCTAssertFalse(model.planPresented)
+            XCTAssertNil(model.preparedPlan)
+            XCTAssertEqual(model.planError, "片段内容已变化，之前的规则计划已失效，请重新预览。")
+            XCTAssertTrue(try DeploymentPlanStore(rootURL: paths.plansRoot).list().contains { $0.id == oldPlanID })
+        }
+    }
+
+    func testDeletingAppliedSnippetMarksProjectForReferenceCleanup() throws {
+        try fixture { root, paths, locations in
+            let project = root.appendingPathComponent("删除关联项目")
+            try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+            let model = AppModel(runtimePaths: paths, globalLocations: locations)
+            XCTAssertTrue(model.registerProject(project))
+            let template = try save(model, name: "待删除规则", body: "已写入正文。")
+            model.toggleInstruction(template)
+            model.prepareDeploymentPlan()
+            XCTAssertTrue(model.approveAndApplyPreparedPlan(), model.planError ?? model.lastAction)
+            XCTAssertEqual(model.selectedProject?.pendingChanges, 0)
+
+            model.removeTemplate(template)
+
+            XCTAssertNil(model.templateError)
+            XCTAssertFalse(model.snapshot.templates.contains { $0.id == template.id })
+            XCTAssertGreaterThan(model.selectedProject?.pendingChanges ?? 0, 0)
+            let stale = try XCTUnwrap(model.templateReferences(template.id).first)
+            XCTAssertTrue(stale.inDraft)
+            XCTAssertTrue(stale.isApplied)
+            XCTAssertTrue(stale.needsUpdate)
+            XCTAssertTrue(try String(contentsOf: project.appendingPathComponent("AGENTS.md"), encoding: .utf8).contains("已写入正文。"))
+        }
+    }
+
     func testExternalEditAfterPlanIsNotOverwrittenAndFailureIsVisibleInsidePlan() throws {
         try fixture { root, paths, locations in
             let project = root.appendingPathComponent("project")

@@ -116,17 +116,6 @@ struct ProjectsView: View {
                             .font(AppFont.title.weight(.bold))
                             .fixedSize(horizontal: false, vertical: true)
                         Spacer()
-                        Button(L10n.tr("预览 \(project.editingAgentName) 变更")) {
-                            model.prepareDeploymentPlan()
-                        }
-                        .buttonStyle(AppButtonStyle(kind: .primary))
-                        .tint(AppColor.accent)
-                        .fixedSize()
-                        .disabled(!model.canPrepareDeploymentPlan)
-                        .help(model.isWorking
-                            ? L10n.tr("正在处理，请稍候")
-                            : L10n.tr("生成变更计划，审阅后再写入"))
-                        .accessibilityIdentifier("projects.previewChanges")
                     }
                     Text(project.path)
                         .font(AppFont.secondary.monospaced())
@@ -166,17 +155,29 @@ struct ProjectsView: View {
 
                 SurfaceCard {
                     VStack(alignment: .leading, spacing: 15) {
+                        ConfigurationSectionHeader {
+                            Text(L10n.tr("项目配置草稿")).font(AppFont.heading)
+                        } actions: {
+                            Button(L10n.tr("预览 \(project.editingAgentName) 变更")) {
+                                model.prepareDeploymentPlan()
+                            }
+                            .buttonStyle(AppButtonStyle(kind: .primary))
+                            .tint(AppColor.accent)
+                            .fixedSize()
+                            .disabled(!model.canPrepareDeploymentPlan)
+                            .help(model.isWorking
+                                ? L10n.tr("正在处理，请稍候")
+                                : L10n.tr("生成变更计划，审阅后再写入"))
+                            .accessibilityIdentifier("projects.previewChanges")
+                        }
                         HStack {
-                            Text(L10n.tr("项目配置草稿"))
-                                .font(AppFont.heading)
-                            Spacer()
                             Button(L10n.tr("使用预设…")) {
                                 model.presetSelection = PresetSelectionRequest(projectID: project.id)
                             }
                             .accessibilityIdentifier("projects.usePreset")
+                            Spacer()
                             Text(L10n.tr("\(project.draftSkillIDs.count) 条"))
-                                .font(AppFont.secondary)
-                                .foregroundStyle(.secondary)
+                                .font(AppFont.secondary).foregroundStyle(.secondary)
                         }
                         hostPicker(project: project)
                         AppPicker(title: L10n.tr("技能安装方式"), selection: $model.skillInstallMethod,

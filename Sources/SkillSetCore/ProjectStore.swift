@@ -147,6 +147,24 @@ public struct ProjectStore {
         return project
     }
 
+    /// 修改登记元数据，不移动目录、不写宿主文件。
+    public func update(id: UUID, name: String? = nil, agents: [String]? = nil) throws -> ProjectRegistration {
+        var document = try load()
+        guard let index = document.projects.firstIndex(where: { $0.id == id }) else {
+            throw SkillSetStoreError.projectNotFound(id.uuidString)
+        }
+        if let name {
+            let value = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !value.isEmpty, !value.contains("/"), !value.contains("\\") else {
+                throw SkillSetStoreError.invalidProjectName
+            }
+            document.projects[index].name = value
+        }
+        if let agents { document.projects[index].agents = normalizedAgents(agents) }
+        try save(document)
+        return document.projects[index]
+    }
+
     public func unregister(id: UUID) throws {
         var document = try load()
         guard document.projects.contains(where: { $0.id == id }) else {

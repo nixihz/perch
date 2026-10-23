@@ -87,9 +87,9 @@ struct GlobalConfigurationView: View {
     private var draftCard: some View {
         SurfaceCard {
             VStack(alignment: .leading, spacing: 14) {
-                HStack {
+                ConfigurationSectionHeader {
                     Text(L10n.tr("全局配置草稿")).font(AppFont.heading)
-                    Spacer()
+                } actions: {
                     Button(L10n.tr("预览 \(global.host.displayName) 变更")) { present(global.prepareDeployment()) }
                         .buttonStyle(AppButtonStyle(kind: .primary))
                         .disabled(model.isWorking || !global.canEditSkills(host: global.host))

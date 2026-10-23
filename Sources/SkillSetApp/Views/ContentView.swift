@@ -30,6 +30,7 @@ struct ContentView: View {
         .appControls()
         .font(AppFont.body)
         .lineSpacing(2)
+        .background(SplitDividerStyle())
     }
 }
 

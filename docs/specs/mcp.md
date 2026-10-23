@@ -33,24 +33,47 @@
 | `plugins_list` | `projectId?` | 读取插件缓存、安装索引、组件和 hooks 风险；不执行代码 | true / false / false |
 | `plugin_lifecycle_plan` | `host`、`pluginId`、`action`、`projectId?`、`scope?`、`manifestDigest?`、`keepData?` | 为已发现的本机插件生成固定宿主命令计划；风险和批准仍留在本机 | false / false / false |
 
+本轮新增 42 个管理与应用工具，原有 17 个名称保持兼容：
+
+| 主题 | 新增工具 | 操作边界 |
+| --- | --- | --- |
+| 技能库 | `skills_get`、`skills_create`、`skills_update`、`skills_delete`、`skills_restore_hidden` | 读取完整正文；个人技能版本化编辑；删除个人索引或隐藏来源条目，保留历史包与已部署内容 |
+| 规则片段 | `templates_list`、`templates_get`、`templates_create`、`templates_update`、`templates_delete`、`templates_apply_plan` | 库 CRUD；追加用于一个宿主的项目或全局，保留已部署技能和其他片段 |
+| 预设 | `presets_get`、`presets_create`、`presets_update`、`presets_delete`、`presets_apply_draft` | 保留完整技能、片段、插件与 MCP 组件；完整载入指定宿主的项目草稿，不部署 |
+| 来源 | `sources_get`、`sources_update`、`sources_delete`、`sources_import_skill` | 预览详情、重新同步、删除缓存/索引、导入独立个人副本 |
+| 项目 | `projects_create`、`projects_update`、`projects_delete`、`projects_draft_get` | 显式登记绝对路径、修改名称/登记宿主、取消登记、读取编辑草稿；不删除项目文件 |
+| MCP 配置库 | `mcp_library_list`、`mcp_library_get`、`mcp_library_create`、`mcp_library_update`、`mcp_library_delete` | 本机连接库 CRUD，不写宿主 |
+| MCP 使用选择 | `mcp_library_selection_get`、`mcp_library_selection_set`、`mcp_library_plan` | 按宿主/项目保存整组选择草稿，随后生成待批准应用或移除计划 |
+| 已有 MCP 连接 | `mcp_config_update_plan`、`mcp_config_delete_plan` | 明确选择 host/scope/name，可编辑或删除外部连接；保留未知字段及凭据，仍需批准 |
+| 项目与全局应用 | `deployment_harness_plan`、`global_config_get`、`global_config_plan` | 替换一个宿主的完整选择；空数组用于规划移除；全局操作影响该宿主全部项目 |
+| 插件来源 | `plugin_sources_list`、`plugin_sources_get`、`plugin_sources_create`、`plugin_sources_update`、`plugin_sources_delete` | 隔离收录和组件盘点，不执行插件代码；安装/更新/启停/卸载仍由 `plugin_lifecycle_plan` 处理 |
+
+CRUD 的 create 自动生成记录标识，技能使用 `personal/<slug>`；update 只修改提供的字段，技能正文整体替换且不能修改 slug。预设数组字段提供时整体替换，省略则保留；保存递增 revision。重复名称、无效文档、未知条目和不支持的宿主返回 `isError: true`。所有工具按发布的严格 schema 校验必填项、未知字段、类型、枚举、UUID、数量和长度，嵌套组件同样校验，不接受伪造确认字段。
+
+库删除不静默删除引用，也不改动已部署文件；后续部署遇到缺失引用会拒绝。`skills_restore_hidden` 仅恢复来源隐藏记录，不提供个人技能历史恢复。来源编辑失败保留旧记录，删除来源不影响独立导入副本。`projects_delete` 只取消登记，已批准计划仍遵循既有执行时路径与归属检查。
+
+`templates_apply_plan` 是追加操作；需要替换或移除片段时，使用 `deployment_harness_plan` 或 `global_config_plan` 提供完整选择。`presets_apply_draft` 可载入混合预设，插件和 MCP 组件仍须分别生成计划；`presets_install` 保留原有混合预设拒绝行为，避免产生部分安装。插件来源条目与宿主已安装插件分开管理，不通过编辑 manifest 实现插件更新。
+
+所有新增 `*_plan` 返回 `status: awaiting-approval`、完整 digest 和下一步调用参数；不会签发批准。库管理和草稿保存无需批准，写宿主继续通过本机批准及 `deployment_apply`。MCP 仍不提供 approve。扫描 MCP/插件入库、全局历史恢复和宿主 marketplace 浏览不在本轮接口内，仍按已有本机能力或后续里程碑处理。
+
 工具数量与名称由 `tools/list` 决定，文档不替代运行时 schema。`sources_preview` 的幂等提示为 false，因为远端 ref 可能移动；保存的记录仍固定 resolved commit。
 
 项目摘要新增 `skillObservations`，逐项记录宿主、项目相对路径、可确定的技能 ID、`managed` / `existing` 归属及内容状态。观察不代表宿主已加载；旧锁缺少本机归属记录时按已有内容处理。`deployment_plan` 会生成取消选择后的受管移除步骤，未受管同路径冲突与受管漂移会阻塞；`SKILL_TARGET_CONFLICT`、`SKILL_MANAGED_DRIFT`、`RULE_TARGET_CONFLICT`、`RULE_MANAGED_DRIFT` 在 CLI 返回退出码 3。升级前缺少归属及读取依赖的待执行技能部署计划须重新生成。
-当前共 17 个工具，服务握手名称与新接入配置名称均为 `perch`；CLI 可执行文件仍为 `skillset`。`plugin_lifecycle_plan` 不提供“风险确认”参数；安装或更新可能由宿主解析新包，因此 MCP 调用会返回 `PLUGIN_RISK_APPROVAL_REQUIRED`，必须转由本机 UI/CLI 生成计划。
+当前共 59 个工具，服务握手名称与新接入配置名称均为 `perch`；CLI 可执行文件仍为 `skillset`。`plugin_lifecycle_plan` 不提供“风险确认”参数；安装或更新可能由宿主解析新包，因此 MCP 调用会返回 `PLUGIN_RISK_APPROVAL_REQUIRED`，必须转由本机 UI/CLI 生成计划。
 
 同一 `pluginId` 和 scope 有多个缓存版本时，AI 应先调用 `plugins_list`，再把目标记录的 `manifestDigest` 传给计划工具。缺失摘要返回 `PLUGIN_VERSION_AMBIGUOUS`，不会按目录顺序猜测。
 
 ## 3. 计划与人工授权
 
-项目安装工作流：`presets_list` / `skills_search` → `presets_install` / `skills_install` → 本机批准 → `deployment_apply`。安装参数必须提供已登记项目的 `projectId` 或绝对路径 `projectPath`，二选一；路径匹配 canonical realpath，不使用 MCP 服务工作目录推断当前项目。未登记返回 `PROJECT_NOT_REGISTERED` 并给出 App / CLI 登记入口，MCP 不自行添加写入根。两个安装工具将选定组件追加到应用数据目录内已落盘的项目安装选择，保留原有技能、规则、ruleBlockID 和宿主，不载入未部署草稿。结果包含 `status: awaiting-approval`、完整 digest 和 `nextTool` / `nextArguments`，不得据此报告已经安装。
+项目安装工作流：`presets_list` / `skills_search` → `presets_install` / `skills_install` → 本机批准 → `deployment_apply`。安装参数必须提供已登记项目的 `projectId` 或绝对路径 `projectPath`，二选一；路径匹配 canonical realpath，不使用 MCP 服务工作目录推断当前项目。未登记返回 `PROJECT_NOT_REGISTERED` 并给出 App / CLI 登记入口，调用方可用 `projects_create` 显式登记绝对路径；安装工具本身不会隐式添加写入根。两个安装工具将选定组件追加到应用数据目录内已落盘的项目安装选择，保留原有技能、规则、ruleBlockID 和宿主，不载入未部署草稿。结果包含 `status: awaiting-approval`、完整 digest 和 `nextTool` / `nextArguments`，不得据此报告已经安装。
 
-服务 `initialize.serverInfo.name` 和 AI 接入向导的新配置键均为 `perch`。已有旧名称配置保留，避免擅自覆盖外部配置；使用向导前应在 MCP 服务页审阅旧连接并通过计划移除，然后生成 `perch` 接入计划。宿主重新加载后才可确认发现 17 个工具。
+服务 `initialize.serverInfo.name` 和 AI 接入向导的新配置键均为 `perch`。已有旧名称配置保留，避免擅自覆盖外部配置；使用向导前应在 MCP 服务页审阅旧连接并通过计划移除，然后生成 `perch` 接入计划。宿主重新加载后才可确认发现 59 个工具。
 
-AGENTS 片段的新建、编辑和删除只开放在本机 UI，保存到本机 `templates.json`；正常启动不提供程序自带片段或预设，仅加载用户本机保存的条目；旧版用户修改过的同标识条目保留，删除记录在重启后继续生效。App、CLI 和 MCP 的部署计划共用合并后的片段库，长运行的 stdio 服务需重启以读取片段变更。本机 UI 的所有片段均可删除，引用和盘点失败不锁定删除操作；确认时说明引用将显示为不可用，需移除或替换后再部署。删除本身不修改项目文件，也不静默移除引用；旧版本或外部操作留下的失效引用在下次计划时仍拒绝。已经生成的计划保留生成时的内容和 digest，库编辑不改写既有计划；写项目仍需逐份预览和批准。本机片段页可以选择项目或全局目标，查看合成正文并生成正式计划；审批页展示规则前后内容和差异，复用同一事务与回读，不新增 MCP 片段写入工具。
+AGENTS 片段的新建、编辑和删除开放在本机 UI 与 MCP，保存到本机 `templates.json`；正常启动不提供程序自带片段或预设，仅加载用户本机保存的条目；旧版用户修改过的同标识条目保留，删除记录在重启后继续生效。App、CLI 和 MCP 的部署计划共用合并后的片段库，stdio 服务每次工具调用重新读取本机库。本机 UI 的所有片段均可删除，引用和盘点失败不锁定删除操作；确认时说明引用将显示为不可用，需移除或替换后再部署。删除本身不修改项目文件，也不静默移除引用；旧版本或外部操作留下的失效引用在下次计划时仍拒绝。已经生成的计划保留生成时的内容和 digest，库编辑不改写既有计划；写项目仍需逐份预览和批准。本机片段页可以选择项目或全局目标，查看合成正文并生成正式计划；审批页展示规则前后内容和差异，复用同一事务与回读，MCP 可通过 `templates_apply_plan` 生成同一审批链路的计划。
 
-原生预设的新建与编辑只开放在本机 UI。MCP 的 `presets_list` 每次合并内置与本机预设，按标识使用本机覆盖；`presets_install` 为技能与规则生成追加安装计划。包含插件或 MCP 的混合预设返回 `PRESET_REQUIRES_LOCAL_PLAN`，不生成部分计划，转本机完整载入并分别审阅组件计划。插件与 MCP 组件仍分别通过既有计划工具和本机审批处理。
+预设的新建、编辑与删除开放在本机 UI 和 MCP。MCP 的 `presets_list` 每次合并内置与本机预设，按标识使用本机覆盖；`presets_install` 为技能与规则生成追加安装计划。包含插件或 MCP 的混合预设返回 `PRESET_REQUIRES_LOCAL_PLAN`，不生成部分计划，转本机完整载入并分别审阅组件计划。插件与 MCP 组件仍分别通过既有计划工具和本机审批处理。
 
-原生技能库的新增、编辑与移除只开放在本机 UI，不新增 MCP 技能库写入工具。`skills_search`、`skills_install` 与 `presets_install` 每次读取最新本机技能索引；不要求重启服务才能查询和安装新技能。其他原有部署工具仍使用初始化快照。技能保存不授予项目写入权限，部署仍须经过下述审批流程。
+技能库的新增、编辑与移除开放在本机 UI 和 MCP，复用 `SkillLibraryStore`。来源条目只能隐藏或创建个人副本，不能直接修改来源。`skills_search`、`skills_install` 与 `presets_install` 每次读取最新本机技能索引；不要求重启服务才能查询和安装新技能。所有工具在调用时重新载入技能、片段和预设，查询和计划使用最新库内容。技能保存不授予项目写入权限，部署仍须经过下述审批流程。
 
 ```text
 AI 调用 deployment_plan / mcp_config_plan / plugin_lifecycle_plan
@@ -87,9 +110,9 @@ AI 调用 deployment_apply(planId, planDigest)
 - 预览记录兼容早期候选分类字段；原生 UI 按实际文件夹展示技能，不把目录名解释为成熟度或启用状态。许可文件只给迹象，不自动判定合规。
 - 预览保存到 Application Support `previews/<uuid>/`，不会修改 `registry/`、`vendor/` 或项目。
 
-原生 UI 另提供隔离预览的编辑与删除；编辑成功后替换旧预览，读取失败时保留旧记录。此交互没有新增 CLI 命令或 MCP 工具。
+原生 UI 另提供隔离预览的编辑与删除；编辑成功后替换旧预览，读取失败时保留旧记录。MCP 通过 `sources_get`、`sources_update` 和 `sources_delete` 提供同等来源管理能力。
 
-原生 UI 已支持把逐项选择的来源技能完整加入本机技能库，保存独立版本和来源证据，不修改仓库 catalog/vendor。导入后通过项目计划选择、批准和写入，收录与项目使用分别操作。CLI / MCP 暂不提供来源导入工具；现有 `skills_search` 可在下一次服务初始化后读到本机导入条目。来源自动更新与共享仓的正式 revision 发布仍待实现。
+原生 UI 已支持把逐项选择的来源技能完整加入本机技能库，保存独立版本和来源证据，不修改仓库 catalog/vendor。导入后通过项目计划选择、批准和写入，收录与项目使用分别操作。MCP 通过 `sources_import_skill` 提供来源导入，`skills_search` 可立即读到新条目；CLI 暂无单独导入命令。来源自动更新与共享仓的正式 revision 发布仍待实现。
 
 ## 5. CLI
 
@@ -145,7 +168,7 @@ Codex 用户级目标为 `$CODEX_HOME/config.toml`（默认 `~/.codex/config.tom
 
 Claude 项目 `.mcp.json` 使用等价的 `mcpServers.perch.command/args` 结构。示例中的 executable 最好使用绝对路径；`skillset` 默认从可执行文件位置、`SKILLSET_REPOSITORY_ROOT` 或当前目录向上查找 `registry/catalog.json`。
 
-同名 server 若不属于本管理器，会返回 `MCP_CONFIG_CONFLICT`，不会覆盖已有配置。凭据只保留变量名或 Keychain 引用，不回显 token。
+同名 server 若不属于本管理器，默认返回 `MCP_CONFIG_CONFLICT`；配置库页面只有在用户完成二次确认并把名称加入覆盖名单后，才会生成替换计划。计划携带目标文件旧指纹，审批前发生变化仍会拒绝写入。凭据只保留变量名或 Keychain 引用，不回显 token。
 
 ## 7. 验证与缺口
 
@@ -175,4 +198,4 @@ MCP 发现列表不展示 Codex 内部运行组件 `computer-use`、`node_repl`�
 
 原生 MCP 页默认维护本机配置库，支持手动新增、编辑、删除和扫描已有配置入库。扫描包含两个宿主的用户配置与已登记项目，显示来源路径并逐项勾选；不扫描任意未登记目录，不启动服务。只导入命令、可解析字符串参数、无凭据地址和环境变量名，凭据值、未知字段与扩展配置不复制；不支持或疑含敏感信息的连接需手动配置。入库提交重新扫描候选，批量重名或校验失败不部分写库。
 
-全局配置与项目从同一库选择服务，草稿按宿主与范围独立持久化。MCP 变更使用单独计划，把该目标全部选择与先前库部署记录比较；取消勾选经过批准后仅删除库拥有且没有节点修改的连接。外部同名连接不自动接管；扫描入库也不改变原宿主归属。Codex 项目范围写入 `<project>/.codex/config.toml`，与用户级配置及其他项目独立保存、扫描和计划；项目必须在 Codex 中设为受信任，否则 Codex 跳过项目配置。写入计划和界面提示该条件，不更改信任设置；全局连接仍可能生效。原「已有连接」编辑/删除和预设结构化 MCP 计划保留。库 CRUD 和扫描入库仅开放本机 UI，本轮不新增 CLI 命令或 MCP 工具。
+全局配置与项目从同一库选择服务，草稿按宿主与范围独立持久化。MCP 变更使用单独计划，把该目标全部选择与先前库部署记录比较；取消勾选经过批准后仅删除库拥有且没有节点修改的连接。外部同名连接默认不自动接管；配置库选择页可在显示路径和名称后通过二次确认生成覆盖计划，计划审批前继续校验整文件指纹；扫描入库仍不改变原宿主归属。Codex 项目范围写入 `<project>/.codex/config.toml`，与用户级配置及其他项目独立保存、扫描和计划；项目必须在 Codex 中设为受信任，否则 Codex 跳过项目配置。写入计划和界面提示该条件，不更改信任设置；全局连接仍可能生效。原「已有连接」编辑/删除和预设结构化 MCP 计划保留。库 CRUD 与选择草稿通过 MCP 开放；扫描入库仍仅开放本机 UI，CLI 未新增命令。

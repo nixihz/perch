@@ -108,10 +108,17 @@ struct GlobalConfigurationState: Codable {
     var schemaVersion = 1
     var revision = UUID()
     let host: MCPHost
-    let skillsPath: String
-    let rulesPath: String
+    var skillsPath: String
+    var rulesPath: String
     var selection: GlobalConfigurationDraft
     var managed: [String: GlobalManagedResource]
+
+    // 仅在内存中标记路径迁移。原始 JSON 仍按旧版本格式编码，避免改变旧收据的校验输入。
+    var didRepairPaths = false
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion, revision, host, skillsPath, rulesPath, selection, managed
+    }
 }
 
 public struct GlobalResourceObservation: Identifiable, Sendable {
@@ -214,10 +221,12 @@ public struct GlobalConfigurationManager {
 
     public func history(host: MCPHost) throws -> [GlobalOperationRecord] {
         let currentHash = try hash(locations.stateURL(host))
-        let statePath = relative(locations.stateURL(host), root: locations.transactionRoot(host))
         return try journals(host).sorted { $0.createdAt > $1.createdAt }.map { journal in
-            GlobalOperationRecord(journal: journal, action: journal.metadata?["globalAction"] ?? "deploy",
-                canUndo: journal.state == "applied" && journal.steps.contains { $0.relativePath == statePath && $0.afterHash == currentHash })
+            let statePath = relativeIfInside(locations.stateURL(host), root: URL(fileURLWithPath: journal.projectPath))
+            return GlobalOperationRecord(journal: journal, action: journal.metadata?["globalAction"] ?? "deploy",
+                canUndo: journal.state == "applied" && statePath.map { path in
+                    journal.steps.contains { $0.relativePath == path && $0.afterHash == currentHash }
+                } ?? false)
         }
     }
 
@@ -229,22 +238,30 @@ public struct GlobalConfigurationManager {
             throw FileTransactionError.journalCorrupt(paths.operationsRoot.path)
         }
         guard let data = try dataIfPresent(url) else { return nil }
-        let state: GlobalConfigurationState
+        var state: GlobalConfigurationState
         do { state = try JSONDecoder().decode(GlobalConfigurationState.self, from: data) }
         catch { throw GlobalConfigurationError.verificationFailed(.invalidState, path: url.path) }
-        let statePath = relative(url, root: locations.transactionRoot(host))
         // 分别报告失败条件，避免把路径变化与缺少凭证都显示成数据损坏。
         func require(_ condition: Bool, _ reason: GlobalVerificationReason) throws {
             guard condition else { throw GlobalConfigurationError.verificationFailed(reason, path: url.path) }
         }
         try require(state.schemaVersion == 1, .unsupportedSchema)
         try require(state.host == host, .hostMismatch)
-        try require(state.skillsPath == locations.skillsRoot(host).path, .skillsPathMismatch)
-        try require(state.rulesPath == locations.rulesURL(host).path, .rulesPathMismatch)
+        let rawHash = SkillAssetCopier.sha256(data)
+        let hasPathMismatch = state.skillsPath != locations.skillsRoot(host).path
+            || state.rulesPath != locations.rulesURL(host).path
+        if hasPathMismatch {
+            // 路径变更只有在原始状态仍由本机已完成事务签发时才自动修复。
+            // 这样可以兼容宿主目录迁移，同时继续拒绝直接篡改管理记录。
+            guard hasStateReceipt(rawHash, host: host, journals: history) else {
+                throw GlobalConfigurationError.verificationFailed(
+                    state.skillsPath != locations.skillsRoot(host).path ? .skillsPathMismatch : .rulesPathMismatch,
+                    path: url.path)
+            }
+            state = try canonicalizeStatePaths(state, host: host, path: url.path)
+        }
         try require(state.managed.keys.allSatisfy({ allowedResource(URL(fileURLWithPath: $0), host: host) }), .unmanagedPath)
-        try require(history.contains(where: { $0.state == "applied" && $0.steps.contains {
-            $0.relativePath == statePath && $0.afterHash == SkillAssetCopier.sha256(data)
-        } }), .missingReceipt)
+        try require(hasStateReceipt(rawHash, host: host, journals: history), .missingReceipt)
         return state
     }
 
@@ -256,9 +273,59 @@ public struct GlobalConfigurationManager {
             // 插件 journal 使用另一文件格式；全局文件 journal 损坏时拒绝静默跳过。
             guard fileManager.fileExists(atPath: url.appendingPathComponent("journal.json").path) else { return nil }
             let journal = try executor.loadJournal(id)
-            return journal.metadata?["globalHost"] == host.rawValue
-                && journal.projectPath == locations.transactionRoot(host).path ? journal : nil
+            // 不限制旧 journal 的事务根；宿主路径迁移后仍需能核对旧状态收据。
+            return journal.metadata?["globalHost"] == host.rawValue ? journal : nil
         }
+    }
+
+    func hasStateReceipt(_ stateHash: String, host: MCPHost, journals: [FileTransactionJournal]) -> Bool {
+        journals.contains { journal in
+            guard journal.state == "applied",
+                  journal.metadata?["globalHost"] == host.rawValue,
+                  let statePath = relativeIfInside(locations.stateURL(host), root: URL(fileURLWithPath: journal.projectPath)) else {
+                return false
+            }
+            return journal.steps.contains { $0.relativePath == statePath && $0.afterHash == stateHash }
+        }
+    }
+
+    /// 将旧版状态中的宿主路径迁移到当前解析结果，受管资源路径一并迁移。
+    /// 调用方应先核对状态收据；此函数本身不写盘。
+    func canonicalizeStatePaths(_ state: GlobalConfigurationState, host: MCPHost, path: String) throws -> GlobalConfigurationState {
+        let currentSkills = locations.skillsRoot(host).path
+        let currentRules = locations.rulesURL(host).path
+        guard state.skillsPath.hasPrefix("/"), state.rulesPath.hasPrefix("/") else {
+            throw GlobalConfigurationError.verificationFailed(.invalidState, path: path)
+        }
+        let oldSkills = URL(fileURLWithPath: state.skillsPath).standardizedFileURL.path
+        let oldRules = URL(fileURLWithPath: state.rulesPath).standardizedFileURL.path
+        guard oldSkills != "/", oldRules != "/" else {
+            throw GlobalConfigurationError.verificationFailed(.unmanagedPath, path: path)
+        }
+
+        var mapped: [String: GlobalManagedResource] = [:]
+        for (resourcePath, resource) in state.managed {
+            let canonical: String
+            if resourcePath == oldRules {
+                canonical = currentRules
+            } else if resourcePath.hasPrefix(oldSkills + "/") {
+                canonical = currentSkills + String(resourcePath.dropFirst(oldSkills.count))
+            } else if resourcePath == currentRules || resourcePath.hasPrefix(currentSkills + "/") {
+                canonical = resourcePath
+            } else {
+                throw GlobalConfigurationError.verificationFailed(.unmanagedPath, path: path)
+            }
+            guard mapped[canonical] == nil else {
+                throw GlobalConfigurationError.verificationFailed(.unmanagedPath, path: path)
+            }
+            mapped[canonical] = resource
+        }
+        var repaired = state
+        repaired.skillsPath = currentSkills
+        repaired.rulesPath = currentRules
+        repaired.managed = mapped
+        repaired.didRepairPaths = true
+        return repaired
     }
 
     func allowedResource(_ url: URL, host: MCPHost) -> Bool {
@@ -347,6 +414,13 @@ public struct GlobalConfigurationManager {
         fileManager.fileExists(atPath: url.path) ? try Data(contentsOf: url) : nil
     }
     func relative(_ url: URL, root: URL) -> String { String(url.path.dropFirst(root.path == "/" ? 1 : root.path.count + 1)) }
+
+    func relativeIfInside(_ url: URL, root: URL) -> String? {
+        let target = url.standardizedFileURL.path
+        let base = root.standardizedFileURL.path
+        guard target != base, base == "/" || target.hasPrefix(base + "/") else { return nil }
+        return relative(url.standardizedFileURL, root: root.standardizedFileURL)
+    }
     func encode<T: Encodable>(_ value: T) throws -> Data {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .prettyPrinted, .withoutEscapingSlashes]

@@ -7,6 +7,8 @@ struct MCPSelectionCard: View {
     let projectID: UUID?
     @State private var query = ""
     @State private var selectedOnly = false
+    @State private var overwriteConfirmationPresented = false
+    @State private var pendingOverwriteNames: [String] = []
     private var library: MCPLibraryModel { model.mcpLibrary }
     private var selectedIDs: [UUID] { library.selectedIDs(host: host, projectID: projectID) }
     private var filtered: [MCPLibraryEntry] {
@@ -21,11 +23,14 @@ struct MCPSelectionCard: View {
     var body: some View {
         SurfaceCard {
             VStack(alignment: .leading, spacing: 12) {
-                HStack {
+                ConfigurationSectionHeader {
                     Text(L10n.tr("MCP 服务")).font(AppFont.heading)
-                    Spacer()
-                    Text(host.displayName).font(AppFont.secondary).foregroundStyle(.secondary)
+                } actions: {
+                    Button(L10n.tr("预览 MCP 变更")) { model.prepareMCPLibraryPlan(host: host, projectID: projectID) }
+                        .disabled(model.isWorking)
+                        .accessibilityIdentifier("mcp.selection.preview.\(host.rawValue)")
                 }
+                Text(host.displayName).font(AppFont.secondary).foregroundStyle(.secondary)
                 Text(L10n.tr(projectID == nil
                     ? "这里的选择影响当前用户该工具的全部项目。预览并批准后才写入配置文件。"
                     : "这里的选择只写入当前项目；全局 MCP 仍可能生效。预览并批准后才写入配置文件。"))
@@ -39,9 +44,6 @@ struct MCPSelectionCard: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 selectionList
-                Button(L10n.tr("预览 MCP 变更")) { model.prepareMCPLibraryPlan(host: host, projectID: projectID) }
-                    .disabled(model.isWorking)
-                    .accessibilityIdentifier("mcp.selection.preview.\(host.rawValue)")
                 if let error = library.error { Text(L10n.text(error)).font(AppFont.secondary).foregroundStyle(.red) }
                 Button(L10n.tr("管理 MCP 配置库")) { model.section = .mcp }
             }
@@ -51,6 +53,20 @@ struct MCPSelectionCard: View {
             library.loadSelection(host: host, projectID: projectID)
             library.refreshUsage()
             model.refreshMCPConfigurations()
+        }
+        .confirmationDialog(L10n.tr("确认覆盖外部 MCP 服务？"), isPresented: $overwriteConfirmationPresented,
+                            titleVisibility: .visible) {
+            Button(L10n.tr("确认覆盖并预览"), role: .destructive) {
+                let names = pendingOverwriteNames
+                pendingOverwriteNames = []
+                library.approveExternalOverwrite(host: host, projectID: projectID, names: names)
+                model.prepareMCPLibraryPlan(host: host, projectID: projectID)
+            }
+            Button(L10n.tr("取消"), role: .cancel) { pendingOverwriteNames = [] }
+        } message: {
+            let names = pendingOverwriteNames.joined(separator: "、")
+            let path = target?.configPath ?? L10n.tr("目标配置")
+            Text(L10n.tr("将替换 \(names) 在 \(path) 中的现有内容。原文件会按计划保留备份；如果文件在审批前发生变化，计划会失效。"))
         }
     }
 
@@ -107,6 +123,21 @@ struct MCPSelectionCard: View {
             }
             Text(L10n.tr("勾选只保存草稿。取消勾选后批准计划，才会移除配置库写入且未经修改的服务。"))
                 .font(AppFont.metadata).foregroundStyle(.secondary)
+            let conflicts = library.externalConflicts(host: host, projectID: projectID)
+            if !conflicts.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label(L10n.tr("已有同名 MCP 服务不属于本应用，默认不会覆盖。"), systemImage: "exclamationmark.triangle.fill")
+                        .font(AppFont.secondary).foregroundStyle(.red)
+                    Text(conflicts.map(\.name).joined(separator: "、"))
+                        .font(AppFont.code).foregroundStyle(.secondary)
+                    Button(L10n.tr("确认覆盖同名服务…")) {
+                        pendingOverwriteNames = conflicts.map(\.name)
+                        overwriteConfirmationPresented = true
+                    }
+                    .buttonStyle(AppButtonStyle(kind: .secondary))
+                    .accessibilityIdentifier("mcp.selection.confirmOverwrite")
+                }
+            }
         }
     }
 }

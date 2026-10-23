@@ -651,7 +651,7 @@ func jsonValue<T: Encodable>(_ value: T) throws -> Any {
     encoder.dateEncodingStrategy = .iso8601
     encoder.outputFormatting = [.withoutEscapingSlashes]
     let data = try encoder.encode(value)
-    return try JSONSerialization.jsonObject(with: data)
+    return try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
 }
 
 private func jsonValue(_ value: Any) throws -> Any {

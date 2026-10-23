@@ -411,11 +411,18 @@ final class AppModel {
     @discardableResult
     func saveTemplate(_ draft: TemplateEditorDraft) -> Bool {
         templateError = nil
+        let previousBody = snapshot.templates.first(where: { $0.id == draft.id })?.body
         do {
             snapshot = try snapshot.replacingTemplates(templateStore.save(draft.record, initial: baseSnapshot.templates))
             selectedTemplateID = draft.id
             for index in projects.indices { projects[index].pendingChanges = pendingChangeCount(for: projects[index]) }
             service = try? SkillSetService(paths: runtimePaths, globalLocations: globalConfiguration.locations)
+            let affectsConfiguration = previousBody != nil
+                && previousBody != draft.body
+                && ((try? templateReferences(draft.id).contains { $0.target != nil }) ?? true)
+            if affectsConfiguration {
+                invalidatePreparedRulePlan()
+            }
             report("片段已保存；项目更新仍需预览和批准。")
             return true
         } catch let error as TemplateStoreError {
@@ -426,10 +433,13 @@ final class AppModel {
 
     func removeTemplate(_ template: TemplateRecord) {
         templateError = nil
+        let affectsConfiguration = (try? templateReferences(template.id).contains { $0.target != nil }) ?? true
         do {
             snapshot = try snapshot.replacingTemplates(templateStore.remove(id: template.id, initial: baseSnapshot.templates))
             selectedTemplateID = snapshot.templates.first?.id ?? ""
+            for index in projects.indices { projects[index].pendingChanges = pendingChangeCount(for: projects[index]) }
             service = try? SkillSetService(paths: runtimePaths, globalLocations: globalConfiguration.locations)
+            if affectsConfiguration { invalidatePreparedRulePlan() }
             report("片段已删除；已写入项目的规则保持不变。")
         } catch let error as TemplateStoreError {
             templateError = error.errorDescription
@@ -478,6 +488,19 @@ final class AppModel {
             templateError = UserFacingText.error(error)
             return false
         }
+    }
+
+    /// 片段正文变化后，当前打开的规则计划已不再对应片段库快照。
+    /// 计划记录本身保持不可变；这里只撤下 UI 中尚未执行的计划，避免继续执行旧正文。
+    private func invalidatePreparedRulePlan() {
+        guard let preparedPlan,
+              preparedPlan.approvalState != .applied,
+              preparedPlan.plan.changes.contains(where: { change in
+                  change.relativePath == "AGENTS.md" || change.relativePath == "CLAUDE.md"
+              }) else { return }
+        self.preparedPlan = nil
+        planPresented = false
+        planError = "片段内容已变化，之前的规则计划已失效，请重新预览。"
     }
 
     func presentTemplatePlanIfReady() {
@@ -1179,7 +1202,11 @@ final class AppModel {
     func prepareMCPLibraryPlan(host: MCPHost, projectID: UUID?) {
         do {
             guard let service else { throw DeploymentError.invalidPlan }
-            preparedPlan = try service.makeMCPLibraryPlan(host: host, projectID: projectID)
+            preparedPlan = try service.makeMCPLibraryPlan(
+                host: host,
+                projectID: projectID,
+                overwritingNames: mcpLibrary.takeApprovedOverwriteNames(host: host, projectID: projectID)
+            )
             mcpLibrary.error = nil
             planPresented = true
         } catch {

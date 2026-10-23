@@ -36,7 +36,7 @@ final class MCPStdioServer {
                 "protocolVersion": "2025-11-25",
                 "capabilities": ["tools": ["listChanged": false]],
                 "serverInfo": ["name": "perch", "version": "0.1.0"],
-                "instructions": "Perch：用 presets_list 列出预设、skills_search 搜索技能；用 skills_install 或 presets_install 为明确的已登记项目生成追加安装计划。projectPath 必须是调用方当前项目的绝对路径，不能猜测服务工作目录。用户在本机 UI 或 CLI 批准后，再调用 deployment_apply 完成安装。"
+                "instructions": "Perch：支持技能库、来源、片段、预设、项目和 MCP 配置库的增删改查；库删除不卸载已部署内容。用 templates_list 读取规则片段，用 global_config_plan 或 deployment_plan 生成应用/移除计划。用 presets_list 列出预设、skills_search 搜索技能；用 skills_install 或 presets_install 为明确的已登记项目生成追加安装计划。projectPath 必须是调用方当前项目的绝对路径，不能猜测服务工作目录。用户在本机 UI 或 CLI 批准后，再调用 deployment_apply 完成安装。"
             ]))
         case "notifications/initialized", "notifications/cancelled":
             return
@@ -51,6 +51,10 @@ final class MCPStdioServer {
                 write(errorResponse(id: id, code: -32602, message: "tools/call 缺少 name"))
                 return
             }
+            if let arguments = params["arguments"], !(arguments is [String: Any]) {
+                write(errorResponse(id: id, code: -32602, message: "arguments 必须是对象"))
+                return
+            }
             let arguments = params["arguments"] as? [String: Any] ?? [:]
             write(resultResponse(id: id, result: callTool(name: name, arguments: arguments)))
         default:
@@ -62,6 +66,11 @@ final class MCPStdioServer {
 
     private func callTool(name: String, arguments: [String: Any]) -> [String: Any] {
         do {
+            try validateToolArguments(name: name, arguments: arguments)
+            // 每次调用读取最新本机状态，库删除、编辑与计划使用同一视图。
+            let current = try SkillSetService(paths: service.paths)
+            if let result = try callManagementTool(name: name, arguments: arguments, current: current) { return result }
+            let service = current
             switch name {
             case "presets_list":
                 let presets = try service.presets(query: arguments["query"] as? String ?? "")
@@ -93,8 +102,6 @@ final class MCPStdioServer {
                 if let agents, agents.isEmpty || agents.contains(where: { !AgentDeploymentAdapter.supportedAgents.contains($0) }) {
                     throw MCPToolError(code: "INVALID_ARGUMENTS", message: "agents 只能包含 codex、claude-code，且不能为空。")
                 }
-                // 查询时重新载入本机技能库，避免 UI 新增技能后只能重启 MCP 才能安装。
-                let current = try SkillSetService(paths: service.paths)
                 let record = try current.makeInstallationPlan(projectID: projectID, projectPath: projectPath,
                                                               skillIDs: skillIDs, presetID: presetID, agents: agents)
                 var result = planObject(record)
@@ -114,7 +121,6 @@ final class MCPStdioServer {
                 let query = arguments["query"] as? String ?? ""
                 let sourceID = arguments["sourceId"] as? String
                 let limit = min(max(arguments["limit"] as? Int ?? 50, 1), 200)
-                let current = try SkillSetService(paths: service.paths)
                 let entries = Array(current.skills(query: query, sourceID: sourceID).prefix(limit))
                 return toolResult(
                     isError: false,
@@ -330,7 +336,7 @@ final class MCPStdioServer {
         }
     }
 
-    private var tools: [[String: Any]] {
+    var tools: [[String: Any]] {
         [
             tool(name: "presets_list", description: "列出或搜索可安装的预设，返回标识、版本、技能、规则、插件与 MCP 组件。",
                  properties: ["query": ["type": "string", "maxLength": 200]], required: [], readOnly: true),
@@ -493,10 +499,10 @@ final class MCPStdioServer {
                 destructive: false,
                 idempotent: false
             )
-        ]
+        ] + managementTools
     }
 
-    private func tool(
+    func tool(
         name: String,
         description: String,
         properties: [String: Any],
@@ -532,7 +538,7 @@ final class MCPStdioServer {
         ]
     }
 
-    private func planObject(_ record: StoredDeploymentPlan) -> [String: Any] {
+    func planObject(_ record: StoredDeploymentPlan) -> [String: Any] {
         [
             "planId": record.id.uuidString,
             "digest": record.plan.digest,
@@ -547,14 +553,14 @@ final class MCPStdioServer {
         ]
     }
 
-    private func requiredUUID(_ arguments: [String: Any], key: String) throws -> UUID {
+    func requiredUUID(_ arguments: [String: Any], key: String) throws -> UUID {
         guard let value = arguments[key] as? String, let id = UUID(uuidString: value) else {
             throw MCPToolError(code: "INVALID_ARGUMENTS", message: "\(key) 必须是 UUID。")
         }
         return id
     }
 
-    private func optionalUUID(_ arguments: [String: Any], key: String) throws -> UUID? {
+    func optionalUUID(_ arguments: [String: Any], key: String) throws -> UUID? {
         guard let value = arguments[key] as? String, !value.isEmpty else { return nil }
         guard let id = UUID(uuidString: value) else {
             throw MCPToolError(code: "INVALID_ARGUMENTS", message: "\(key) 必须是 UUID。")
@@ -569,7 +575,7 @@ final class MCPStdioServer {
         return object
     }
 
-    private func toolResult(isError: Bool, text: String, structured: [String: Any]) -> [String: Any] {
+    func toolResult(isError: Bool, text: String, structured: [String: Any]) -> [String: Any] {
         [
             "content": [["type": "text", "text": text]],
             "structuredContent": structured,
@@ -595,7 +601,7 @@ final class MCPStdioServer {
     }
 }
 
-private struct MCPToolError: Error, LocalizedError, Sendable {
+struct MCPToolError: Error, LocalizedError, Sendable {
     let code: String
     let message: String
 

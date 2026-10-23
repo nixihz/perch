@@ -16,7 +16,14 @@ struct ProjectPresetComponents: View {
                         .font(AppFont.secondary).foregroundStyle(.secondary)
                     ForEach(project.draftPlugins) { reference in
                         VStack(alignment: .leading, spacing: 10) {
-                            componentTitle(reference.name, detail: "\(reference.host.displayName) · \(L10n.text(reference.scope.displayName)) · \(reference.manifestDigest.prefix(10))")
+                            ConfigurationSectionHeader {
+                                componentTitle(reference.name, detail: "\(reference.host.displayName) · \(L10n.text(reference.scope.displayName)) · \(reference.manifestDigest.prefix(10))")
+                            } actions: {
+                                Button(L10n.tr("预览插件计划")) {
+                                    model.preparePresetPlugin(reference, acknowledge: acknowledged.contains(reference.id))
+                                }
+                                .disabled(!acknowledged.contains(reference.id) || model.isWorking)
+                            }
                             if reference.scope == .user { globalScopeNote }
                             Toggle(L10n.tr("我已核对完整插件包，包含自动运行脚本、命令及其他可运行组件。"), isOn: Binding(
                                 get: { acknowledged.contains(reference.id) },
@@ -25,20 +32,18 @@ struct ProjectPresetComponents: View {
                                 }
                             ))
                             .toggleStyle(.checkbox).font(AppFont.secondary)
-                            HStack {
-                                Button(L10n.tr("预览插件计划")) {
-                                    model.preparePresetPlugin(reference, acknowledge: acknowledged.contains(reference.id))
-                                }
-                                .disabled(!acknowledged.contains(reference.id) || model.isWorking)
-                                Spacer()
-                                Button(L10n.tr("从草稿移除")) { model.removePresetComponent(pluginID: reference.id) }
-                            }
+                            Button(L10n.tr("从草稿移除")) { model.removePresetComponent(pluginID: reference.id) }
                         }
                         Divider()
                     }
                     ForEach(project.draftMCPServers, id: \.presetID) { server in
                         VStack(alignment: .leading, spacing: 10) {
-                            componentTitle(server.name, detail: "\(server.host.displayName) · \(L10n.text(server.scope.displayName)) · \(server.transport)")
+                            ConfigurationSectionHeader {
+                                componentTitle(server.name, detail: "\(server.host.displayName) · \(L10n.text(server.scope.displayName)) · \(server.transport)")
+                            } actions: {
+                                Button(L10n.tr("预览 MCP 计划")) { _ = model.makeMCPConfigPlan(server) }
+                                    .disabled(model.isWorking)
+                            }
                             if server.scope == .user { globalScopeNote }
                             Text(server.commandOrURL).font(AppFont.metadata.monospaced()).foregroundStyle(.secondary)
                                 .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
@@ -46,12 +51,7 @@ struct ProjectPresetComponents: View {
                                 Text(L10n.tr("环境变量引用：\(server.envKeys.joined(separator: "、"))（只保存名称）"))
                                     .font(AppFont.metadata).foregroundStyle(.secondary)
                             }
-                            HStack {
-                                Button(L10n.tr("预览 MCP 计划")) { _ = model.makeMCPConfigPlan(server) }
-                                    .disabled(model.isWorking)
-                                Spacer()
-                                Button(L10n.tr("从草稿移除")) { model.removePresetComponent(mcpID: server.presetID) }
-                            }
+                            Button(L10n.tr("从草稿移除")) { model.removePresetComponent(mcpID: server.presetID) }
                         }
                         Divider()
                     }

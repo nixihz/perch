@@ -696,7 +696,8 @@ public struct SkillSetService {
         return try planStore.save(plan: plan, stagingPath: stage.path)
     }
 
-    public func makeMCPLibraryPlan(host: MCPHost, projectID: UUID? = nil) throws -> StoredDeploymentPlan {
+    public func makeMCPLibraryPlan(host: MCPHost, projectID: UUID? = nil,
+                                   overwritingNames: Set<String> = []) throws -> StoredDeploymentPlan {
         let library = MCPLibraryStore(rootURL: paths.applicationSupportRoot)
         let ids = try library.selectedIDs(host: host, projectID: projectID)
         let available = try library.entries()
@@ -715,7 +716,9 @@ public struct SkillSetService {
         }
         let previous = try library.applied(configPath: target.configPath)
         guard !entries.isEmpty || previous != nil else { throw DeploymentError.noChanges }
-        let edit = try manager.makeLibrarySelectionEdit(target: target, entries: entries, previous: previous)
+        let externalNames = Set(entries.map(\.name)).intersection(overwritingNames)
+        let edit = try manager.makeLibrarySelectionEdit(target: target, entries: entries, previous: previous,
+            overwritingNames: externalNames)
         let allHashes = try manager.libraryNodeHashes(content: edit.content, target: target)
         let names = Set(entries.map(\.name))
         let applied = MCPLibraryAppliedSelection(configPath: target.configPath, entries: entries,
@@ -729,10 +732,11 @@ public struct SkillSetService {
         let planID = UUID()
         let stage = paths.stagingRoot.appendingPathComponent(planID.uuidString)
         let removed = (previous?.entries.map(\.name) ?? []).filter { !names.contains($0) }
+        let overwriteNote = externalNames.isEmpty ? "" : "；覆盖外部 [\(externalNames.sorted().joined(separator: ", "))]"
         var changes: [PlannedChange] = []
         for (url, content, beforeHash, description) in [
             (URL(fileURLWithPath: target.configPath), edit.content, edit.beforeHash,
-             "\(host.displayName) · \(scope.displayName)：保留或写入 [\(entries.map(\.name).joined(separator: ", "))]；移除 [\(removed.joined(separator: ", "))]"),
+             "\(host.displayName) · \(scope.displayName)：保留或写入 [\(entries.map(\.name).joined(separator: ", "))]；移除 [\(removed.joined(separator: ", "))]\(overwriteNote)"),
             (appliedURL, appliedData, oldApplied.map(SkillAssetCopier.sha256), "记录本次 MCP 勾选及逐服务指纹")
         ] {
             let relative = String(url.path.dropFirst(root.path == "/" ? 1 : root.path.count + 1))
@@ -747,12 +751,14 @@ public struct SkillSetService {
             "host": host.rawValue, "scope": scope.rawValue, "projectID": projectID?.uuidString ?? "",
             "configPath": target.configPath, "serverName": entries.map(\.name).joined(separator: ", "),
             "librarySelectedNames": String(decoding: try encoder.encode(entries.map(\.name)), as: UTF8.self),
-            "libraryRemovedNames": String(decoding: try encoder.encode(removed), as: UTF8.self)]
+            "libraryRemovedNames": String(decoding: try encoder.encode(removed), as: UTF8.self),
+            "libraryOverwriteNames": String(decoding: try encoder.encode(externalNames.sorted()), as: UTF8.self)]
         let digest = DeploymentPlanner.calculateDigest(projectPath: root.path, changes: changes, selectedSkills: [], metadata: metadata)
         let plan = DeploymentPlan(id: planID, projectPath: root.path, createdAt: Date(), digest: digest,
             changes: changes, warnings: ["目标配置：\(target.configPath)",
                 scope == .user ? "此操作影响当前用户在该 AI 工具中的全部项目。" : "只更新当前项目的 MCP 配置；全局连接仍可能生效。",
                 "取消勾选只移除本配置库写入且未被修改的服务。",
+                externalNames.isEmpty ? "未接管外部同名服务。" : "已明确确认接管外部同名服务：\(externalNames.sorted().joined(separator: "、"))。",
                 "环境变量只写入 ${NAME} 引用，不读取或复制值。"] + target.loadingWarnings, metadata: metadata)
         return try planStore.save(plan: plan, stagingPath: stage.path)
     }

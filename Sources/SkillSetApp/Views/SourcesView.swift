@@ -113,7 +113,7 @@ struct SourcesView: View {
                                     Image(systemName: preview.id == model.selectedPreviewID ? "checkmark.circle.fill" : "circle")
                                         .foregroundStyle(preview.id == model.selectedPreviewID ? AppColor.accentText : .secondary)
                                     VStack(alignment: .leading, spacing: 3) {
-                                        Text(repositoryName(preview.canonicalURL))
+                                        Text(SkillSourceLabel.repository(preview.canonicalURL))
                                             .font(AppFont.body.weight(.semibold))
                                             .foregroundStyle(.primary)
                                             .lineLimit(1)
@@ -320,11 +320,6 @@ struct SourcesView: View {
                 }
             }
         }
-    }
-
-    private func repositoryName(_ url: String) -> String {
-        guard let components = URLComponents(string: url) else { return url }
-        return components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
     }
 
     @ViewBuilder

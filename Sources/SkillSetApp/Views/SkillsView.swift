@@ -13,6 +13,16 @@ struct SkillsView: View {
     @State private var sourceID = ""
 
     private var libraryIndex: SkillLibraryIndex { SkillLibraryIndex(entries: model.snapshot.catalog.entries) }
+    private var sourceLabels: [String: String] {
+        Dictionary(grouping: model.snapshot.catalog.entries, by: \.sourceId).mapValues { entries in
+            let id = entries[0].sourceId
+            return SkillSourceLabel.title(
+                sourceID: id,
+                origin: entries.compactMap { model.sourceOrigins[$0.id]?.url }.sorted().first,
+                registeredTitle: model.snapshot.sources.sources.first { $0.id == id }?.title
+            )
+        }
+    }
     private var visibleSkills: [SkillEntry] {
         let index = libraryIndex
         return model.filteredSkills.filter {
@@ -116,10 +126,10 @@ struct SkillsView: View {
                     }
                     .accessibilityIdentifier("skills.filter")
                     AppPicker(title: L10n.tr("技能来源"), selection: $sourceID,
-                              valueLabel: sourceID.isEmpty ? L10n.tr("全部来源") : sourceID, showsLabel: false) {
+                              valueLabel: sourceID.isEmpty ? L10n.tr("全部来源") : (sourceLabels[sourceID] ?? sourceID), showsLabel: false) {
                         Text(L10n.tr("全部来源")).tag("")
                         ForEach(Set(model.snapshot.catalog.entries.map(\.sourceId)).sorted(), id: \.self) { source in
-                            Text(source).tag(source)
+                            Text(sourceLabels[source] ?? source).tag(source)
                         }
                     }
                     .accessibilityIdentifier("skills.sourceFilter")
@@ -183,10 +193,15 @@ struct SkillsView: View {
                                                     StatusBadge(text: L10n.tr("暂不可用"), tone: .danger)
                                                 }
                                             }
-                                            Text(model.sourceOrigins[skill.id]?.url ?? skill.sourceId)
+                                            Text(SkillSourceLabel.title(
+                                                sourceID: skill.sourceId,
+                                                origin: model.sourceOrigins[skill.id]?.url,
+                                                registeredTitle: model.snapshot.sources.sources.first { $0.id == skill.sourceId }?.title
+                                            ))
                                                 .font(AppFont.metadata.monospaced())
                                                 .foregroundStyle(.secondary)
                                                 .lineLimit(1)
+                                                .help(model.sourceOrigins[skill.id]?.url ?? skill.sourceId)
                                             Text(skill.description)
                                                 .font(AppFont.secondary)
                                                 .foregroundStyle(.secondary)

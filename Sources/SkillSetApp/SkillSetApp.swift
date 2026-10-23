@@ -2,17 +2,20 @@ import SwiftUI
 
 @main
 struct SkillSetApp: App {
+    @NSApplicationDelegateAdaptor(MainWindowAppDelegate.self) private var appDelegate
     @State private var model = AppModel()
     @StateObject private var updates = AppUpdates.shared
 
     var body: some Scene {
-        WindowGroup(L10n.text("栖集"), id: "main") {
+        Window(L10n.text("栖集"), id: MainWindowAppDelegate.sceneID) {
             ContentView(model: model)
                 .appPreferences()
+                .modifier(MainWindowReopenRegistration(appDelegate: appDelegate))
         }
         .defaultSize(width: 1280, height: 820)
         .windowToolbarStyle(.unified)
         .commands {
+            MainWindowCommands()
             CommandGroup(replacing: .appSettings) {
                 Button(L10n.tr("设置")) {
                     model.section = .settings

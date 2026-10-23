@@ -699,9 +699,11 @@ public struct MCPConfigurationManager {
         }
     }
 
-    /// 对整组勾选生成一次配置变更；仅替换本配置库先前写入且没有漂移的节点。
+    /// 对整组勾选生成一次配置变更；默认只替换本配置库先前写入且没有漂移的节点，
+    /// 外部同名节点必须由上层显式加入覆盖名单。
     public func makeLibrarySelectionEdit(target: MCPConfigurationTarget, entries: [MCPLibraryEntry],
-                                         previous: MCPLibraryAppliedSelection?) throws -> MCPConfigEditResult {
+                                         previous: MCPLibraryAppliedSelection?,
+                                         overwritingNames: Set<String> = []) throws -> MCPConfigEditResult {
         let root = URL(fileURLWithPath: target.rootPath)
         let url = URL(fileURLWithPath: target.configPath)
         try ensureInside(url, root: root)
@@ -727,7 +729,7 @@ public struct MCPConfigurationManager {
             guard draft.validationIssues().isEmpty else {
                 throw MCPConfigurationError.invalidDraft(draft.validationIssues().joined(separator: "；"))
             }
-            if hashes[entry.name] != nil && !oldNames.contains(entry.name) {
+            if hashes[entry.name] != nil && !oldNames.contains(entry.name) && !overwritingNames.contains(entry.name) {
                 throw MCPConfigurationError.configConflict(entry.name)
             }
         }
@@ -735,7 +737,7 @@ public struct MCPConfigurationManager {
         case .claudeCode:
             var object = content.isEmpty ? [:] : try JSONSerialization.jsonObject(with: content) as? [String: Any] ?? [:]
             var servers = object["mcpServers"] as? [String: Any] ?? [:]
-            for name in oldNames { servers.removeValue(forKey: name) }
+            for name in oldNames.union(overwritingNames) { servers.removeValue(forKey: name) }
             object["mcpServers"] = servers
             content = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
             for entry in entries.sorted(by: { $0.name < $1.name }) {
@@ -750,6 +752,17 @@ public struct MCPConfigurationManager {
             var lines = String(decoding: content, as: UTF8.self).components(separatedBy: "\n")
             for block in try codexManagedBlocks(in: lines).reversed() where oldNames.contains(block.name) && !Set(newNames).contains(block.name) {
                 lines.removeSubrange(block.begin...block.end)
+            }
+            for name in overwritingNames {
+                guard let start = lines.firstIndex(where: { codexServerName(fromHeader: $0) == name }) else { continue }
+                let tableKey = name.contains(".") ? tomlString(name) : name
+                let end = lines.indices.first { index in
+                    guard index > start else { return false }
+                    let trimmed = lines[index].trimmingCharacters(in: .whitespaces)
+                    return lines[index].hasPrefix("# skillset:begin mcp ") ||
+                        (trimmed.hasPrefix("[") && !trimmed.hasPrefix("[mcp_servers.\(tableKey)."))
+                } ?? lines.count
+                lines.removeSubrange(start..<end)
             }
             content = Data(lines.joined(separator: "\n").utf8)
             for entry in entries.sorted(by: { $0.name < $1.name }) {

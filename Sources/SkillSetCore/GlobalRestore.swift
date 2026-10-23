@@ -17,7 +17,10 @@ extension GlobalConfigurationManager {
         if let beforeHash = stateStep.beforeHash {
             let backup = operationRoot.appendingPathComponent("backup/\(statePath)")
             guard try hash(backup) == beforeHash else { throw GlobalConfigurationError.baselineMissing }
-            do { previous = try JSONDecoder().decode(GlobalConfigurationState.self, from: Data(contentsOf: backup)) }
+            do {
+                let decoded = try JSONDecoder().decode(GlobalConfigurationState.self, from: Data(contentsOf: backup))
+                previous = try canonicalState(decoded, host: host, path: backup.path)
+            }
             catch { throw GlobalConfigurationError.verificationFailed(.invalidBackup, path: backup.path) }
         } else {
             previous = GlobalConfigurationState(host: host, skillsPath: locations.skillsRoot(host).path,
@@ -67,5 +70,13 @@ extension GlobalConfigurationManager {
             } else if actual != resource.hash { throw DeploymentError.managedSkillDrift(path) }
         }
         return try builder.finish(state: previous)
+    }
+
+    private func canonicalState(_ state: GlobalConfigurationState, host: MCPHost, path: String) throws -> GlobalConfigurationState {
+        guard state.skillsPath == locations.skillsRoot(host).path,
+              state.rulesPath == locations.rulesURL(host).path else {
+            return try canonicalizeStatePaths(state, host: host, path: path)
+        }
+        return state
     }
 }

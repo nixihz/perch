@@ -135,6 +135,50 @@ struct MCPMutationTests {
         #expect(!ManagedMCPRegistry(rootURL: state).isManaged(configPath: config.path, serverName: "demo"))
     }
 
+    @Test func librarySelectionRequiresExplicitApprovalBeforeReplacingExternalName() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let config = root.appendingPathComponent(".claude.json")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try #"{"mcpServers":{"docs":{"command":"external","custom":true}}}"#
+            .write(to: config, atomically: true, encoding: .utf8)
+        let manager = MCPConfigurationManager(projectRoot: nil, applicationSupportRoot: root,
+            environment: ["HOME": root.path], homeDirectory: root)
+        let target = try #require(manager.targets().first { $0.host == .claudeCode && $0.scope == .user })
+        let entry = MCPLibraryEntry(name: "docs", commandOrURL: "managed")
+        #expect(throws: MCPConfigurationError.configConflict("docs")) {
+            try manager.makeLibrarySelectionEdit(target: target, entries: [entry], previous: nil)
+        }
+        let edit = try manager.makeLibrarySelectionEdit(target: target, entries: [entry], previous: nil,
+            overwritingNames: ["docs"])
+        let object = try #require(JSONSerialization.jsonObject(with: edit.content) as? [String: Any])
+        let servers = try #require(object["mcpServers"] as? [String: [String: Any]])
+        #expect(servers["docs"]?["command"] as? String == "managed")
+        #expect(servers["docs"]?["custom"] as? Bool == nil)
+    }
+
+    @Test func codexLibraryOverwritePreservesFollowingTables() throws {
+        try fixture(host: .codex, text: """
+        [mcp_servers.docs]
+        command = "external"
+        [mcp_servers.docs.env]
+        TOKEN = "keep-private"
+        [profile]
+        model = "keep"
+        [mcp_servers.other]
+        command = "other"
+        """) { manager, target, _ in
+            let entry = MCPLibraryEntry(name: "docs", commandOrURL: "managed")
+            let edit = try manager.makeLibrarySelectionEdit(target: target, entries: [entry], previous: nil,
+                overwritingNames: ["docs"])
+            let updated = String(decoding: edit.content, as: UTF8.self)
+            #expect(updated.contains("[profile]\nmodel = \"keep\""))
+            #expect(updated.contains("[mcp_servers.other]\ncommand = \"other\""))
+            #expect(updated.contains("command = \"managed\""))
+            #expect(!updated.contains("TOKEN = \"keep-private\""))
+        }
+    }
+
     private func fixture(host: MCPHost, text: String,
         body: (MCPConfigurationManager, MCPConfigurationTarget, URL) throws -> Void) throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

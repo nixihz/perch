@@ -47,7 +47,7 @@ def verify(executable):
         if responses[0].get("result", {}).get("serverInfo", {}).get("name") != "perch":
             raise RuntimeError("MCP 服务名称不是 perch")
         names = {tool["name"] for tool in responses[1].get("result", {}).get("tools", [])}
-        if not {"presets_list", "skills_search", "skills_install", "presets_install", "projects_list", "deployment_plan", "deployment_apply"} <= names or "approve" in names:
+        if not {"presets_list", "skills_search", "skills_install", "presets_install", "projects_list", "deployment_plan", "deployment_apply", "skills_delete", "skills_update", "templates_create", "presets_apply_draft", "mcp_library_plan", "global_config_plan", "plugin_sources_delete"} <= names or "approve" in names:
             raise RuntimeError("MCP 未提供预期工具，或错误暴露批准入口")
         def cli(*arguments, expected=0):
             result = subprocess.run(
