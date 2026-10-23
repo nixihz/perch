@@ -20,7 +20,7 @@
 
 ## 配置与构建
 
-公开配置放在 `config/updates.json`。当前线上构建为 `0.0.1 (7)`；源码、签名产物、公证和平台发布均已完成。发布仍保留原 Bundle ID 与 Sparkle 公钥，使用新平台清单地址重新签名、公证；每次正式发包都递增 `build`，同一个构建号不能重发不同内容。此版本是桌面整包版本，与 skill revision、项目锁版本无关。
+公开配置放在 `config/updates.json`。当前线上构建为 `0.0.1 (8)`；源码、签名产物、公证和平台发布均已完成。发布仍保留原 Bundle ID 与 Sparkle 公钥，使用新平台清单地址重新签名、公证；每次正式发包都递增 `build`，同一个构建号不能重发不同内容。此版本是桌面整包版本，与 skill revision、项目锁版本无关。
 
 可直接修改该 JSON，或通过以下环境变量覆盖：
 
@@ -131,3 +131,5 @@ python3 -m unittest tests.test_update_packaging tests.test_ui_localization -v
 平台清单中的 `access: public` 不足以证明匿名公开：实例 `visibility` 也须为 `public`。发版前后必须用不带 Cookie/Token 的 GET 验证 RSS XML 和实际 DMG，拒绝将登录跳转后的 HTML 200 当作成功。本轮已恢复此前误设为 personal 的 Perch 可见性。
 
 2026-10-23 build 7 已发布：源码提交 `f9910da1efd94fccd2cb737b74c65aef32639c83` 与 `perch-v0.0.1-build.7` 标签已推送。App 公证 ID 为 `58ac1c4e-56d1-44bc-a61b-887c1d7cd074`，DMG 公证 ID 为 `1a6b15e2-f304-4470-a077-7dd3e95004b3`，均为 Accepted；此前一次提交返回 profile lookup failure，后续 `APP-Notary-2026` 的 history 与 submit 均成功；最初失败的具体原因尚未确认，撤回此前“缺少 profile”的结论。正式 DMG 为 26,833,798 字节，SHA-256 为 `136d435431eddbbe205643c8b1f8a5eb0a7bdd58d34a3a465af3c07c7baeee92`。平台 release ID 为 `7735e864-a8ff-4983-b310-552f2deaae0d`，公网 appcast、首页、品牌图和 DMG 匿名下载逐字节核对通过，官方 Sparkle `sign_update --verify` 通过。完整验证与未完成的跨版本安装边界见 [build 7 记录](releases/perch-0.0.1-7.md)。
+
+2026-10-23 build 8 已发布：独立宿主草稿开关与扫描体验改进，修复保存失败无反馈及扫描失败丢失结果的问题。源码 `0bebe357854e5c9e1ffd2acaaa10763cb22e9a0f`、标签 `perch-v0.0.1-build.8` 已推送；完整 Swift、原生 UI 与 Cucumber 回归均通过。App 与 DMG 经 `APP-Notary-2026` 公证并装订，平台 release ID 为 `c46352b8-933c-44b7-a648-ad00417aab37`。匿名公网字节与官方 Sparkle 验签通过；正式包校验值、公证 ID、测试明细及待完成的 build 7 → 8 安装验收见 [build 8 记录](releases/perch-0.0.1-8.md)。
