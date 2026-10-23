@@ -20,7 +20,7 @@
 
 ## 配置与构建
 
-公开配置放在 `config/updates.json`。当前线上构建为 `0.0.1 (6)`；`0.0.1 (7)` 已完成源码提交、标签和签名产物，等待恢复本机公证 profile 后发布。发布仍保留原 Bundle ID 与 Sparkle 公钥，使用新平台清单地址重新签名、公证；每次正式发包都递增 `build`，同一个构建号不能重发不同内容。此版本是桌面整包版本，与 skill revision、项目锁版本无关。
+公开配置放在 `config/updates.json`。当前线上构建为 `0.0.1 (7)`；源码、签名产物、公证和平台发布均已完成。发布仍保留原 Bundle ID 与 Sparkle 公钥，使用新平台清单地址重新签名、公证；每次正式发包都递增 `build`，同一个构建号不能重发不同内容。此版本是桌面整包版本，与 skill revision、项目锁版本无关。
 
 可直接修改该 JSON，或通过以下环境变量覆盖：
 
@@ -48,7 +48,7 @@ PERCH_SIGNING_IDENTITY='Developer ID Application: <name> (<team>)' \
 
 ## 后续发版步骤
 
-Sparkle 工具随依赖下载至 `<构建目录>/artifacts/sparkle/Sparkle/bin/`。发布机已有可用公证 profile：`APP-Notary-2026`；它由 notarytool 从钥匙串读取，不在仓库保存凭据。
+Sparkle 工具随依赖下载至 `<构建目录>/artifacts/sparkle/Sparkle/bin/`。发布机使用公证 profile：`APP-Notary-2026`；它由 notarytool 从钥匙串读取，不在仓库保存凭据。此前一次提交返回 profile lookup failure，后续 history 与 submit 均成功，最初失败的具体原因尚未确认；撤回此前“缺少 profile”的结论。
 
 1. 先核对发布机是否已有栖集专用的 Sparkle 密钥；有则沿用。尚未创建时，使用 `generate_keys --account com.xiezhixin.perch` 创建独立密钥。私钥保留在发布机 Keychain，并安排安全的独立备份；仅把输出公钥写入配置。之后 `generate_appcast` 使用同一 account。
 2. 配置独立 appcast 地址，递增构建号，以 Developer ID 签名构建 Release 通用包。核对 `codesign -dv --verbose=4` 的 TeamIdentifier、hardened runtime、包版本和公钥。
@@ -130,4 +130,4 @@ python3 -m unittest tests.test_update_packaging tests.test_ui_localization -v
 
 平台清单中的 `access: public` 不足以证明匿名公开：实例 `visibility` 也须为 `public`。发版前后必须用不带 Cookie/Token 的 GET 验证 RSS XML 和实际 DMG，拒绝将登录跳转后的 HTML 200 当作成功。本轮已恢复此前误设为 personal 的 Perch 可见性。
 
-2026-10-23 build 7 发布准备：源码和 `perch-v0.0.1-build.7` 标签已推送，App 与草稿 DMG 已通过 Developer ID 签名及通用架构验证；本机缺少 `APP-Notary-2026` 钥匙串 profile，Apple 公证提交失败，尚未生成 Sparkle appcast 或上传平台，线上仍为 build 6。验证、产物与续办边界见 [build 7 记录](releases/perch-0.0.1-7.md)。
+2026-10-23 build 7 已发布：源码提交 `f9910da1efd94fccd2cb737b74c65aef32639c83` 与 `perch-v0.0.1-build.7` 标签已推送。App 公证 ID 为 `58ac1c4e-56d1-44bc-a61b-887c1d7cd074`，DMG 公证 ID 为 `1a6b15e2-f304-4470-a077-7dd3e95004b3`，均为 Accepted；此前一次提交返回 profile lookup failure，后续 `APP-Notary-2026` 的 history 与 submit 均成功；最初失败的具体原因尚未确认，撤回此前“缺少 profile”的结论。正式 DMG 为 26,833,798 字节，SHA-256 为 `136d435431eddbbe205643c8b1f8a5eb0a7bdd58d34a3a465af3c07c7baeee92`。平台 release ID 为 `7735e864-a8ff-4983-b310-552f2deaae0d`，公网 appcast、首页、品牌图和 DMG 匿名下载逐字节核对通过，官方 Sparkle `sign_update --verify` 通过。完整验证与未完成的跨版本安装边界见 [build 7 记录](releases/perch-0.0.1-7.md)。

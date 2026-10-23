@@ -40,3 +40,5 @@ CLI 的 `--data` 默认为当前目录下的 `data`；不同工作目录会读�
 后续发布从版本管理中的 `index.html` 复制页面、从 `assets/brand/perch-primary.png` 复制品牌图到全新发布目录，再加入本次 Sparkle 输出的 DMG 和 appcast。不要直接打包开发用 `website/perch/dist`：其中可能保留旧下载文件，导致体积超限或混入过期入口。
 
 2026-10-23 已更新至 `0.0.1 (6)`，release ID 为 `8175cd1d-0cd5-4de5-9431-eb90e95b8b59`；匿名首页、清单与完整 DMG 字节及 Sparkle 验签通过。平台当前还单独保存 `visibility`，应与 `manifest.access` 一起核对；本轮发布前已恢复 Perch 的 public 可见性。新 CLI 打包会生成根级 `app-platform-source.json`，验收时将其作为唯一明确允许的生成元数据，核对源码提交与 clean 状态，其余文件集合仍须与来源完全一致。完整验证与未完成项见 [build 6 发布记录](../../docs/releases/perch-0.0.1-6.md)。
+
+2026-10-23 已更新至 `0.0.1 (7)`，平台 release ID 为 `7735e864-a8ff-4983-b310-552f2deaae0d`。正式 DMG 通过 Apple 公证并装订，公网首页、品牌图、appcast 和 DMG 匿名下载逐字节核验，Sparkle 官方验签通过；平台 `visibility` 与清单 `access` 均为 `public`。完整公证 ID、SHA-256、测试及未完成的跨版本安装验收见 [build 7 发布记录](../../docs/releases/perch-0.0.1-7.md)。
