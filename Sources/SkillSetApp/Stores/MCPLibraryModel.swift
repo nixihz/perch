@@ -66,8 +66,7 @@ final class MCPLibraryModel {
     }
 
     func preferUsageTarget(host: MCPHost, projectID: UUID?) {
-        // Codex 项目没有 MCP 适配器，只回退到同一工具的全局配置。
-        preferredUsageTargetID = store.selectionKey(host: host, projectID: host == .codex ? nil : projectID)
+        preferredUsageTargetID = store.selectionKey(host: host, projectID: projectID)
     }
 
     func initialUsageTargetID(fallbackHost: MCPHost) -> String {
@@ -85,10 +84,6 @@ final class MCPLibraryModel {
     @discardableResult
     func select(_ id: UUID, enabled: Bool, host: MCPHost, projectID: UUID?) -> Bool {
         do {
-            // 使用范围必须可写，不能把不支持的 Codex 项目选择保存成看似有效的草稿。
-            guard projectID == nil || host == .claudeCode else {
-                throw MCPConfigurationError.unsupportedTarget(host.rawValue)
-            }
             if enabled, !entries.contains(where: { $0.id == id }) { throw MCPLibraryError.missingSelection }
             var ids = try store.selectedIDs(host: host, projectID: projectID)
             ids.removeAll { $0 == id }

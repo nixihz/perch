@@ -270,6 +270,10 @@ private struct MCPLibraryUseSheet: View {
                             ? "影响当前用户在该 AI 工具中的全部项目。"
                             : "仅写入所选项目；全局 MCP 配置仍可能生效。"), systemImage: target.projectID == nil ? "globe" : "folder")
                             .font(AppFont.secondary).foregroundStyle(target.projectID == nil ? .orange : .secondary)
+                        if target.host == .codex && target.projectID != nil {
+                            Text(L10n.text(MCPConfigurationTarget.codexProjectTrustNotice))
+                                .font(AppFont.secondary).foregroundStyle(.orange)
+                        }
                         Text(L10n.tr("配置文件")).font(AppFont.heading)
                         Text(target.configPath).font(AppFont.code).textSelection(.enabled)
                             .fixedSize(horizontal: false, vertical: true)
@@ -289,7 +293,7 @@ private struct MCPLibraryUseSheet: View {
             if let error = library.error ?? library.usageError {
                 Text(L10n.text(error)).font(AppFont.secondary).foregroundStyle(.red)
             }
-            Text(L10n.tr("Codex 仅支持全局 MCP。预览失败或取消审批时，已保存的草稿会保留；配置文件不会写入。"))
+            Text(L10n.tr("预览失败或取消审批时，已保存的草稿会保留；配置文件不会写入。"))
                 .font(AppFont.secondary).foregroundStyle(.secondary)
             HStack {
                 Button(L10n.tr("取消")) { dismiss() }.keyboardShortcut(.cancelAction)

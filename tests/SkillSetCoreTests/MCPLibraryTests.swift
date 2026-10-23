@@ -77,8 +77,8 @@ struct MCPLibraryTests {
         }
     }
 
-    @Test func globalTargetsReuseOneEntryAndCodexProjectIsRejected() throws {
-        try fixture { service, library, projectID, _, home in
+    @Test func globalAndCodexProjectTargetsReuseOneEntryWithoutChangingOtherScopes() throws {
+        try fixture { service, library, projectID, project, home in
             let entry = try library.save(MCPLibraryEntry(name: "docs", commandOrURL: "docs"))
             for host in MCPHost.allCases {
                 try library.saveSelection([entry.id], host: host, projectID: nil)
@@ -88,7 +88,19 @@ struct MCPLibraryTests {
             #expect(try String(contentsOf: home.appendingPathComponent(".codex/config.toml"), encoding: .utf8).contains("[mcp_servers.docs]"))
             #expect(try json(home.appendingPathComponent(".claude.json"))["mcpServers"] != nil)
             try library.saveSelection([entry.id], host: .codex, projectID: projectID)
-            #expect(throws: MCPConfigurationError.unsupportedTarget("codex/project")) { try service.makeMCPLibraryPlan(host: .codex, projectID: projectID) }
+            let globalConfig = home.appendingPathComponent(".codex/config.toml")
+            let globalBytes = try Data(contentsOf: globalConfig)
+            let projectConfig = project.appendingPathComponent(".codex/config.toml")
+            let pending = try service.makeMCPLibraryPlan(host: .codex, projectID: projectID)
+            #expect(!FileManager.default.fileExists(atPath: projectConfig.path))
+            #expect(throws: (any Error).self) { try service.apply(planID: pending.id, digest: pending.plan.digest) }
+            try apply(pending, service: service)
+            #expect(try String(contentsOf: projectConfig, encoding: .utf8).contains("[mcp_servers.docs]"))
+            #expect(try Data(contentsOf: globalConfig) == globalBytes)
+            try library.saveSelection([], host: .codex, projectID: projectID)
+            try apply(service.makeMCPLibraryPlan(host: .codex, projectID: projectID), service: service)
+            #expect(!String(decoding: try Data(contentsOf: projectConfig), as: UTF8.self).contains("mcp_servers.docs"))
+            #expect(try Data(contentsOf: globalConfig) == globalBytes)
             try library.saveSelection([], host: .codex, projectID: nil)
             try apply(service.makeMCPLibraryPlan(host: .codex), service: service)
             #expect(!String(decoding: try Data(contentsOf: home.appendingPathComponent(".codex/config.toml")), as: UTF8.self).contains("mcp_servers.docs"))

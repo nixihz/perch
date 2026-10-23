@@ -217,7 +217,7 @@ struct MCPObservedServersView: View {
 struct MCPConfigSheet: View {
     @Bindable var model: AppModel
     @Environment(\.dismiss) private var dismiss
-    // 默认宿主是 Codex，其项目作用域不受支持，必须从可见的用户选项开始。
+    // 保留用户级默认值；项目范围由用户显式选择。
     @State private var draft = MCPConfigurationDraft(scope: .user)
     @State private var showValidation = false
     @State private var replaceArguments = false
@@ -261,11 +261,8 @@ struct MCPConfigSheet: View {
                         }
                         .accessibilityIdentifier("mcp.config.host")
                         .disabled(existingServer != nil)
-                        .onChange(of: draft.host) {
-                            if draft.host == .codex { draft.scope = .user }
-                        }
                         AppPicker(title: L10n.tr("使用范围"), selection: $draft.scope, valueLabel: L10n.text(draft.scope.displayName)) {
-                            if draft.host == .claudeCode { Text(L10n.tr("项目")).tag(MCPConfigurationScope.project) }
+                            Text(L10n.tr("项目")).tag(MCPConfigurationScope.project)
                             Text(L10n.tr("用户")).tag(MCPConfigurationScope.user)
                         }
                         .accessibilityIdentifier("mcp.config.scope")
@@ -323,7 +320,7 @@ struct MCPConfigSheet: View {
                     .foregroundStyle(.orange)
             }
             if draft.host == .codex && draft.scope == .project {
-                Label(L10n.tr("Codex 目前只支持用户级配置；项目连接请选择 Claude Code。"), systemImage: "info.circle")
+                Label(L10n.text(MCPConfigurationTarget.codexProjectTrustNotice), systemImage: "info.circle")
                     .font(AppFont.secondary)
                     .foregroundStyle(.secondary)
             }

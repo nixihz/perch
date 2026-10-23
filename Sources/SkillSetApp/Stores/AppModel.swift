@@ -1171,8 +1171,8 @@ final class AppModel {
         MCPAccessInstallation.detect(bundleURL: Bundle.main.bundleURL, repositoryRoot: runtimePaths.repositoryRoot)
     }
 
-    func mcpAccessInspection(host: MCPHost) -> MCPConfigurationInspection? {
-        mcpConfigInspections.first { $0.host == host && $0.scope == .user }
+    func mcpAccessInspection(host: MCPHost, scope: MCPConfigurationScope = .user) -> MCPConfigurationInspection? {
+        mcpConfigInspections.first { $0.host == host && $0.scope == scope }
     }
 
     func refreshAIAccess() {
@@ -1182,13 +1182,13 @@ final class AppModel {
     }
 
     @discardableResult
-    func prepareAIAccess(host: MCPHost) -> Bool {
+    func prepareAIAccess(host: MCPHost, scope: MCPConfigurationScope = .user) -> Bool {
         aiAccessError = nil
         guard let installation = mcpAccessInstallation else {
             aiAccessError = "未找到完整的 MCP 程序。请重新构建或安装栖集，再重新检测。"
             return false
         }
-        let success = makeMCPConfigPlan(installation.draft(host: host, paths: runtimePaths))
+        let success = makeMCPConfigPlan(installation.draft(host: host, scope: scope, paths: runtimePaths))
         if !success { aiAccessError = actionMessage }
         return success
     }

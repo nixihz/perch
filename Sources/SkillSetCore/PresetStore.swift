@@ -76,7 +76,6 @@ public struct PresetStore {
         }
         for server in preset.mcpServers {
             if let issue = server.validationIssues().first { return issue }
-            if server.host == .codex && server.scope == .project { return "Codex MCP 仅支持用户作用域。" }
         }
         return nil
     }

@@ -82,6 +82,13 @@ public struct MCPConfigurationTarget: Codable, Hashable, Sendable {
         self.relativePath = relativePath
     }
 
+    /// 写入配置不能证明 Codex 已加载，也不能代替用户授予项目信任。
+    public static let codexProjectTrustNotice = "项目必须在 Codex 中设为受信任，否则会跳过 .codex/config.toml。栖集不更改信任设置。"
+
+    public var loadingWarnings: [String] {
+        host == .codex && scope == .project ? [Self.codexProjectTrustNotice] : []
+    }
+
     public var configPath: String {
         URL(fileURLWithPath: rootPath, isDirectory: true)
             .appendingPathComponent(relativePath)
@@ -410,6 +417,12 @@ public struct MCPConfigurationManager {
                 rootPath: projectRoot.path,
                 relativePath: ".mcp.json"
             ))
+            targets.append(MCPConfigurationTarget(
+                host: .codex,
+                scope: .project,
+                rootPath: projectRoot.path,
+                relativePath: ".codex/config.toml"
+            ))
         }
         return targets
     }
@@ -431,6 +444,7 @@ public struct MCPConfigurationManager {
             )
         }
         do {
+            try ensureInside(url, root: URL(fileURLWithPath: target.rootPath))
             let data = try Data(contentsOf: url)
             let servers: [MCPObservedServer]
             switch target.host {
@@ -1088,6 +1102,14 @@ public struct MCPConfigurationManager {
         let prefix = root.path.hasSuffix("/") ? root.path : root.path + "/"
         guard url.standardizedFileURL.path.hasPrefix(prefix) else {
             throw MCPConfigurationError.unsafePath(url.path)
+        }
+        // 项目配置位于嵌套目录，读取与预览也不能沿软链触及目标目录外的配置。
+        var component = url.standardizedFileURL
+        while component.path != root.standardizedFileURL.path {
+            if (try? component.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true {
+                throw MCPConfigurationError.unsafePath(component.path)
+            }
+            component.deleteLastPathComponent()
         }
     }
 }

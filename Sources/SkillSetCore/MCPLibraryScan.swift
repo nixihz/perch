@@ -74,9 +74,18 @@ extension SkillSetService {
         var candidates = MCPConfigurationManager(projectRoot: nil, applicationSupportRoot: paths.applicationSupportRoot,
             environment: ["CODEX_HOME": globalConfiguration.locations.codexRoot.path], homeDirectory: globalConfiguration.locations.home).libraryScanCandidates()
         for project in try ProjectStore(rootURL: paths.applicationSupportRoot).list() {
-            candidates += MCPConfigurationManager(projectRoot: URL(fileURLWithPath: project.canonicalPath),
+            let projectRoot = URL(fileURLWithPath: project.canonicalPath, isDirectory: true)
+            let projectCandidates = MCPConfigurationManager(projectRoot: projectRoot,
                 applicationSupportRoot: paths.applicationSupportRoot,
-                environment: ["CODEX_HOME": globalConfiguration.locations.codexRoot.path], homeDirectory: globalConfiguration.locations.home).libraryScanCandidates().filter { $0.source.contains(project.canonicalPath) }
+                environment: ["CODEX_HOME": globalConfiguration.locations.codexRoot.path], homeDirectory: globalConfiguration.locations.home).libraryScanCandidates()
+            let projectPrefix = projectRoot.standardizedFileURL.path.hasSuffix("/")
+                ? projectRoot.standardizedFileURL.path
+                : projectRoot.standardizedFileURL.path + "/"
+            candidates += projectCandidates.filter {
+                // 候选 source 可能带有“宿主 · 范围 · ”前缀，因此只对最终配置路径做边界匹配。
+                let source = $0.source
+                return source.hasPrefix(projectPrefix) || source.contains("· " + projectPrefix)
+            }
         }
         return candidates
     }

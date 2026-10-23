@@ -61,7 +61,7 @@ Skill Set 是一个**本地 macOS 桌面应用**和 Git 大仓，不是 Web 软�
 - 本机项目安装选择、版本记录、manifest digest、逐文件清单和内容寻址离线对象；源目录缺失时可以从锁与对象核验、恢复。
 - 计划绑定项目 realpath、旧/新 hash、digest 和 10 分钟有效期；未审批、过期、漂移、重放、软链置换和 rollback 冲突会拒绝。
 - GitHub 仓库根隔离预览，支持 branch/tag/commit ref，拒绝 URL 凭据和非 allowlist host，限制 12,000 文件 / 512 MiB；保存固定 commit、候选分类、内容指纹和许可迹象。
-- MCP 配置库的新增、编辑、删除与扫描入库；全局/项目按宿主独立保存勾选草稿，通过同一审批事务写入配置和逐节点管理记录。支持 Claude Code 项目级与双宿主用户级，Codex 项目级仍未适配。
+- MCP 配置库的新增、编辑、删除与扫描入库；全局/项目按宿主独立保存勾选草稿，通过同一审批事务写入配置和逐节点管理记录。支持 Codex、Claude Code 的项目级与用户级配置；Codex 项目写入 `.codex/config.toml`，加载须由用户在 Codex 中信任项目。
 - Codex TOML、Claude 项目 `.mcp.json` 与用户 `~/.claude.json` 的真实 MCP 扫描和受管写入计划；保留未知键和其他 server，环境变量只写 `${NAME}` 引用。
 - Claude Code / Codex 插件缓存与 manifest、Claude 安装索引、Codex plugin 配置的真实盘点；展示 marketplace、安装状态、revision、组件和 hooks 风险。
 - Plugin 生命周期计划：操作本机已发现的插件；Claude install/update/enable/disable/uninstall，Codex install/uninstall。计划绑定 host、plugin id、scope、manifest digest、CLI realpath 和固定 argv；多缓存版本必须精确选择，执行前复核状态，执行后回读并记录 operation。

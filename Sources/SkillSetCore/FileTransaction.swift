@@ -535,7 +535,9 @@ public struct FileTransactionExecutor {
 
     private func ensureNoSymlinkInParents(_ target: URL, root: URL) throws {
         var cursor = target.deletingLastPathComponent()
-        while cursor.path != root.path && cursor.path.hasPrefix(root.path + "/") {
+        // 跨卷配置计划的共同根可能为 /，不能拼出 // 后跳过全部父目录检查。
+        let rootPrefix = root.path.hasSuffix("/") ? root.path : root.path + "/"
+        while cursor.path != root.path && cursor.path.hasPrefix(rootPrefix) {
             if (try? fileManager.destinationOfSymbolicLink(atPath: cursor.path)) != nil {
                 throw FileTransactionError.unsafeDestination(cursor.path)
             }

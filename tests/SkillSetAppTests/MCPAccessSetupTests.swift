@@ -85,6 +85,46 @@ final class MCPAccessSetupTests: XCTestCase {
         }
     }
 
+    func testProjectSetupTargetsCodexProjectWithoutChangingGlobalConfiguration() throws {
+        try withFixture { root in
+            let program = try executable(at: root.appendingPathComponent("dist/skillset"))
+            try resources(beside: program)
+            let state = root.appendingPathComponent("state")
+            let home = root.appendingPathComponent("isolated-home")
+            let project = root.appendingPathComponent("todo-app")
+            try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+            let registration = try ProjectStore(rootURL: state).register(path: project)
+            let paths = SkillSetRuntimePaths(applicationSupportRoot: state, repositoryRoot: root)
+            let locations = GlobalConfigurationLocations(home: home, stateRoot: state)
+            let global = locations.codexRoot.appendingPathComponent("config.toml")
+            try FileManager.default.createDirectory(at: global.deletingLastPathComponent(), withIntermediateDirectories: true)
+            let original = "model = \"global\"\n"
+            try original.write(to: global, atomically: true, encoding: .utf8)
+            let model = AppModel(runtimePaths: paths, globalLocations: locations)
+            model.selectedProjectID = registration.id.uuidString
+            model.refreshAIAccess()
+            let config = project.appendingPathComponent(".codex/config.toml")
+            XCTAssertEqual(model.mcpAccessInspection(host: .codex, scope: .project)?.configPath, config.path)
+            XCTAssertTrue(model.prepareAIAccess(host: .codex, scope: .project), model.lastAction)
+            let plan = try XCTUnwrap(model.preparedPlan)
+            XCTAssertEqual(plan.plan.metadata?["scope"], "project")
+            XCTAssertTrue(plan.plan.warnings.contains(MCPConfigurationTarget.codexProjectTrustNotice))
+            XCTAssertFalse(FileManager.default.fileExists(atPath: config.path))
+            XCTAssertTrue(model.approveAndApplyPreparedPlan(), model.lastAction)
+            let written = try String(contentsOf: config, encoding: .utf8)
+            XCTAssertTrue(written.contains("[mcp_servers.perch]"))
+            XCTAssertTrue(written.contains(program.path))
+            XCTAssertTrue(written.contains(state.path))
+            XCTAssertFalse(written.contains("trust_level"))
+            XCTAssertEqual(try String(contentsOf: global, encoding: .utf8), original)
+            model.refreshAIAccess()
+            XCTAssertEqual(MCPAccessConnectionState.inspect(model.mcpAccessInspection(host: .codex, scope: .project), installation: model.mcpAccessInstallation), .configured)
+            model.selectedProjectID = ""
+            XCTAssertFalse(model.prepareAIAccess(host: .codex, scope: .project))
+            XCTAssertEqual(try String(contentsOf: global, encoding: .utf8), original)
+        }
+    }
+
     func testMissingProgramLeavesConfigurationUntouchedAndGivesRecoveryText() throws {
         try withFixture { root in
             let model = AppModel(runtimePaths: SkillSetRuntimePaths(applicationSupportRoot: root.appendingPathComponent("state"), repositoryRoot: root))

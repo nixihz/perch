@@ -30,7 +30,7 @@ struct MCPAccessInstallation {
         return nil
     }
 
-    func draft(host: MCPHost, paths: SkillSetRuntimePaths) -> MCPConfigurationDraft {
+    func draft(host: MCPHost, scope: MCPConfigurationScope = .user, paths: SkillSetRuntimePaths) -> MCPConfigurationDraft {
         // MCP 与 App 使用同一本机状态目录；不依赖宿主启动时的工作目录或 PATH。
         var arguments = ["--state", paths.applicationSupportRoot.path]
         if let repositoryRoot = paths.repositoryRoot {
@@ -38,7 +38,7 @@ struct MCPAccessInstallation {
         }
         arguments += ["mcp", "serve", "--transport", "stdio"]
         return MCPConfigurationDraft(
-            name: "perch", host: host, scope: .user, transport: "stdio",
+            name: "perch", host: host, scope: scope, transport: "stdio",
             commandOrURL: executableURL.path, args: arguments
         )
     }

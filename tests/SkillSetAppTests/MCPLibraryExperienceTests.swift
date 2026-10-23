@@ -40,7 +40,7 @@ final class MCPLibraryExperienceTests: XCTestCase {
         let plan = try XCTUnwrap(library.prepareUse(search, host: .claudeCode, projectID: fixture.registration.id), library.error ?? "")
         XCTAssertEqual(plan.approvalState, .pending)
         XCTAssertEqual(Set(try library.store.selectedIDs(host: .claudeCode, projectID: fixture.registration.id)), [docs.id, search.id])
-        let target = try XCTUnwrap(library.usageTargets.first { $0.projectID == fixture.registration.id })
+        let target = try XCTUnwrap(library.usageTargets.first { $0.projectID == fixture.registration.id && $0.host == .claudeCode })
         XCTAssertEqual(target.configPath, URL(fileURLWithPath: fixture.registration.canonicalPath).appendingPathComponent(".mcp.json").path)
         XCTAssertTrue(target.appliedEntries.isEmpty)
         XCTAssertTrue(target.observedNames.isEmpty)
@@ -48,16 +48,18 @@ final class MCPLibraryExperienceTests: XCTestCase {
         XCTAssertTrue(try library.store.selectedIDs(host: .claudeCode, projectID: nil).isEmpty)
     }
 
-    func testGivenUnsupportedCodexProjectWhenSelectingThenNoDraftOrPlanIsCreated() throws {
+    func testGivenCodexProjectWhenSelectingThenIndependentDraftAndPendingPlanAreCreated() throws {
         let fixture = try Fixture()
         defer { fixture.remove() }
         let library = fixture.model.mcpLibrary
         let docs = MCPLibraryEntry(name: "docs", commandOrURL: "docs")
         XCTAssertTrue(library.save(docs))
-        XCTAssertNil(library.prepareUse(docs, host: .codex, projectID: fixture.registration.id))
-        XCTAssertNotNil(library.error)
-        XCTAssertTrue(try library.store.selectedIDs(host: .codex, projectID: fixture.registration.id).isEmpty)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: library.store.rootURL.appendingPathComponent("drafts").path))
+        let plan = try XCTUnwrap(library.prepareUse(docs, host: .codex, projectID: fixture.registration.id), library.error ?? "")
+        XCTAssertEqual(plan.approvalState, .pending)
+        XCTAssertEqual(try library.store.selectedIDs(host: .codex, projectID: fixture.registration.id), [docs.id])
+        XCTAssertTrue(try library.store.selectedIDs(host: .codex, projectID: nil).isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.project.appendingPathComponent(".codex/config.toml").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.home.appendingPathComponent(".codex/config.toml").path))
     }
 
     func testGivenStaleClaudeProjectWhenEnteringLibraryFromCodexGlobalThenPreviewKeepsGlobalTarget() throws {
@@ -96,7 +98,8 @@ final class MCPLibraryExperienceTests: XCTestCase {
         model.section = .projects
         model.selectProjectHost(.codex)
         model.section = .mcp
-        XCTAssertEqual(library.initialUsageTargetID(fallbackHost: .claudeCode), targetID)
+        XCTAssertEqual(library.initialUsageTargetID(fallbackHost: .claudeCode),
+                       library.store.selectionKey(host: .codex, projectID: fixture.registration.id))
     }
 
     func testGivenUnknownOrEmptyScanSelectionWhenImportingThenNoFalseSuccessOrLibraryWrite() throws {
@@ -120,7 +123,7 @@ final class MCPLibraryExperienceTests: XCTestCase {
         let entry = MCPLibraryEntry(name: "docs", commandOrURL: "library-docs")
         XCTAssertTrue(library.save(entry))
         library.refreshUsage()
-        let target = try XCTUnwrap(library.usageTargets.first { $0.projectID == fixture.registration.id })
+        let target = try XCTUnwrap(library.usageTargets.first { $0.projectID == fixture.registration.id && $0.host == .claudeCode })
         XCTAssertEqual(target.observedNames, ["docs"])
         XCTAssertFalse(target.references(entry))
         XCTAssertTrue(target.appliedEntries.isEmpty)

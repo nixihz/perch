@@ -40,7 +40,7 @@ final class PresetStoreTests: XCTestCase {
             {"schemaVersion":2,"id":"custom","name":"  工程组合  ","description":"常用开发工具","revision":1,
              "skills":["workspace/stc"],"instructionFragments":["engineering"],
              "plugins":[{"host":"claude-code","pluginID":"tools@example","name":"Tools","manifestDigest":"\(String(repeating: "a", count: 64))","scope":"project"}],
-             "mcpServers":[{"name":"docs","host":"codex","scope":"user","transport":"stdio","commandOrURL":"/usr/bin/true","args":["one argument with spaces"],"envKeys":["API_TOKEN"]}],
+             "mcpServers":[{"name":"docs","host":"codex","scope":"project","transport":"stdio","commandOrURL":"/usr/bin/true","args":["one argument with spaces"],"envKeys":["API_TOKEN"]}],
              "mergePolicy":"explicit-selection","status":"local"}
             """
             let preset = try JSONDecoder().decode(PresetRecord.self, from: Data(json.utf8))
@@ -49,6 +49,7 @@ final class PresetStoreTests: XCTestCase {
             XCTAssertEqual(saved.name, "工程组合")
             XCTAssertEqual(saved.plugins.first?.manifestDigest, String(repeating: "a", count: 64))
             XCTAssertEqual(saved.mcpServers.first?.args, ["one argument with spaces"])
+            XCTAssertEqual(saved.mcpServers.first?.scope, .project)
             XCTAssertEqual(saved.instructionFragments, ["engineering"])
             _ = try store.save(PresetRecord(id: "custom", name: "新组合", skills: ["workspace/project-guide"]), initial: [])
             let updated = try store.list()
@@ -70,8 +71,7 @@ final class PresetStoreTests: XCTestCase {
                 PresetRecord(name: "工程", skills: ["workspace/project-guide"]),
                 PresetRecord(name: "重复 MCP", mcpServers: [server(), server()]),
                 PresetRecord(name: "规范化后重复 MCP", mcpServers: [server(), MCPConfigurationDraft(name: " docs ", scope: .user, commandOrURL: "/usr/bin/true")]),
-                PresetRecord(name: "凭据值", mcpServers: [MCPConfigurationDraft(name: "api", scope: .user, commandOrURL: "true", envKeys: ["API_KEY=secret"])]),
-                PresetRecord(name: "不支持的作用域", mcpServers: [MCPConfigurationDraft(name: "api", commandOrURL: "true")])
+                PresetRecord(name: "凭据值", mcpServers: [MCPConfigurationDraft(name: "api", scope: .user, commandOrURL: "true", envKeys: ["API_KEY=secret"])])
             ]
             for value in invalid {
                 XCTAssertThrowsError(try store.save(value, initial: []))

@@ -129,7 +129,7 @@ skillset mcp plan --host codex|claude-code --scope project|user --name NAME --tr
 
 ## 6. 宿主接入
 
-原生 App 的“AI 接入”页检查 MCP 命令及其资源、显示各宿主的用户级配置目标，并提供“生成接入计划”。向导使用绝对命令路径，参数显式绑定与 App 相同的本机状态目录，找到仓库时一并绑定仓库路径；路径包含空格时仍保留独立参数。配置写入复用下述计划与批准流程，不自动安装全局命令，也不自动启动 MCP。页面可直接审阅 MCP 生成的待批准计划；配置存在只显示“宿主加载待验证”，真实宿主加载仍由用户重新加载后核对。
+原生 App 的“AI 接入”页检查 MCP 命令及其资源、提供各宿主的用户／项目范围与已登记项目选择，显示真实配置目标，并提供“生成接入计划”。向导使用绝对命令路径，参数显式绑定与 App 相同的本机状态目录，找到仓库时一并绑定仓库路径；路径包含空格时仍保留独立参数。配置写入复用下述计划与批准流程，不自动安装全局命令，也不自动启动 MCP。页面可直接审阅 MCP 生成的待批准计划；配置存在只显示“宿主加载待验证”，真实宿主加载仍由用户重新加载后核对。
 
 App 内的 CLI 位于 `Contents/Helpers/skillset`，同目录包含 `SkillSet_SkillSetCore.bundle`；不得把 CLI 放在 `Contents/MacOS/skillset`，该路径在大小写不敏感文件系统上会命中 GUI 主程序 `SkillSet`。开发构建另提供 `dist/skillset` 及同级资源包。构建脚本通过 `script/verify_mcp_package.py` 将两种打包命令分别移至仓库外，清除资源覆盖变量，在含空格路径与隔离 state 下验证 initialize / tools/list。只检查文件存在不能替代运行验证。
 
@@ -140,6 +140,8 @@ App 内的 CLI 位于 `Contents/Helpers/skillset`，同目录包含 `SkillSet_Sk
 command = "/absolute/path/to/skillset"
 args = ["mcp", "serve", "--transport", "stdio"]
 ```
+
+Codex 用户级目标为 `$CODEX_HOME/config.toml`（默认 `~/.codex/config.toml`），项目级目标为 `<project>/.codex/config.toml`。项目级加载须在 Codex 中信任项目；向导不写 `trust_level`，也不自动启用全局接入。
 
 Claude 项目 `.mcp.json` 使用等价的 `mcpServers.perch.command/args` 结构。示例中的 executable 最好使用绝对路径；`skillset` 默认从可执行文件位置、`SKILLSET_REPOSITORY_ROOT` 或当前目录向上查找 `registry/catalog.json`。
 
@@ -173,4 +175,4 @@ MCP 发现列表不展示 Codex 内部运行组件 `computer-use`、`node_repl`�
 
 原生 MCP 页默认维护本机配置库，支持手动新增、编辑、删除和扫描已有配置入库。扫描包含两个宿主的用户配置与已登记项目，显示来源路径并逐项勾选；不扫描任意未登记目录，不启动服务。只导入命令、可解析字符串参数、无凭据地址和环境变量名，凭据值、未知字段与扩展配置不复制；不支持或疑含敏感信息的连接需手动配置。入库提交重新扫描候选，批量重名或校验失败不部分写库。
 
-全局配置与项目从同一库选择服务，草稿按宿主与范围独立持久化。MCP 变更使用单独计划，把该目标全部选择与先前库部署记录比较；取消勾选经过批准后仅删除库拥有且没有节点修改的连接。外部同名连接不自动接管；扫描入库也不改变原宿主归属。Codex 项目范围仍未适配，界面引导使用全局配置。原「已有连接」编辑/删除和预设结构化 MCP 计划保留。库 CRUD 和扫描入库仅开放本机 UI，本轮不新增 CLI 命令或 MCP 工具。
+全局配置与项目从同一库选择服务，草稿按宿主与范围独立持久化。MCP 变更使用单独计划，把该目标全部选择与先前库部署记录比较；取消勾选经过批准后仅删除库拥有且没有节点修改的连接。外部同名连接不自动接管；扫描入库也不改变原宿主归属。Codex 项目范围写入 `<project>/.codex/config.toml`，与用户级配置及其他项目独立保存、扫描和计划；项目必须在 Codex 中设为受信任，否则 Codex 跳过项目配置。写入计划和界面提示该条件，不更改信任设置；全局连接仍可能生效。原「已有连接」编辑/删除和预设结构化 MCP 计划保留。库 CRUD 和扫描入库仅开放本机 UI，本轮不新增 CLI 命令或 MCP 工具。

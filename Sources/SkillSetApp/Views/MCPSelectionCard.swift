@@ -8,7 +8,6 @@ struct MCPSelectionCard: View {
     @State private var query = ""
     @State private var selectedOnly = false
     private var library: MCPLibraryModel { model.mcpLibrary }
-    private var unsupported: Bool { projectID != nil && host == .codex }
     private var selectedIDs: [UUID] { library.selectedIDs(host: host, projectID: projectID) }
     private var filtered: [MCPLibraryEntry] {
         library.entries.filter { entry in
@@ -31,23 +30,18 @@ struct MCPSelectionCard: View {
                     ? "这里的选择影响当前用户该工具的全部项目。预览并批准后才写入配置文件。"
                     : "这里的选择只写入当前项目；全局 MCP 仍可能生效。预览并批准后才写入配置文件。"))
                     .font(AppFont.secondary).foregroundStyle(.secondary)
-                if unsupported {
-                    Text(L10n.tr("Codex 目前只支持用户级 MCP，请在全局配置中勾选。"))
+                if host == .codex && projectID != nil {
+                    Text(L10n.text(MCPConfigurationTarget.codexProjectTrustNotice))
                         .font(AppFont.secondary).foregroundStyle(.orange)
-                    Button(L10n.tr("前往 Codex 全局配置")) {
-                        model.globalConfiguration.selectHost(.codex)
-                        model.section = .globalConfiguration
-                    }
-                } else {
-                    if let target {
-                        Text(target.configPath).font(AppFont.code).foregroundStyle(.secondary).textSelection(.enabled)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    selectionList
-                    Button(L10n.tr("预览 MCP 变更")) { model.prepareMCPLibraryPlan(host: host, projectID: projectID) }
-                        .disabled(model.isWorking)
-                        .accessibilityIdentifier("mcp.selection.preview.\(host.rawValue)")
                 }
+                if let target {
+                    Text(target.configPath).font(AppFont.code).foregroundStyle(.secondary).textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                selectionList
+                Button(L10n.tr("预览 MCP 变更")) { model.prepareMCPLibraryPlan(host: host, projectID: projectID) }
+                    .disabled(model.isWorking)
+                    .accessibilityIdentifier("mcp.selection.preview.\(host.rawValue)")
                 if let error = library.error { Text(L10n.text(error)).font(AppFont.secondary).foregroundStyle(.red) }
                 Button(L10n.tr("管理 MCP 配置库")) { model.section = .mcp }
             }

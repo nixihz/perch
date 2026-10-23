@@ -4,17 +4,19 @@ import SkillSetCore
 struct AIAccessView: View {
     @Bindable var model: AppModel
     @State private var host: MCPHost = .codex
+    @State private var scope: MCPConfigurationScope = .user
     @State private var showLaunchDetails = false
     @State private var showTechnicalDetails = false
     @State private var showProgramDetails = false
 
     private var installation: MCPAccessInstallation? { model.mcpAccessInstallation }
-    private var inspection: MCPConfigurationInspection? { model.mcpAccessInspection(host: host) }
+    private var inspection: MCPConfigurationInspection? { model.mcpAccessInspection(host: host, scope: scope) }
     private var connection: MCPAccessConnectionState {
         .inspect(inspection, installation: installation)
     }
     private var canPrepare: Bool {
         installation != nil && connection != .external && connection != .unreadable && !model.isWorking
+            && (scope == .user || model.selectedProject != nil)
     }
 
     var body: some View {
@@ -37,6 +39,8 @@ struct AIAccessView: View {
         }
         .task { model.refreshAIAccess() }
         .onChange(of: host) { model.aiAccessError = nil }
+        .onChange(of: scope) { model.refreshAIAccess() }
+        .onChange(of: model.selectedProjectID) { model.refreshAIAccess() }
         .onChange(of: model.planPresented) {
             if !model.planPresented { model.refreshAIAccess() }
         }
@@ -94,6 +98,25 @@ struct AIAccessView: View {
                 .pickerStyle(.segmented)
                 .frame(maxWidth: 340)
                 .accessibilityIdentifier("aiAccess.host")
+                Picker(L10n.tr("使用范围"), selection: $scope) {
+                    Text(L10n.tr("用户")).tag(MCPConfigurationScope.user)
+                    Text(L10n.tr("项目")).tag(MCPConfigurationScope.project)
+                }
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 340)
+                .accessibilityIdentifier("aiAccess.scope")
+                if scope == .project {
+                    AppPicker(title: L10n.tr("目标项目"), selection: $model.selectedProjectID,
+                              valueLabel: model.selectedProject?.name ?? L10n.tr("请选择")) {
+                        Text(L10n.tr("请选择")).tag("")
+                        ForEach(model.projects) { project in Text(project.name).tag(project.id) }
+                    }
+                    .accessibilityIdentifier("aiAccess.project")
+                    if model.selectedProject == nil {
+                        Text(L10n.tr("请先到「项目」添加并选择一个项目，再配置项目连接。"))
+                            .font(AppFont.secondary).foregroundStyle(.orange)
+                    }
+                }
                 HStack(spacing: 8) {
                     StatusBadge(text: connectionTitle, tone: connection == .configured ? .neutral : .warning)
                     if installation == nil {
@@ -104,16 +127,22 @@ struct AIAccessView: View {
                     .font(AppFont.body)
                     .foregroundStyle(.secondary)
                 if let inspection {
-                    KeyValueLine(key: L10n.tr("用户级配置"), value: inspection.configPath, monospaced: true)
+                    KeyValueLine(key: scope == .project ? L10n.tr("项目级配置") : L10n.tr("用户级配置"), value: inspection.configPath, monospaced: true)
                 }
-                Text(L10n.tr("影响范围：当前用户的全部项目。栖集按需启动，无需手动运行服务。"))
+                if host == .codex && scope == .project {
+                    Text(L10n.text(MCPConfigurationTarget.codexProjectTrustNotice))
+                        .font(AppFont.secondary).foregroundStyle(.orange)
+                }
+                Text(scope == .project
+                    ? L10n.tr("影响范围：仅写入所选项目；全局 MCP 配置仍可能生效。栖集按需启动。")
+                    : L10n.tr("影响范围：当前用户的全部项目。栖集按需启动，无需手动运行服务。"))
                     .font(AppFont.secondary).foregroundStyle(.secondary)
                 if installation == nil {
                     Text(L10n.tr("未找到完整的 MCP 程序。请重新构建或安装栖集，再重新检测。"))
                         .font(AppFont.secondary).foregroundStyle(.orange)
                     Button(L10n.tr("重新检测")) { model.refreshAIAccess() }
                 }
-                if let draft = installation?.draft(host: host, paths: model.runtimePaths) {
+                if let draft = installation?.draft(host: host, scope: scope, paths: model.runtimePaths) {
                     DisclosureGroup(L10n.tr("查看启动命令与参数"), isExpanded: $showLaunchDetails) {
                         VStack(alignment: .leading, spacing: 8) {
                             KeyValueLine(key: L10n.tr("命令"), value: draft.commandOrURL, monospaced: true)
@@ -133,7 +162,7 @@ struct AIAccessView: View {
                 }
                 HStack {
                     Button(connection == .updateNeeded ? L10n.tr("生成更新计划") : L10n.tr("生成接入计划")) {
-                        _ = model.prepareAIAccess(host: host)
+                        _ = model.prepareAIAccess(host: host, scope: scope)
                     }
                     .buttonStyle(AppButtonStyle(kind: .primary))
                     .disabled(!canPrepare)
@@ -163,7 +192,9 @@ struct AIAccessView: View {
     private var connectionDetail: String {
         switch connection {
         case .unconfigured:
-            L10n.tr("将新增名为 perch 的用户级 stdio 配置，使用栖集程序的绝对路径。")
+            scope == .project
+                ? L10n.tr("将新增名为 perch 的项目级 stdio 配置，使用栖集程序的绝对路径。")
+                : L10n.tr("将新增名为 perch 的用户级 stdio 配置，使用栖集程序的绝对路径。")
         case .configured:
             L10n.tr("已找到本应用管理的配置。请重新加载 AI 工具，确认它能列出栖集的 MCP 工具；如无法使用，可重新生成计划核对参数。")
         case .updateNeeded:

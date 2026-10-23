@@ -690,7 +690,7 @@ public struct SkillSetService {
                 target.host == .claudeCode
                     ? "Claude JSON 会保留未知键，但对象键顺序会归一化。"
                     : "Codex TOML 只修改选中的服务，其他配置保留。"
-            ],
+            ] + target.loadingWarnings,
             metadata: metadata
         )
         return try planStore.save(plan: plan, stagingPath: stage.path)
@@ -753,7 +753,7 @@ public struct SkillSetService {
             changes: changes, warnings: ["目标配置：\(target.configPath)",
                 scope == .user ? "此操作影响当前用户在该 AI 工具中的全部项目。" : "只更新当前项目的 MCP 配置；全局连接仍可能生效。",
                 "取消勾选只移除本配置库写入且未被修改的服务。",
-                "环境变量只写入 ${NAME} 引用，不读取或复制值。"], metadata: metadata)
+                "环境变量只写入 ${NAME} 引用，不读取或复制值。"] + target.loadingWarnings, metadata: metadata)
         return try planStore.save(plan: plan, stagingPath: stage.path)
     }
 

@@ -6,7 +6,7 @@
 
 产品是 macOS `.app`，由 SwiftPM 构建、由 `script/build_and_run.sh` 生成 bundle 后通过 `/usr/bin/open -n` 启动。没有浏览器页面、WebView、localhost API 或常驻同步守护进程。
 
-CLI 随 App 放在 `Contents/Helpers/skillset`，与其 SwiftPM Core 资源一起打包；开发输出 `dist/skillset` 也携带同级资源。AI 接入页只检测程序和宿主配置，以用户级 MCP 计划连接宿主；不把资源存在、配置存在或 UI 已打开当作宿主已加载的证据。
+CLI 随 App 放在 `Contents/Helpers/skillset`，与其 SwiftPM Core 资源一起打包；开发输出 `dist/skillset` 也携带同级资源。AI 接入页只检测程序和宿主配置，以所选用户或项目范围的 MCP 计划连接宿主；不把资源存在、配置存在或 UI 已打开当作宿主已加载的证据。
 
 ```mermaid
 flowchart LR
@@ -221,3 +221,7 @@ UI、CLI 和 MCP 共用稳定错误码，包括 `PLAN_STALE`、`APPROVAL_REQUIRE
 同步按 canonical 来源地址和技能相对路径建立稳定标识，完整复制有效候选及根许可文件，核对原始内容后原子发布索引。失败保留原索引；编辑失败保留旧来源。来源更新不改变已经物化的版本目录；来源删除移除索引与 checkout，历史完整包和版本目录继续保留，不自动清理。手动创建、编辑副本和旧版个人技能记录兼容保留。
 
 新默认状态目录为 `~/.perch`，首次打开将旧 `~/Library/Application Support/Skill Set` 复制到临时目录，成功后发布，原目录保留。旧 `skill-library` 映射为 `skills`，`previews` 映射为 `cache/sources`，旧计划因 staging 绝对路径变化作废；不读取或改写真实 harness 目录进行自动迁移。运行时不再复制 bundled 技能快照，对象存储写入栖集状态根，与源码仓库无关。
+
+### Codex 项目 MCP 适配
+
+MCP 目标由宿主与范围共同确定。Codex 用户级使用 `$CODEX_HOME/config.toml`（默认 `~/.codex/config.toml`），项目级使用已登记项目的 `.codex/config.toml`；扫描入库、配置库选择、预设及栖集接入向导复用同一目标解析与审批事务。项目配置缺少有效项目时拒绝计划，不回退到用户级；嵌套路径存在软链时拒绝读取和写入。Codex 只加载可信项目的项目配置，界面及计划提示该条件，栖集不更改宿主信任设置。配置回读只证明文件已写入，全局连接仍可能生效。
