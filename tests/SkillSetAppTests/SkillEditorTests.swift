@@ -93,15 +93,10 @@ final class SkillEditorTests: XCTestCase {
         XCTAssertTrue(model.snapshot.catalog.entries.contains { $0.id == stale.id })
         XCTAssertTrue(model.snapshot.catalog.entries.contains { $0.id == last.id })
         let source = try XCTUnwrap(model.snapshot.catalog.entries.first { $0.sourceId != SkillLibraryStore.sourceID })
-        let hiddenCount = model.hiddenSkillCount
-        XCTAssertEqual(model.removeSkills([updated, last, last, source]), [updated.id, last.id, source.id])
-        XCTAssertNil(model.skillRemovalError)
-        XCTAssertEqual(model.hiddenSkillCount, hiddenCount + 1)
-        XCTAssertEqual(model.hiddenSkills.map(\.id), [source.id])
-        XCTAssertFalse(model.snapshot.catalog.entries.contains { $0.id == source.id })
+        XCTAssertEqual(model.removeSkills([updated, last, last, source]), [updated.id, last.id])
+        XCTAssertNotNil(model.skillRemovalError)
+        XCTAssertTrue(model.snapshot.catalog.entries.contains { $0.id == source.id })
         let restarted = AppModel(snapshot: baseSnapshot, runtimePaths: paths, globalLocations: locations)
-        XCTAssertFalse(restarted.snapshot.catalog.entries.contains { [first.id, stale.id, last.id, source.id].contains($0.id) })
-        restarted.restoreHiddenSkills()
         XCTAssertTrue(restarted.snapshot.catalog.entries.contains { $0.id == source.id })
         XCTAssertFalse(restarted.snapshot.catalog.entries.contains { [first.id, stale.id, last.id].contains($0.id) })
     }

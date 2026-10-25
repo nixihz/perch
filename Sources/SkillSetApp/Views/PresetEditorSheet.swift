@@ -161,26 +161,26 @@ struct PresetEditorSheet: View {
                 HStack(alignment: .center, spacing: 12) {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(unresolvedSkillTitle(id)).font(AppFont.secondary.weight(.medium))
-                        Text(L10n.tr(model.hiddenSkills.contains { $0.id == id } ? "已从技能库隐藏" : "不在技能库"))
+                        Text(L10n.tr("不在技能库"))
                             .font(AppFont.metadata).foregroundStyle(.red)
                     }
                     Spacer(minLength: 12)
                     Button(L10n.tr("移除引用")) { draft.skills.remove(id) }
                         .accessibilityIdentifier("presets.editor.skill.remove.\(id)")
                 }
-                .help(id)
+                .help(unresolvedSkillTitle(id))
             }
             if entries.isEmpty { Text(L10n.tr("没有匹配的技能")).foregroundStyle(.secondary) }
             ForEach(entries) { skill in
                 Toggle(isOn: membership(skill.id, in: $draft.skills)) {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(skill.declaredName).font(AppFont.secondary.weight(.medium))
-                        Text(skill.sourceId).font(AppFont.metadata).foregroundStyle(.secondary)
+                        Text(model.skillSourceTitle(skill)).font(AppFont.metadata).foregroundStyle(.secondary)
                         if skill.isBlocked { Text(L10n.tr("暂不可用")).font(AppFont.metadata).foregroundStyle(.red) }
                     }
                 }
                 .toggleStyle(.checkbox).disabled(skill.isBlocked && !draft.skills.contains(skill.id))
-                .help(skill.id).accessibilityIdentifier("presets.editor.skill.\(skill.id)")
+                .help(skill.declaredName).accessibilityIdentifier("presets.editor.skill.\(skill.id)")
             }
         }
     }
@@ -209,7 +209,7 @@ struct PresetEditorSheet: View {
                         Text(plugin.components.joined(separator: " · ")).font(AppFont.metadata).foregroundStyle(.secondary)
                     }
                 }
-                .toggleStyle(.checkbox).help(plugin.pluginID)
+                .toggleStyle(.checkbox).help(plugin.name)
                 if selected {
                     AppPicker(title: L10n.tr("使用范围"), selection: Binding(
                         get: { draft.plugins.first { $0.host == plugin.host && $0.pluginID == plugin.pluginID }?.scope ?? .user },
@@ -295,7 +295,7 @@ struct PresetEditorSheet: View {
 
     private var draftBlockingReasons: [LocalizedText] {
         let project = model.selectedProject ?? ProjectRecord.demo[0]
-        return PresetDraftPreview(preset: draft.record, project: project, snapshot: model.snapshot, hiddenSkills: model.hiddenSkills)
+        return PresetDraftPreview(preset: draft.record, project: project, snapshot: model.snapshot)
             .blockingReasons(origins: model.sourceOrigins)
     }
 
@@ -314,7 +314,7 @@ struct PresetEditorSheet: View {
     }
 
     private func unresolvedSkillTitle(_ id: String) -> String {
-        model.hiddenSkills.first { $0.id == id }?.declaredName ?? PresetDraftPreview.referenceName(id)
+        PresetDraftPreview.referenceName(id)
     }
 
     private func membership(_ id: String, in values: Binding<Set<String>>) -> Binding<Bool> {

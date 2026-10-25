@@ -273,7 +273,7 @@ struct AIAccessView: View {
         DisclosureGroup(L10n.tr("工具与兼容性详情"), isExpanded: $showTechnicalDetails) {
             VStack(alignment: .leading, spacing: 8) {
                 Text(L10n.tr("目前仅验证了 stdio 连接与 2025-11-25 版本协议；其他连接方式和 AI 工具兼容性仍待验证。"))
-                Text(L10n.tr("提供技能库、片段、预设、来源、项目和 MCP 配置库的管理，以及项目与全局应用计划等 60 个工具；支持 mcp_batch 批量调用；实际列表以 AI 工具发现的结果为准。"))
+                Text(L10n.tr("提供技能库、片段、预设、来源、项目和 MCP 配置库的管理，以及项目与全局应用计划等 59 个工具；支持 mcp_batch 批量调用；实际列表以 AI 工具发现的结果为准。"))
                 Text(L10n.tr("AI 可以生成计划和执行已批准的计划；MCP 不提供批准工具。"))
             }
             .font(AppFont.secondary)

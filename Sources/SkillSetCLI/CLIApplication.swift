@@ -147,7 +147,7 @@ struct CLIInvocation {
             ])
         } else {
             for entry in entries {
-                print("\(entry.id)\t\(entry.contentHash)\t\(entry.integrity)\t\(entry.description)")
+                print("\(entry.declaredName)\t\(entry.contentHash)\t\(entry.integrity)\t\(entry.description)")
             }
         }
     }
@@ -175,7 +175,7 @@ struct CLIInvocation {
                 for candidate in preview.candidates {
                     let state = candidate.state.rawValue
                     let issue = candidate.issues.isEmpty ? "" : " · \(candidate.issues.joined(separator: "；"))"
-                    print("  \(state)\t\(candidate.id)\t\(candidate.shortHash)\(issue)")
+                    print("  \(state)\t\(candidate.declaredName)\t\(candidate.path)\t\(candidate.shortHash)\(issue)")
                 }
                 print("隔离区：\(preview.workspacePath)")
                 print("已同步到技能库，可搜索；尚未启用或写入项目。")
@@ -202,7 +202,7 @@ struct CLIInvocation {
                 print("\(preview.canonicalURL) @ \(preview.resolvedCommit)")
                 print("许可：\(preview.licenseEvidence)")
                 for candidate in preview.candidates {
-                    print("  \(candidate.state.rawValue)\t\(candidate.id)\t\(candidate.description)")
+                    print("  \(candidate.state.rawValue)\t\(candidate.declaredName)\t\(candidate.path)\t\(candidate.description)")
                 }
             }
         case "consolidate-local-imports":

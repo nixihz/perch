@@ -217,9 +217,6 @@ struct ProjectsView: View {
                                             .foregroundStyle(.secondary)
                                     }
                                     Spacer()
-                                    Text("#\(template.id)")
-                                        .font(AppFont.metadata.monospaced())
-                                        .foregroundStyle(.secondary)
                                 }
                                 .contentShape(Rectangle())
                             }
@@ -259,7 +256,7 @@ struct ProjectsView: View {
                                 .fixedSize(horizontal: false, vertical: true)
                             ForEach(observations, id: \.relativePath) { observation in
                                 VStack(alignment: .leading, spacing: 4) {
-                                    Text(observation.skillID ?? (observation.relativePath as NSString).lastPathComponent)
+                                    Text(observation.skillID.map(model.skillDisplayTitle) ?? (observation.relativePath as NSString).lastPathComponent)
                                         .font(AppFont.secondary.weight(.semibold))
                                         .textSelection(.enabled)
                                         .fixedSize(horizontal: false, vertical: true)
@@ -463,7 +460,7 @@ struct ProjectsView: View {
                             .font(AppFont.body.weight(.semibold))
                             .lineLimit(1)
                             .help(skill.slug)
-                        Text(skill.sourceId)
+                        Text(model.skillSourceTitle(skill))
                             .font(AppFont.metadata.monospaced())
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
@@ -568,7 +565,6 @@ struct PlanSheet: View {
                         Text(planIntro)
                             .font(AppFont.secondary)
                             .foregroundStyle(.secondary)
-                        KeyValueLine(key: L10n.tr("计划"), value: record.id.uuidString, monospaced: true)
                         KeyValueLine(key: L10n.tr("计划指纹"), value: record.plan.digest, monospaced: true)
                         KeyValueLine(key: L10n.tr("有效至"), value: L10n.date(record.expiresAt))
                         if isPluginPlan {
@@ -701,7 +697,7 @@ struct PlanSheet: View {
                     + L10n.text(UserFacingText.metadata(record.plan.metadata?["pluginScope"] ?? "", field: .scope)))
                     .font(AppFont.secondary)
                     .foregroundStyle(.secondary)
-                Text(record.plan.metadata?["pluginID"] ?? L10n.tr("未知"))
+                Text(model.pluginDisplayTitle(record.plan.metadata?["pluginID"]))
                     .font(AppFont.code)
                     .textSelection(.enabled)
                     .lineLimit(1)

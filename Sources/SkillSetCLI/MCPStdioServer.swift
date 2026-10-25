@@ -3,7 +3,7 @@ import SkillSetCore
 
 final class MCPStdioServer {
     private var libraryCache: MCPServiceCache
-    /// 工具定义只依赖服务类型，不随本机状态变化；缓存后避免每次 tools/list 和参数校验重复组装 60 个 schema。
+    /// 工具定义只依赖服务类型，不随本机状态变化；缓存后避免每次 tools/list 和参数校验重复组装 schema。
     private lazy var cachedTools: [[String: Any]] = makeTools()
     lazy var cachedToolByName: [String: [String: Any]] = Dictionary(
         uniqueKeysWithValues: cachedTools.compactMap { definition in

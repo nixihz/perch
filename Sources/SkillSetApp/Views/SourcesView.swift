@@ -171,7 +171,6 @@ struct SourcesView: View {
                             StatusBadge(text: L10n.tr("已配置来源"), tone: .neutral)
                         }
                         Divider()
-                        KeyValueLine(key: L10n.tr("来源标识"), value: preview.namespace, monospaced: true)
                         KeyValueLine(key: L10n.tr("完整版本标识"), value: preview.resolvedCommit, monospaced: true)
                         KeyValueLine(key: L10n.tr("许可线索"), value: L10n.text(UserFacingText.licenseEvidence(preview.licenseEvidence)))
                         KeyValueLine(
@@ -266,9 +265,6 @@ struct SourcesView: View {
                                     HStack(alignment: .firstTextBaseline) {
                                         Text(candidate.declaredName)
                                             .font(AppFont.body.weight(.semibold))
-                                        Text(candidate.id)
-                                            .font(AppFont.metadata.monospaced())
-                                            .foregroundStyle(.secondary)
                                         Spacer()
                                         if let id = model.importedSkillID(preview: preview, candidate: candidate) {
                                             Button(L10n.tr("在技能库查看")) { model.showLibrarySkill(id) }

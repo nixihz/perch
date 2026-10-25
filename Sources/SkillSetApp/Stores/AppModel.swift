@@ -120,6 +120,8 @@ final class AppModel {
     private(set) var skillRemovalError: String?
     var sourceImportError: String?
     var sourceOrigins: [String: SourceSkillOrigin] = [:]
+    /// 技能实体的真实存放位置。自建和复制导入在 sources/custom，跟随来源的指向来源检出目录。
+    private(set) var skillStorageURLs: [String: URL] = [:]
     var skillsShQuery = ""
     private(set) var skillsShResults: [SkillsShHit] = []
     private(set) var skillsShError: String?
@@ -133,9 +135,6 @@ final class AppModel {
     var selectedSkillFile: SkillPackageFile?
     var selectedSkillFilePreview: SkillFilePreview?
     var skillFilePreviewError: String?
-    var hiddenSkillCount = 0
-    /// 隐藏后仍能还原名称的技能。记录已被来源同步删除时不在这里，预设只能按标识中的名称提示。
-    var hiddenSkills: [SkillEntry] = []
     var aiAccessError: LocalizedText?
     private(set) var mcpAccessInstallation: MCPAccessInstallation?
     private(set) var isRefreshingMCPConfigurations = false
@@ -234,6 +233,29 @@ final class AppModel {
             if imported[key] == nil { imported[key] = entry.id }
         }
         importedSkillIDs = imported
+    }
+
+    func skillSourceTitle(_ skill: SkillEntry) -> String {
+        SkillSourceLabel.title(
+            sourceID: skill.sourceId,
+            origin: sourceOrigins[skill.id]?.url,
+            registeredTitle: snapshot.sources.sources.first { $0.id == skill.sourceId }?.title
+        )
+    }
+
+    func skillDisplayTitle(_ skillID: String) -> String {
+        if let entry = snapshot.catalog.entries.first(where: { $0.id == skillID }) {
+            return entry.declaredName
+        }
+        return PresetDraftPreview.referenceName(skillID)
+    }
+
+    func pluginDisplayTitle(_ pluginID: String?) -> String {
+        guard let pluginID, !pluginID.isEmpty else { return L10n.tr("未知") }
+        if let name = plugins.first(where: { $0.pluginID == pluginID })?.name, !name.isEmpty {
+            return name
+        }
+        return pluginID.split(separator: "@").first.map(String.init) ?? pluginID
     }
 
     private var libraryStore: SkillLibraryStore {
@@ -367,32 +389,11 @@ final class AppModel {
         return removed
     }
 
-    func restoreHiddenSkills() {
-        libraryError = nil
-        do {
-            try libraryStore.restoreHidden()
-            try reloadLibrary()
-            updateQuery(query)
-            report("已恢复隐藏的来源条目")
-        } catch { libraryError = UserFacingText.error(error) }
-    }
-
-    private func resolvedHiddenSkills(_ loaded: LoadedSkillLibrary) -> [SkillEntry] {
-        let hidden = Set(loaded.hiddenIDs)
-        var resolved: [String: SkillEntry] = [:]
-        for entry in baseSnapshot.catalog.entries where hidden.contains(entry.id) {
-            resolved[entry.id] = entry
-        }
-        for entry in loaded.hiddenEntries {
-            resolved[entry.id] = entry
-        }
-        return resolved.values.sorted { $0.id < $1.id }
-    }
-
     private func reloadLibrary() throws {
         let loaded = try libraryStore.loadLibrary()
         snapshot = baseSnapshot.replacingCatalog(loaded.catalog(merging: baseSnapshot.catalog))
         sourceOrigins = loaded.origins
+        skillStorageURLs = loaded.packageURLs
         do {
             snapshot = try snapshot.replacingPresets(presetStore.list(merging: baseSnapshot.presets))
             if !snapshot.presets.contains(where: { $0.id == selectedPresetID }) {
@@ -405,8 +406,6 @@ final class AppModel {
             instructionIDs: Set(snapshot.templates.map(\.id))
         )
         reloadTemplates()
-        hiddenSkillCount = loaded.hiddenCount
-        hiddenSkills = resolvedHiddenSkills(loaded)
         refreshSkillIndexes()
         service = try SkillSetService(paths: runtimePaths, globalLocations: globalConfiguration.locations, library: loaded)
         updateQuery(query)
@@ -784,7 +783,7 @@ final class AppModel {
     func savePreset(_ draft: PresetEditorDraft) -> Bool {
         presetError = nil
         let preset = draft.record
-        let validation = PresetDraftPreview(preset: preset, project: selectedProject ?? ProjectRecord.demo[0], snapshot: snapshot, hiddenSkills: hiddenSkills)
+        let validation = PresetDraftPreview(preset: preset, project: selectedProject ?? ProjectRecord.demo[0], snapshot: snapshot)
         let reasons = validation.blockingReasons(origins: sourceOrigins)
         guard reasons.isEmpty else {
             presetError = LocalizedText.joining(reasons)
@@ -851,7 +850,7 @@ final class AppModel {
             report("请先添加并选择一个项目")
             return false
         }
-        let preview = PresetDraftPreview(preset: preset, project: projects[index], snapshot: snapshot, availablePlugins: presetPlugins(for: targetID), hiddenSkills: hiddenSkills)
+        let preview = PresetDraftPreview(preset: preset, project: projects[index], snapshot: snapshot, availablePlugins: presetPlugins(for: targetID))
         let reasons = preview.blockingReasons(origins: sourceOrigins)
         guard reasons.isEmpty else {
             report(LocalizedText.joining(reasons))
@@ -979,8 +978,8 @@ final class AppModel {
             if planType == "plugin-lifecycle" {
                 let host = MCPHost(rawValue: applied.plan.metadata?["pluginHost"] ?? "")?.displayName ?? "未识别工具"
                 let action = UserFacingText.changeAction(applied.plan.metadata?["pluginAction"] ?? "")
-                let pluginID = applied.plan.metadata?["pluginID"] ?? "unknown"
-                historyTitle = "\(host) · \(action) \(pluginID)"
+                let pluginName = pluginDisplayTitle(applied.plan.metadata?["pluginID"])
+                historyTitle = "\(host) · \(action) \(pluginName)"
             } else {
                 historyTitle = URL(fileURLWithPath: applied.plan.projectPath).lastPathComponent
             }

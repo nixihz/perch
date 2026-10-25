@@ -28,8 +28,7 @@ extension MCPStdioServer {
         add("skills_get", "读取技能元数据与完整 SKILL.md。", ["skillId": text], ["skillId"], read: true)
         add("skills_create", "新建个人技能，保存到本机技能库；不部署。", ["slug": text, "document": document], ["slug", "document"])
         add("skills_update", "编辑个人技能完整 SKILL.md，保留附属文件并创建新版本；来源技能需创建个人副本。", ["skillId": text, "document": document], ["skillId", "document"])
-        add("skills_delete", "删除个人技能的索引引用或隐藏来源技能；保留历史包、已部署内容和引用，不卸载项目技能。", ["skillId": text], ["skillId"], destructive: true)
-        add("skills_restore_hidden", "恢复所有被隐藏的来源技能，不恢复已删除的个人记录。", [:], [])
+        add("skills_delete", "从技能库删除技能。custom 中的文件一并删除；跟随来源的技能只去掉库中的软链。不改已部署的项目文件。", ["skillId": text], ["skillId"], destructive: true)
         add("templates_list", "列出或搜索 AGENTS.md / CLAUDE.md 规则片段及正文。", ["query": query], [], read: true)
         add("templates_get", "按标识读取规则片段。", ["templateId": text], ["templateId"], read: true)
         let template: [String: Any] = ["title": ["type": "string", "maxLength": 80], "purpose": ["type": "string", "maxLength": 500], "body": ["type": "string", "maxLength": 256 * 1_024]]

@@ -43,7 +43,7 @@ class MCPInstallationTests(unittest.TestCase):
             "deletedIDs": [],
         }), encoding="utf-8")
         preset = json.loads((ROOT / "presets/personal-base.json").read_text())
-        preset.update(id="local-review", name="本机审查预设", skills=["personal/project-guide"], instructionFragments=["base-zh"])
+        preset.update(id="local-review", name="本机审查预设", skills=["project-guide"], instructionFragments=["base-zh"])
         (self.state / "presets.json").write_text(json.dumps([preset]))
         self.project_id = self.cli("projects", "add", str(self.project))["project"]["id"]
 
@@ -90,8 +90,8 @@ class MCPInstallationTests(unittest.TestCase):
         presets = self.tool("presets_list", {"query": "本机审查"})["structuredContent"]["presets"]
         self.assertEqual([p["id"] for p in presets], ["local-review"])
         found = self.tool("skills_search", {"query": "stc"})["structuredContent"]["skills"]
-        self.assertEqual([s["id"] for s in found], ["personal/stc"])
-        first = self.tool("skills_install", {"projectPath": str(self.project), "skillIds": ["personal/stc"]})
+        self.assertEqual([s["id"] for s in found], ["stc"])
+        first = self.tool("skills_install", {"projectPath": str(self.project), "skillIds": ["stc"]})
         self.assertEqual(list(self.project.iterdir()), [])
         self.approve_and_install(first)
         original = (self.project / ".agents/skills/stc/SKILL.md").read_bytes()
@@ -106,13 +106,13 @@ class MCPInstallationTests(unittest.TestCase):
         registration = json.loads((self.state / "projects.json").read_text())["projects"][0]
         key = hashlib.sha256(registration["canonicalPath"].encode()).hexdigest()
         manifest = json.loads((self.state / "project-state" / key / "skillset.json").read_text())
-        self.assertEqual(manifest["skills"], ["personal/project-guide", "personal/stc"])
+        self.assertEqual(manifest["skills"], ["project-guide", "stc"])
 
     def test_rejects_unregistered_target_ambiguous_target_and_unknown_preset(self):
         cases = [
-            ("skills_install", {"projectPath": str(self.root), "skillIds": ["personal/stc"]}, "PROJECT_NOT_REGISTERED"),
-            ("skills_install", {"skillIds": ["personal/stc"]}, "INVALID_ARGUMENTS"),
-            ("skills_install", {"projectPath": str(self.project), "projectId": self.project_id, "skillIds": ["personal/stc"]}, "INVALID_ARGUMENTS"),
+            ("skills_install", {"projectPath": str(self.root), "skillIds": ["stc"]}, "PROJECT_NOT_REGISTERED"),
+            ("skills_install", {"skillIds": ["stc"]}, "INVALID_ARGUMENTS"),
+            ("skills_install", {"projectPath": str(self.project), "projectId": self.project_id, "skillIds": ["stc"]}, "INVALID_ARGUMENTS"),
             ("presets_install", {"projectId": self.project_id, "presetId": "missing"}, "PRESET_NOT_FOUND"),
         ]
         for name, arguments, code in cases:

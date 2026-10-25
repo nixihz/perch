@@ -248,7 +248,6 @@ class CLIIntegrationTests(unittest.TestCase):
                     "skills_create",
                     "skills_update",
                     "skills_delete",
-                    "skills_restore_hidden",
                     "templates_list",
                     "templates_get",
                     "templates_create",

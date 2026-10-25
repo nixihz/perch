@@ -96,9 +96,6 @@ extension MCPStdioServer {
             let entry = try skill()
             try library.remove(entry)
             return deleted(entry.id)
-        case "skills_restore_hidden":
-            try library.restoreHidden()
-            return toolResult(isError: false, text: "已恢复隐藏的来源技能。", structured: ["restored": true])
         case "templates_list":
             let query = string("query")
             return try result("templates", current.snapshot.templates.filter { query.isEmpty || [$0.id, $0.title, $0.purpose, $0.body].joined(separator: " ").localizedCaseInsensitiveContains(query) })

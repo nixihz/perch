@@ -35,7 +35,7 @@ struct SkillEditorSheet: View {
                     .accessibilityIdentifier("skills.editor.slug")
             }
             if draft.original != nil && !isEditing {
-                Text(L10n.tr("将复制到 personal 来源，附带文件一并保留。相同标识的不同来源可共存。"))
+                Text(L10n.tr("将复制到 custom 来源，附带文件一并保留。相同标识的不同来源可共存。"))
                     .font(AppFont.secondary).foregroundStyle(.secondary)
             }
             TextEditor(text: $draft.document)
@@ -43,8 +43,11 @@ struct SkillEditorSheet: View {
                 .appEditorSurface()
                 .accessibilityLabel("SKILL.md")
                 .accessibilityIdentifier("skills.editor.document")
-            Text(model.runtimePaths.libraryRoot.path)
-                .font(AppFont.metadata.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
+            HStack(alignment: .firstTextBaseline) {
+                Text(L10n.tr("保存位置"))
+                Text(model.runtimePaths.sourcesRoot.appendingPathComponent(SkillLibraryStore.sourceID, isDirectory: true).path)
+                    .font(AppFont.metadata.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
+            }
             if let error = model.libraryError {
                 Text(L10n.text(error)).font(AppFont.secondary).foregroundStyle(.red).textSelection(.enabled)
             }

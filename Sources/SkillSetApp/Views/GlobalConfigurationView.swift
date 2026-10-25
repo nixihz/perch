@@ -140,7 +140,7 @@ struct GlobalConfigurationView: View {
                             HStack(alignment: .top, spacing: 10) {
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(skill.slug).font(AppFont.body.weight(.semibold)).lineLimit(1).help(skill.slug)
-                                    Text(skill.id).font(AppFont.metadata).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                                    Text(model.skillSourceTitle(skill)).font(AppFont.metadata).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                                     Text(skill.description).font(AppFont.secondary).foregroundStyle(.secondary).lineLimit(2)
                                     if skill.isBlocked {
                                         StatusBadge(text: L10n.tr("阻塞"), tone: .danger)
@@ -171,7 +171,7 @@ struct GlobalConfigurationView: View {
                 let missing = global.draft.skillIDs.filter { id in !model.snapshot.catalog.entries.contains { $0.id == id } }
                 ForEach(missing, id: \.self) { id in
                     HStack {
-                        Text(id).font(AppFont.code)
+                        Text(model.skillDisplayTitle(id)).font(AppFont.secondary.weight(.medium))
                         Text(L10n.tr("技能不可用")).foregroundStyle(.orange)
                         Spacer()
                         Button(L10n.tr("移除")) { global.setSkill(id, enabled: false) }
@@ -191,7 +191,7 @@ struct GlobalConfigurationView: View {
                 }
                 ForEach(global.draft.instructionIDs.filter { id in !model.snapshot.templates.contains { $0.id == id } }, id: \.self) { id in
                     HStack {
-                        Text(id).font(AppFont.code)
+                        Text(L10n.tr("片段已删除，请移除引用后重新选择。")).font(AppFont.secondary).foregroundStyle(.red)
                         Spacer()
                         Button(L10n.tr("移除不可用的片段")) { global.setInstruction(id, enabled: false) }
                     }
@@ -250,7 +250,6 @@ struct GlobalConfigurationView: View {
                             Spacer()
                             StatusBadge(text: L10n.text(stateTitle(record.journal.state)), tone: record.journal.state == "applied" ? .positive : .warning)
                         }
-                        path(record.id.uuidString)
                         if record.canUndo {
                             Button(L10n.tr("撤销此次操作…")) { present(global.prepareUndo(record.id)) }
                                 .disabled(model.isWorking)

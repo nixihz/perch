@@ -77,7 +77,7 @@ struct PluginConfigurationView: View {
                             Button { selectedPluginID = plugin.id } label: {
                                 VStack(alignment: .leading, spacing: 5) {
                                     Text(plugin.name).font(AppFont.body.weight(.semibold)).foregroundStyle(.primary).lineLimit(1)
-                                    Text(plugin.pluginID).font(AppFont.metadata).foregroundStyle(.secondary).lineLimit(1)
+                                    Text(plugin.marketplaceID ?? L10n.tr("项目或本地目录")).font(AppFont.metadata).foregroundStyle(.secondary).lineLimit(1)
                                     Text(L10n.text(UserFacingText.pluginState(plugin)))
                                         .font(AppFont.secondary).foregroundStyle(.secondary).lineLimit(2)
                                 }
@@ -106,7 +106,9 @@ struct PluginConfigurationView: View {
                     SurfaceCard(emphasis: true) {
                         VStack(alignment: .leading, spacing: 10) {
                             Text(plugin.name).font(AppFont.title.weight(.bold))
-                            Text(plugin.pluginID).font(AppFont.code).textSelection(.enabled)
+                            if let marketplace = plugin.marketplaceID, !marketplace.isEmpty {
+                                Text(marketplace).font(AppFont.secondary).foregroundStyle(.secondary)
+                            }
                             Text(plugin.description).font(AppFont.secondary).foregroundStyle(.secondary)
                             Text(L10n.text(UserFacingText.pluginState(plugin))).font(AppFont.secondary)
                             Text(plugin.components.map { L10n.text(UserFacingText.metadata($0, field: .component)) }.joined(separator: " · "))

@@ -32,6 +32,7 @@ public struct SkillEditorDraft: Identifiable, Sendable {
 struct SkillLibraryMeta: Codable, Sendable {
     var categories: [String: String] = [:]
     var origins: [String: SourceSkillOrigin] = [:]
+    /// 旧文件里的隐藏名单只为解码兼容。删除后不再写回，也不再参与目录。
     var hiddenIDs: [String] = []
 }
 
@@ -49,22 +50,16 @@ public struct LibrarySkillRecord: Codable, Sendable {
 
 /// 一次目录扫描的结果。技能名来自库目录里的子项，不再读取 packages 索引。
 public struct LoadedSkillLibrary: Sendable {
-    public let hiddenIDs: [String]
-    public let hiddenEntries: [SkillEntry]
     public let origins: [String: SourceSkillOrigin]
     public let packageURLs: [String: URL]
     let records: [LibrarySkillRecord]
 
-    public var hiddenCount: Int { hiddenIDs.count }
-
     public func catalog(merging base: CatalogDocument) -> CatalogDocument {
-        let hidden = Set(hiddenIDs)
         let ids = Set(records.map(\.entry.id))
-        let kept = base.entries.filter { !hidden.contains($0.id) && !ids.contains($0.id) }
-        let visible = records.map(\.entry).filter { !hidden.contains($0.id) }
+        let kept = base.entries.filter { !ids.contains($0.id) }
         return CatalogDocument(
             schemaVersion: base.schemaVersion, hashAlgorithm: base.hashAlgorithm,
-            entries: (kept + visible).sorted { $0.id < $1.id }
+            entries: (kept + records.map(\.entry)).sorted { $0.id < $1.id }
         )
     }
 }
@@ -91,8 +86,6 @@ public struct SkillLibraryStore {
         try loadLibrary().catalog(merging: base)
     }
 
-    public func hiddenCount() throws -> Int { try loadLibrary().hiddenCount }
-
     public func sourceOrigins() throws -> [String: SourceSkillOrigin] {
         try loadLibrary().origins
     }
@@ -105,14 +98,16 @@ public struct SkillLibraryStore {
         try migrateLegacyPackagesIfNeeded()
         // 库里的实体目录是以前复制进来的技能。文件改放到 custom，库内只留软链。
         try adoptOwnedDirectories()
-        let meta = try loadMeta()
+        var meta = try loadMeta()
+        if !meta.hiddenIDs.isEmpty {
+            meta.hiddenIDs = []
+            try writeMeta(meta)
+        }
         let records = try scan(origins: meta.origins)
-        let hidden = Set(meta.hiddenIDs)
-        let hiddenEntries = records.map(\.entry).filter { hidden.contains($0.id) }.sorted { $0.id < $1.id }
         let urls = Dictionary(uniqueKeysWithValues: try records.map { record in
             (record.entry.id, try sourceURL(for: record.entry, repositoryRoot: nil))
         })
-        return LoadedSkillLibrary(hiddenIDs: meta.hiddenIDs, hiddenEntries: hiddenEntries, origins: meta.origins, packageURLs: urls, records: records)
+        return LoadedSkillLibrary(origins: meta.origins, packageURLs: urls, records: records)
     }
 
     public func document(for entry: SkillEntry, repositoryRoot: URL?) throws -> String {
@@ -236,33 +231,27 @@ public struct SkillLibraryStore {
     }
 
     public func remove(_ entry: SkillEntry) throws {
+        guard entry.sourceId == Self.sourceID || entry.sourceId == Self.linkedSourceID || entry.sourceId == Self.copiedSourceID else {
+            throw SkillLibraryError.stale
+        }
         var meta = try loadMeta()
         let records = try scan(origins: meta.origins)
-        if entry.sourceId == Self.sourceID || entry.sourceId == Self.linkedSourceID || entry.sourceId == Self.copiedSourceID {
-            guard records.contains(where: { $0.entry.id == entry.id && $0.entry.contentHash == entry.contentHash }) else {
-                throw SkillLibraryError.stale
-            }
-            let directory = try sourceURL(for: entry, repositoryRoot: nil)
-            guard try SkillAssetCopier.analyze(from: directory).contentHash == entry.contentHash else {
-                throw SkillLibraryError.stale
-            }
-            let libraryEntry = libraryURL.appendingPathComponent(entry.slug)
-            if fileManager.fileExists(atPath: libraryEntry.path) || isLink(libraryEntry) {
-                try fileManager.removeItem(at: libraryEntry)
-            }
-            if entry.sourceId == Self.sourceID, fileManager.fileExists(atPath: directory.path) {
-                try fileManager.removeItem(at: directory)
-            }
-            meta.origins[entry.slug] = nil
-            meta.categories[entry.slug] = nil
-        } else if !meta.hiddenIDs.contains(entry.id) {
-            meta.hiddenIDs.append(entry.id)
+        guard records.contains(where: { $0.entry.id == entry.id && $0.entry.contentHash == entry.contentHash }) else {
+            throw SkillLibraryError.stale
         }
-        try writeMeta(meta)
-    }
-
-    public func restoreHidden() throws {
-        var meta = try loadMeta()
+        let directory = try sourceURL(for: entry, repositoryRoot: nil)
+        guard try SkillAssetCopier.analyze(from: directory).contentHash == entry.contentHash else {
+            throw SkillLibraryError.stale
+        }
+        let libraryEntry = libraryURL.appendingPathComponent(entry.slug)
+        if fileManager.fileExists(atPath: libraryEntry.path) || isLink(libraryEntry) {
+            try fileManager.removeItem(at: libraryEntry)
+        }
+        if entry.sourceId == Self.sourceID, fileManager.fileExists(atPath: directory.path) {
+            try fileManager.removeItem(at: directory)
+        }
+        meta.origins[entry.slug] = nil
+        meta.categories[entry.slug] = nil
         meta.hiddenIDs = []
         try writeMeta(meta)
     }
@@ -502,7 +491,6 @@ public struct SkillLibraryStore {
             }
             if let origin = record.sourceOrigin { meta.origins[slug] = origin }
         }
-        meta.hiddenIDs.append(contentsOf: index.hiddenIDs.filter { !meta.hiddenIDs.contains($0) })
         try writeMeta(meta)
         try Data().write(to: marker)
     }

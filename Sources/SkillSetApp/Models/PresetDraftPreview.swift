@@ -33,13 +33,12 @@ struct PresetDraftPreview {
     let conflictingSkillIDs: [String]
     private let snapshot: AppSnapshot
     private let preset: PresetRecord
-    private let hiddenSkills: [String: SkillEntry]
 
     var canLoad: Bool {
         unavailableSkillIDs.isEmpty && unavailableInstructionIDs.isEmpty && conflictingSkillIDs.isEmpty && componentIssues.isEmpty
     }
 
-    init(preset: PresetRecord, project: ProjectRecord, snapshot: AppSnapshot, availablePlugins: [PluginInventoryRecord]? = nil, hiddenSkills: [SkillEntry] = []) {
+    init(preset: PresetRecord, project: ProjectRecord, snapshot: AppSnapshot, availablePlugins: [PluginInventoryRecord]? = nil) {
         plugins = Changes(current: Set(project.draftPlugins.map(\.id)), proposed: Set(preset.plugins.map(\.id)), updated: Set(preset.plugins.filter { next in project.draftPlugins.contains { $0.id == next.id && $0 != next } }.map(\.id)))
         mcpServers = Changes(current: Set(project.draftMCPServers.map(\.presetID)), proposed: Set(preset.mcpServers.map(\.presetID)), updated: Set(preset.mcpServers.filter { next in project.draftMCPServers.contains { $0.presetID == next.presetID && $0 != next } }.map(\.presetID)))
         var issues: [String] = []
@@ -64,9 +63,6 @@ struct PresetDraftPreview {
             .filter { $0.count > 1 }.flatMap { $0.map(\.id) }.sorted()
         self.snapshot = snapshot
         self.preset = preset
-        var hiddenByID: [String: SkillEntry] = [:]
-        for skill in hiddenSkills { hiddenByID[skill.id] = skill }
-        self.hiddenSkills = hiddenByID
     }
 
     /// 同名技能只比较 slug。提示必须带上名称和来源，否则无法判断该取消哪一项。
@@ -75,12 +71,8 @@ struct PresetDraftPreview {
         var reasons: [LocalizedText] = []
         for id in unavailableSkillIDs {
             guard let skill = entries[id] else {
-                // 预设保存的是技能标识。隐藏或来源重同步后标识会离开当前目录，不能把整段来源哈希当作提示。
-                if let hidden = hiddenSkills[id] {
-                    reasons.append("技能「\(hidden.declaredName)」已从技能库隐藏。恢复隐藏条目，或从预设中移除这项引用。")
-                } else {
-                    reasons.append("技能「\(Self.referenceName(id))」不在技能库。请从预设中移除这项引用。")
-                }
+                // 预设保存的是技能标识。技能离开库后，不能把整段来源哈希当作提示。
+                reasons.append("技能「\(Self.referenceName(id))」不在技能库。请从预设中移除这项引用。")
                 continue
             }
             let place = skillPlace(skill, origins: origins)

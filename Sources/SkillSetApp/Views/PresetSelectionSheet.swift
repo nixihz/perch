@@ -29,7 +29,7 @@ struct PresetSelectionSheet: View {
     private var preset: PresetRecord? { model.snapshot.presets.first { $0.id == presetID } }
     private var preview: PresetDraftPreview? {
         guard let project, let preset else { return nil }
-        return PresetDraftPreview(preset: preset, project: project, snapshot: model.snapshot, availablePlugins: availablePlugins, hiddenSkills: model.hiddenSkills)
+        return PresetDraftPreview(preset: preset, project: project, snapshot: model.snapshot, availablePlugins: availablePlugins)
     }
 
     var body: some View {
@@ -312,16 +312,21 @@ struct PresetSelectionSheet: View {
         let name: String
         let detail: String
         switch category {
-        case .skills: name = skill?.declaredName ?? id; detail = skill?.sourceId ?? id
+        case .skills:
+            name = model.skillDisplayTitle(id)
+            detail = skill.map(model.skillSourceTitle) ?? L10n.tr("不在技能库")
         case .instructions:
-            name = rule.map { UserFacingText.templateTitle($0) } ?? id
-            detail = rule.map { L10n.text(UserFacingText.builtInDescription($0.purpose)) } ?? id
+            name = rule.map { UserFacingText.templateTitle($0) } ?? L10n.tr("已删除的规则片段")
+            detail = rule.map { L10n.text(UserFacingText.builtInDescription($0.purpose)) }
+                ?? L10n.tr("片段已删除，请移除引用后重新选择。")
         case .plugins:
-            name = plugin?.name ?? id
-            detail = plugin.map { "\($0.host.displayName) · \(L10n.text($0.scope.displayName)) · \($0.manifestDigest.prefix(10))" } ?? id
+            let fallbackName = id.split(separator: ":").last.flatMap { $0.split(separator: "@").first }.map(String.init) ?? id
+            name = plugin?.name ?? fallbackName
+            detail = plugin.map { "\($0.host.displayName) · \(L10n.text($0.scope.displayName)) · \($0.manifestDigest.prefix(10))" } ?? fallbackName
         case .mcp:
-            name = server?.name ?? id
-            detail = server.map { "\($0.host.displayName) · \(L10n.text($0.scope.displayName)) · \($0.transport)" } ?? id
+            let fallbackName = id.split(separator: ":").last.map(String.init) ?? id
+            name = server?.name ?? fallbackName
+            detail = server.map { "\($0.host.displayName) · \(L10n.text($0.scope.displayName)) · \($0.transport)" } ?? fallbackName
         }
         return HStack(alignment: .top, spacing: 10) {
             Image(systemName: kind.icon)
@@ -341,7 +346,7 @@ struct PresetSelectionSheet: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
-        .help(id)
+        .help(name)
     }
 
     private func validationMessage(_ preview: PresetDraftPreview) -> some View {

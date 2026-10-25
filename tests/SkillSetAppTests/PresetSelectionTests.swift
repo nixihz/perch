@@ -103,31 +103,22 @@ final class PresetSelectionTests: XCTestCase {
 
             let staleID = "source-d23e91a448f2029713fda4fcc9c83a3d7aa62697a0930cb36c2ab52475178b71/b58e338b7575/emil-design-eng"
             let hiddenID = "source-d23e91a448f2029713fda4fcc9c83a3d7aa62697a0930cb36c2ab52475178b71/5580a4891f52/review-animations"
-            let hidden = SkillEntry(
-                id: hiddenID, slug: "review-animations", declaredName: "review-animations", description: "",
-                declaredVersion: nil, metadataReview: "not-schema-validated",
-                sourceId: "source-d23e91a448f2029713fda4fcc9c83a3d7aa62697a0930cb36c2ab52475178b71",
-                path: "packages/00000000-0000-0000-0000-000000000001",
-                contentHash: String(repeating: "ab", count: 32), fileCount: 1, bytes: 1,
-                integrity: "snapshotted", issues: [], licenseReview: "required", excludedPaths: []
-            )
             let project = try XCTUnwrap(model.projects.first { $0.id == projectID })
             let beforeProjects = model.projects
             let preview = PresetDraftPreview(
                 preset: try makePreset(skills: [staleID, hiddenID]), project: project,
-                snapshot: model.snapshot, hiddenSkills: [hidden]
+                snapshot: model.snapshot
             )
             let reasons = preview.blockingReasons().map { L10n.tr($0) }.joined(separator: "\n")
             XCTAssertFalse(preview.canLoad)
             XCTAssertTrue(reasons.contains("技能「emil-design-eng」不在技能库。请从预设中移除这项引用。"))
-            XCTAssertTrue(reasons.contains("技能「review-animations」已从技能库隐藏。恢复隐藏条目，或从预设中移除这项引用。"))
+            XCTAssertTrue(reasons.contains("技能「review-animations」不在技能库。请从预设中移除这项引用。"))
             XCTAssertFalse(reasons.contains("source-d23e"))
-            model.hiddenSkills = [hidden]
             XCTAssertFalse(model.loadPreset(try makePreset(skills: [staleID, hiddenID]), into: projectID))
             XCTAssertEqual(model.projects, beforeProjects)
             preferences.language = .english
             XCTAssertTrue(model.lastAction.contains("Skill “emil-design-eng” is not in the library."))
-            XCTAssertTrue(model.lastAction.contains("Skill “review-animations” is hidden from the library."))
+            XCTAssertTrue(model.lastAction.contains("Skill “review-animations” is not in the library."))
             preferences.language = .chinese
         }
     }
@@ -268,7 +259,6 @@ final class PresetSelectionTests: XCTestCase {
             XCTAssertEqual(saved.revision, original.revision + 1)
             XCTAssertEqual(saved.skills, ["workspace/stc"])
             XCTAssertEqual(restarted.snapshot.presets.filter { $0.id == original.id }.count, 1)
-            restarted.restoreHiddenSkills()
             XCTAssertEqual(restarted.snapshot.presets.first { $0.id == original.id }, saved)
             XCTAssertEqual(try Data(contentsOf: drafts.documentURL), projectBefore)
             XCTAssertTrue(restarted.loadPreset(saved, into: projectID))

@@ -40,7 +40,7 @@
 
 | 主题 | 新增工具 | 操作边界 |
 | --- | --- | --- |
-| 技能库 | `skills_get`、`skills_create`、`skills_update`、`skills_delete`、`skills_restore_hidden` | 读取完整正文；个人技能版本化编辑；删除个人索引或隐藏来源条目，保留历史包与已部署内容 |
+| 技能库 | `skills_get`、`skills_create`、`skills_update`、`skills_delete` | 读取完整正文；编辑 custom 中的技能；从技能库删除。custom 文件一并删除，跟随来源的技能只去掉库中的软链。不改已部署内容 |
 | 规则片段 | `templates_list`、`templates_get`、`templates_create`、`templates_update`、`templates_delete`、`templates_apply_plan` | 库 CRUD；追加用于一个宿主的项目或全局，保留已部署技能和其他片段 |
 | 预设 | `presets_get`、`presets_create`、`presets_update`、`presets_delete`、`presets_apply_draft` | 保留完整技能、片段、插件与 MCP 组件；完整载入指定宿主的项目草稿，不部署 |
 | 来源 | `sources_get`、`sources_update`、`sources_delete`、`sources_import_skill` | 预览详情、重新同步、删除缓存/索引、导入独立个人副本 |
@@ -53,7 +53,7 @@
 
 CRUD 的 create 自动生成记录标识，技能使用 `personal/<slug>`；update 只修改提供的字段，技能正文整体替换且不能修改 slug。预设数组字段提供时整体替换，省略则保留；保存递增 revision。重复名称、无效文档、未知条目和不支持的宿主返回 `isError: true`。所有工具按发布的严格 schema 校验必填项、未知字段、类型、枚举、UUID、数量和长度，嵌套组件同样校验，不接受伪造确认字段。
 
-库删除不静默删除引用，也不改动已部署文件；后续部署遇到缺失引用会拒绝。`skills_restore_hidden` 仅恢复来源隐藏记录，不提供个人技能历史恢复。来源编辑失败保留旧记录，删除来源不影响独立导入副本。`projects_delete` 只取消登记，已批准计划仍遵循既有执行时路径与归属检查。
+库删除不静默删除引用，也不改动已部署文件；后续部署遇到缺失引用会拒绝。删除后不能恢复隐藏条目。来源编辑失败保留旧记录，删除来源不影响独立导入副本。`projects_delete` 只取消登记，已批准计划仍遵循既有执行时路径与归属检查。
 
 `templates_apply_plan` 是追加操作；需要替换或移除片段时，使用 `deployment_harness_plan` 或 `global_config_plan` 提供完整选择。`presets_apply_draft` 可载入混合预设，插件和 MCP 组件仍须分别生成计划；`presets_install` 保留原有混合预设拒绝行为，避免产生部分安装。插件来源条目与宿主已安装插件分开管理，不通过编辑 manifest 实现插件更新。
 
@@ -62,7 +62,7 @@ CRUD 的 create 自动生成记录标识，技能使用 `personal/<slug>`；upda
 工具数量与名称由 `tools/list` 决定，文档不替代运行时 schema。`sources_preview` 的幂等提示为 false，因为远端 ref 可能移动；保存的记录仍固定 resolved commit。
 
 项目摘要新增 `skillObservations`，逐项记录宿主、项目相对路径、可确定的技能 ID、`managed` / `existing` 归属及内容状态。观察不代表宿主已加载；旧锁缺少本机归属记录时按已有内容处理。`deployment_plan` 会生成取消选择后的受管移除步骤，未受管同路径冲突与受管漂移会阻塞；`SKILL_TARGET_CONFLICT`、`SKILL_MANAGED_DRIFT`、`RULE_TARGET_CONFLICT`、`RULE_MANAGED_DRIFT` 在 CLI 返回退出码 3。升级前缺少归属及读取依赖的待执行技能部署计划须重新生成。
-当前共 60 个工具，服务握手名称与新接入配置名称均为 `perch`；CLI 可执行文件仍为 `skillset`。`mcp_batch` 一次接收 1–50 项工具调用，读操作共享一个服务快照；技能索引、片段或预设文件变化后，本批后续项和之后的调用重新加载。每项独立返回结果，批量结果会标记成功数和失败数。stdio 同时支持 JSON-RPC 2.0 数组请求并返回一个数组响应。`plugin_lifecycle_plan` 不提供“风险确认”参数；安装或更新可能由宿主解析新包，因此 MCP 调用会返回 `PLUGIN_RISK_APPROVAL_REQUIRED`，必须转由本机 UI/CLI 生成计划。
+当前共 59 个工具，服务握手名称与新接入配置名称均为 `perch`；CLI 可执行文件仍为 `skillset`。`mcp_batch` 一次接收 1–50 项工具调用，读操作共享一个服务快照；技能索引、片段或预设文件变化后，本批后续项和之后的调用重新加载。每项独立返回结果，批量结果会标记成功数和失败数。stdio 同时支持 JSON-RPC 2.0 数组请求并返回一个数组响应。`plugin_lifecycle_plan` 不提供“风险确认”参数；安装或更新可能由宿主解析新包，因此 MCP 调用会返回 `PLUGIN_RISK_APPROVAL_REQUIRED`，必须转由本机 UI/CLI 生成计划。
 
 同一 `pluginId` 和 scope 有多个缓存版本时，AI 应先调用 `plugins_list`，再把目标记录的 `manifestDigest` 传给计划工具。缺失摘要返回 `PLUGIN_VERSION_AMBIGUOUS`，不会按目录顺序猜测。
 
@@ -70,7 +70,7 @@ CRUD 的 create 自动生成记录标识，技能使用 `personal/<slug>`；upda
 
 项目安装工作流：`presets_list` / `skills_search` → `presets_install` / `skills_install` → 本机批准 → `deployment_apply`。安装参数必须提供已登记项目的 `projectId` 或绝对路径 `projectPath`，二选一；路径匹配 canonical realpath，不使用 MCP 服务工作目录推断当前项目。未登记返回 `PROJECT_NOT_REGISTERED` 并给出 App / CLI 登记入口，调用方可用 `projects_create` 显式登记绝对路径；安装工具本身不会隐式添加写入根。两个安装工具将选定组件追加到应用数据目录内已落盘的项目安装选择，保留原有技能、规则、ruleBlockID 和宿主，不载入未部署草稿。结果包含 `status: awaiting-approval`、完整 digest 和 `nextTool` / `nextArguments`，不得据此报告已经安装。
 
-服务 `initialize.serverInfo.name` 和 AI 接入向导的新配置键均为 `perch`。已有旧名称配置保留，避免擅自覆盖外部配置；使用向导前应在 MCP 服务页审阅旧连接并通过计划移除，然后生成 `perch` 接入计划。宿主重新加载后才可确认发现 60 个工具。
+服务 `initialize.serverInfo.name` 和 AI 接入向导的新配置键均为 `perch`。已有旧名称配置保留，避免擅自覆盖外部配置；使用向导前应在 MCP 服务页审阅旧连接并通过计划移除，然后生成 `perch` 接入计划。宿主重新加载后才可确认发现 59 个工具。
 
 AGENTS 片段的新建、编辑和删除开放在本机 UI 与 MCP，保存到本机 `templates.json`；正常启动不提供程序自带片段或预设，仅加载用户本机保存的条目；旧版用户修改过的同标识条目保留，删除记录在重启后继续生效。App、CLI 和 MCP 的部署计划共用合并后的片段库，stdio 服务每次工具调用重新读取本机库。本机 UI 的所有片段均可删除，引用和盘点失败不锁定删除操作；确认时说明引用将显示为不可用，需移除或替换后再部署。删除本身不修改项目文件，也不静默移除引用；旧版本或外部操作留下的失效引用在下次计划时仍拒绝。已经生成的计划保留生成时的内容和 digest，库编辑不改写既有计划；写项目仍需逐份预览和批准。本机片段页可以选择项目或全局目标，查看合成正文并生成正式计划；审批页展示规则前后内容和差异，复用同一事务与回读，MCP 可通过 `templates_apply_plan` 生成同一审批链路的计划。
 

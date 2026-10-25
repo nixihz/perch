@@ -53,9 +53,6 @@ struct SkillsView: View {
                 Button(L10n.tr("安装到本机…")) { installing = true }
                     .disabled(checkedSkillIDs.isEmpty || model.isWorking)
                     .accessibilityIdentifier("skills.install-user")
-                if model.hiddenSkillCount > 0 {
-                    Button(L10n.tr("恢复隐藏条目（\(model.hiddenSkillCount)）")) { model.restoreHiddenSkills() }
-                }
             }
             if let error = model.skillRemovalError ?? model.libraryError, editor == nil {
                 Text(L10n.text(error)).foregroundStyle(.red).font(AppFont.secondary).textSelection(.enabled)
@@ -282,7 +279,10 @@ struct SkillsView: View {
                                             model.selectedSkillID = other.id
                                         } label: {
                                             VStack(alignment: .leading, spacing: 4) {
-                                                Text(other.id)
+                                                Text(other.declaredName)
+                                                Text(model.skillSourceTitle(other))
+                                                    .font(AppFont.metadata)
+                                                    .foregroundStyle(.secondary)
                                                 if let sameContent = SkillLibraryIndex.hasSameContent(other, skill) {
                                                     Text(sameContent ? L10n.tr("内容相同") : L10n.tr("内容不同"))
                                                         .font(AppFont.secondary)
@@ -300,7 +300,7 @@ struct SkillsView: View {
                             KeyValueLine(key: L10n.tr("文件大小"), value: L10n.tr("\(skill.fileCount) 文件 · \(L10n.byteCount(Int64(skill.bytes)))"))
                             DisclosureGroup {
                                 VStack(alignment: .leading, spacing: 10) {
-                                    KeyValueLine(key: L10n.tr("来源标识"), value: skill.sourceId)
+                                    KeyValueLine(key: L10n.tr("来源标识"), value: model.skillSourceTitle(skill))
                                     if let origin = model.sourceOrigins[skill.id] {
                                         KeyValueLine(key: L10n.tr("原始仓库"), value: origin.url)
                                         KeyValueLine(key: L10n.tr("来源版本"), value: origin.commit, monospaced: true)
@@ -309,8 +309,7 @@ struct SkillsView: View {
                                     KeyValueLine(key: L10n.tr("内容指纹"), value: skill.contentHash, monospaced: true)
                                     Text(L10n.tr("内容指纹用于核对文件、路径和执行权限是否改变。"))
                                         .font(AppFont.secondary).foregroundStyle(.secondary)
-                                    KeyValueLine(key: L10n.tr("存储路径"), value: (skill.sourceId == SkillLibraryStore.sourceID || skill.sourceId.hasPrefix("source-"))
-                                        ? model.runtimePaths.libraryRoot.appendingPathComponent(skill.path).path : skill.path, monospaced: true)
+                                    KeyValueLine(key: L10n.tr("存储路径"), value: SkillStoragePath.display(skill, storageURLs: model.skillStorageURLs), monospaced: true)
                                     KeyValueLine(key: L10n.tr("许可"), value: L10n.text(UserFacingText.metadata(skill.licenseReview, field: .licenseReview)))
                                     KeyValueLine(key: L10n.tr("技能信息"), value: L10n.text(UserFacingText.metadata(skill.metadataReview, field: .metadataReview)))
                                     if !skill.excludedPaths.isEmpty {

@@ -114,17 +114,14 @@ struct SkillLibraryTests {
         #expect(try FileManager.default.contentsOfDirectory(atPath: outside.path).isEmpty)
     }
 
-    @Test func hidingAndRestoringSnapshotEntriesNeverMutatesRepository() throws {
+    @Test func removingRepositoryCatalogEntryLeavesRepositoryFiles() throws {
         let fixture = try LibraryFixture()
         defer { fixture.cleanup() }
         let entry = try fixture.makeRepositorySkill()
         let base = CatalogDocument(schemaVersion: 1, hashAlgorithm: "sha256:path-content-executable:v1", entries: [entry])
-        try fixture.store.remove(entry)
-        #expect(try fixture.store.catalog(merging: base).entries.isEmpty)
-        #expect(try fixture.store.hiddenCount() == 1)
-        #expect(try SkillAssetCopier.analyze(from: fixture.repository.appendingPathComponent(entry.path)).contentHash == entry.contentHash)
-        try fixture.store.restoreHidden()
+        #expect(throws: SkillLibraryError.stale) { try fixture.store.remove(entry) }
         #expect(try fixture.store.catalog(merging: base).entries.map(\.id) == [entry.id])
+        #expect(try SkillAssetCopier.analyze(from: fixture.repository.appendingPathComponent(entry.path)).contentHash == entry.contentHash)
     }
 
     @Test func corruptIndexCannotBeSilentlyOverwritten() throws {

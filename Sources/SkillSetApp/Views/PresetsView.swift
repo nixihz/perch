@@ -116,7 +116,7 @@ struct PresetsView: View {
                             componentHeader(.skills, count: preset.skills.count)
                             ForEach(preset.skills, id: \.self) { id in
                                 let skill = model.snapshot.catalog.entries.first { $0.id == id }
-                                componentRow(skill?.declaredName ?? id, detail: skill?.sourceId ?? id)
+                                componentRow(model.skillDisplayTitle(id), detail: skill.map(model.skillSourceTitle) ?? L10n.tr("不在技能库"))
                             }
                             Divider()
                             componentHeader(.plugins, count: preset.plugins.count)
@@ -140,7 +140,10 @@ struct PresetsView: View {
                                     .accessibilityIdentifier("presets.rule.details.\(id)")
                                     Text(UserFacingText.templatePurpose(template))
                                         .font(AppFont.secondary).foregroundStyle(.secondary)
-                                } else { Text(id).foregroundStyle(.red) }
+                                } else {
+                                    Text(L10n.tr("片段已删除，请移除引用后重新选择。"))
+                                        .font(AppFont.secondary).foregroundStyle(.red)
+                                }
                             }
                         }
                     }
