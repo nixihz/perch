@@ -714,9 +714,11 @@ public struct MCPConfigurationManager {
         let before = fileManager.fileExists(atPath: url.path) ? try Data(contentsOf: url) : nil
         var content = before ?? Data()
         let hashes = try libraryNodeHashes(content: content, target: target)
-        for (name, expected) in previous?.nodeHashes ?? [:] {
-            guard hashes[name] == expected else {
-                throw MCPLibraryError.modifiedConnection
+        if before != nil {
+            for (name, expected) in previous?.nodeHashes ?? [:] {
+                guard hashes[name] == expected else {
+                    throw MCPLibraryError.modifiedConnection
+                }
             }
         }
         let oldNames = Set(previous?.nodeHashes.keys.map { $0 } ?? [])

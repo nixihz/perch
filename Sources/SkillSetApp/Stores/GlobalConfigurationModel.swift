@@ -19,6 +19,8 @@ final class GlobalConfigurationModel {
     private var refreshID = UUID()
     private var inheritanceID = UUID()
     private var skillDrafts: [MCPHost: GlobalConfigurationDraft] = [:]
+    private var availableSkillIDs: Set<String>?
+    private var availableInstructionIDs: Set<String>?
     let locations: GlobalConfigurationLocations
     private let paths: SkillSetRuntimePaths
 
@@ -111,8 +113,9 @@ final class GlobalConfigurationModel {
                 _ = try snapshot.inspection.get()
                 let loaded = try snapshot.draft.get()
                 skillDrafts[target] = loaded
+                reconcileDraftIfNeeded(host: target)
                 skillEditingErrors[target] = nil
-                if target == host { draft = loaded }
+                if target == host { draft = skillDrafts[target] ?? loaded }
             } catch {
                 skillDrafts[target] = nil
                 skillEditingErrors[target] = UserFacingText.error(error)
@@ -122,6 +125,32 @@ final class GlobalConfigurationModel {
                 do { operations = try snapshot.history.get() }
                 catch { operations = []; self.error = UserFacingText.error(error) }
             }
+        }
+    }
+
+    /// 外部来源或技能库条目被删除后，自动清理草稿中的悬空引用，保留页面可编辑状态。
+    func setAvailableReferences(skillIDs: Set<String>, instructionIDs: Set<String>) {
+        availableSkillIDs = skillIDs
+        availableInstructionIDs = instructionIDs
+        for host in MCPHost.allCases { reconcileDraftIfNeeded(host: host) }
+    }
+
+    private func reconcileDraftIfNeeded(host: MCPHost) {
+        guard var next = skillDrafts[host] else { return }
+        guard let availableSkillIDs, let availableInstructionIDs else { return }
+        let skills = next.skillIDs.filter(availableSkillIDs.contains)
+        let instructions = next.instructionIDs.filter(availableInstructionIDs.contains)
+        guard skills != next.skillIDs || instructions != next.instructionIDs else { return }
+        next.skillIDs = skills
+        next.instructionIDs = instructions
+        do {
+            try manager.saveDraft(next, host: host)
+            skillDrafts[host] = next
+            if host == self.host { draft = next }
+        } catch {
+            // 草稿落盘失败仍保留内存中的可用选择，避免删除外部文件后锁死页面。
+            skillDrafts[host] = next
+            if host == self.host { draft = next }
         }
     }
 

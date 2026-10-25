@@ -77,6 +77,21 @@ struct MCPLibraryTests {
         }
     }
 
+    @Test func deletedAppliedMCPConfigurationIsRecreatedByNextPlan() throws {
+        try fixture { service, library, projectID, project, _ in
+            let config = project.appendingPathComponent(".mcp.json")
+            let entry = try library.save(MCPLibraryEntry(name: "docs", commandOrURL: "docs"))
+            try library.saveSelection([entry.id], host: .claudeCode, projectID: projectID)
+            try apply(service.makeMCPLibraryPlan(host: .claudeCode, projectID: projectID), service: service)
+            try FileManager.default.removeItem(at: config)
+
+            try apply(service.makeMCPLibraryPlan(host: .claudeCode, projectID: projectID), service: service)
+
+            let nodes = try #require(try json(config)["mcpServers"] as? [String: [String: Any]])
+            #expect(nodes["docs"]?["command"] as? String == "docs")
+        }
+    }
+
     @Test func globalAndCodexProjectTargetsReuseOneEntryWithoutChangingOtherScopes() throws {
         try fixture { service, library, projectID, project, home in
             let entry = try library.save(MCPLibraryEntry(name: "docs", commandOrURL: "docs"))

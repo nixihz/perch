@@ -54,7 +54,7 @@ final class ProjectPlanFeedbackTests: XCTestCase {
         }
     }
 
-    func testUnknownDraftSnippetProducesVisibleRecoveryNotice() throws {
+    func testUnknownDraftSnippetIsPrunedWithoutBlockingProjectPage() throws {
         try fixture { root, paths, locations in
             let projectURL = root.appendingPathComponent("project")
             try FileManager.default.createDirectory(at: projectURL, withIntermediateDirectories: true)
@@ -71,13 +71,8 @@ final class ProjectPlanFeedbackTests: XCTestCase {
             let restarted = AppModel(runtimePaths: paths, globalLocations: locations)
             restarted.prepareDeploymentPlan()
 
-            XCTAssertFalse(restarted.planPresented)
-            let notice = try XCTUnwrap(restarted.projectPlanNotice(for: projectID))
-            XCTAssertEqual(notice.tone, .error)
-            XCTAssertEqual(
-                notice.message,
-                L10n.tr("草稿引用了已删除的 AGENTS 片段，请移除引用后再预览。")
-            )
+            XCTAssertTrue(restarted.selectedProject?.fragments.isEmpty == true)
+            XCTAssertFalse(restarted.lastAction.contains("已删除的 AGENTS 片段"))
         }
     }
 
