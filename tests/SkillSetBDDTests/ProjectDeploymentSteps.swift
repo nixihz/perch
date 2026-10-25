@@ -281,6 +281,11 @@ extension Cucumber: @retroactive StepImplementation {
             try nativeUI.pressButton(label)
         }
 
+        When("在原生界面选择资源类型 {string}") { match, _ in
+            let nativeUI = try XCTUnwrap(try XCTUnwrap(world).nativeUI)
+            try nativeUI.selectRadioButton(match.first(\.string))
+        }
+
         When("在原生界面点击标题文字 {string}") { match, _ in
             let title = try match.first(\.string)
             let nativeUI = try XCTUnwrap(try XCTUnwrap(world).nativeUI)
@@ -305,7 +310,7 @@ extension Cucumber: @retroactive StepImplementation {
         When("在原生界面打开 MCP 配置表单") { _, _ in
             let nativeUI = try XCTUnwrap(try XCTUnwrap(world).nativeUI)
             try nativeUI.pressButton("添加 MCP 服务")
-            try nativeUI.waitForStaticText("编辑 MCP 服务")
+            try nativeUI.waitForStaticText("MCP 服务配置")
         }
 
         When("在原生界面填写 MCP 字段 {string} 为 {string}") { match, _ in

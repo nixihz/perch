@@ -565,7 +565,7 @@ final class BDDWorld {
 
     func generateNativeUIPluginPlan() throws {
         guard let nativeUI else { throw BDDWorldError.missingNativeUI }
-        try nativeUI.pressButton("生成安装计划")
+        try nativeUI.pressButton(identifier: "global.preview.plugins.claude-code")
         currentPlan = try nativeUI.waitForSinglePlan(type: "plugin-lifecycle")
     }
 
