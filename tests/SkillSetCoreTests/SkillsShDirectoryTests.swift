@@ -113,7 +113,7 @@ struct SkillsShDirectoryTests {
             hit(skillID: "review-demo"), previewService: fixture.previewService
         )
 
-        let store = fixture.paths.makeLibraryStore(home: fixture.root.appendingPathComponent("home"))
+        let store = fixture.paths.makeLibraryStore()
         let origin = try #require(store.sourceOrigins()[entry.id])
         let package = try #require(store.sourceURLs()[entry.id])
         #expect(entry.id == "review-demo")
@@ -153,7 +153,7 @@ struct SkillsShDirectoryTests {
                     Issue.record("意外错误：\(error)")
                 }
             }
-            #expect(try fixture.paths.makeLibraryStore(home: fixture.root.appendingPathComponent("home")).sourceURLs().isEmpty)
+            #expect(try fixture.paths.makeLibraryStore().sourceURLs().isEmpty)
             #expect(try SourcePreviewStore(rootURL: fixture.paths.previewsRoot).list().isEmpty)
         }
     }

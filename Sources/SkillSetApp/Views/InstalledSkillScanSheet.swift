@@ -30,7 +30,7 @@ struct InstalledSkillScanSheet: View {
             HStack {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(L10n.tr("扫描已安装技能")).font(AppFont.title)
-                    Label(L10n.tr("收录后建议删除原安装，由技能库统一管理"), systemImage: "square.on.square")
+                    Label(L10n.tr("只扫描你追加的目录。Codex 与 Claude Code 的技能目录仅在首次初始化时读取。"), systemImage: "square.on.square")
                         .font(AppFont.secondary).foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -46,7 +46,7 @@ struct InstalledSkillScanSheet: View {
                 Spacer()
                 Toggle(L10n.tr("显示已收录"), isOn: $showAll).toggleStyle(.checkbox)
                 if !collectedItems.isEmpty {
-                    Button(L10n.tr("批量删除所有已收录原安装（推荐）"), role: .destructive) {
+                    Button(L10n.tr("批量删除原安装…"), role: .destructive) {
                         deletingAll = true
                     }.disabled(busy)
                 }
@@ -93,12 +93,16 @@ struct InstalledSkillScanSheet: View {
                 }.disabled(busy)
             }
             Divider()
+            if scanModel.selected.isEmpty && !available.isEmpty && !busy {
+                Text(L10n.tr("请勾选要加入技能库的技能。"))
+                    .font(AppFont.secondary).foregroundStyle(.secondary)
+            }
             HStack {
                 if importing { ProgressView().controlSize(.small) }
                 Text(L10n.tr("已选 \(scanModel.selected.count) 项")).font(AppFont.secondary).foregroundStyle(.secondary)
                 Spacer()
                 Button(L10n.tr("取消")) { dismiss() }.keyboardShortcut(.cancelAction).disabled(busy)
-                Button(L10n.tr("收录所选技能")) { collect() }
+                Button(L10n.tr("加入技能库")) { collect() }
                     .buttonStyle(AppButtonStyle(kind: .primary))
                     .disabled(scanModel.selected.isEmpty || busy)
                     .accessibilityIdentifier("installed.scan.import")
@@ -110,25 +114,25 @@ struct InstalledSkillScanSheet: View {
             .confirmationDialog(L10n.tr("删除原安装？"), isPresented: Binding(
                 get: { deleting != nil }, set: { if !$0 { deleting = nil } }
             ), titleVisibility: .visible) {
-                Button(L10n.tr("删除原安装（推荐）"), role: .destructive) {
+                Button(L10n.tr("删除原安装"), role: .destructive) {
                     guard let item = deleting else { return }
                     deleting = nil
                     Task {
                         if await model.removeInstalledSkill(item) { scan() }
                     }
                 }
-                Button(L10n.tr("取消"), role: .cancel) { deleting = nil }
+            Button(L10n.tr("先不删"), role: .cancel) { deleting = nil }
             } message: {
                 Text(L10n.tr("删除原来的 Claude Code 或 Codex 安装入口，技能库中的收录副本会保留。"))
             }
-            .confirmationDialog(L10n.tr("批量删除所有已收录原安装？"), isPresented: $deletingAll, titleVisibility: .visible) {
-                Button(L10n.tr("批量删除原安装（推荐）"), role: .destructive) {
+            .confirmationDialog(L10n.tr("删除所有已收录技能的原安装？"), isPresented: $deletingAll, titleVisibility: .visible) {
+                Button(L10n.tr("删除原安装"), role: .destructive) {
                     deletingAll = false
                     Task {
                         if await model.removeInstalledSkills(collectedItems) { scan() }
                     }
                 }
-                Button(L10n.tr("取消"), role: .cancel) { deletingAll = false }
+            Button(L10n.tr("先不删"), role: .cancel) { deletingAll = false }
             } message: {
                 Text(L10n.tr("将删除 \(collectedItems.count) 个原安装入口，技能库中的收录副本会保留。"))
             }
@@ -189,7 +193,7 @@ struct InstalledSkillScanSheet: View {
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = true
         panel.showsHiddenFiles = true
-        panel.message = L10n.tr("选择技能目录或软链指向的真实目录。")
+        panel.message = L10n.tr("选择技能目录，或软链接指向的原始目录。")
         guard panel.runModal() == .OK else { return }
         for url in panel.urls where !roots.contains(url) {
             if url.startAccessingSecurityScopedResource() { authorizedURLs.append(url) }

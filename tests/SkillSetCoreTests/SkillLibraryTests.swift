@@ -72,7 +72,7 @@ struct SkillLibraryTests {
         let copy = try fixture.store.save(fixture.draft(body: "修改副本", original: source), repositoryRoot: fixture.repository)
         #expect(copy.id == "demo")
         #expect(copy.fileCount == 2)
-        #expect(copy.licenseReview == "required")
+
         #expect(try Data(contentsOf: fixture.repository.appendingPathComponent("skills/demo/SKILL.md")) == before)
         let copyURL = try #require(fixture.store.sourceURLs()[copy.id])
         let files = try SkillAssetCopier.analyze(from: copyURL).fileManifest
@@ -172,7 +172,7 @@ private struct LibraryFixture {
         root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent("library-tests-\(UUID())")
         repository = root.appendingPathComponent("repo")
         paths = SkillSetRuntimePaths(applicationSupportRoot: root.appendingPathComponent("state"), repositoryRoot: repository)
-        store = paths.makeLibraryStore(home: root.appendingPathComponent("home"))
+        store = paths.makeLibraryStore()
         try FileManager.default.createDirectory(at: repository.appendingPathComponent("registry"), withIntermediateDirectories: true)
         try JSONEncoder().encode(emptyCatalog).write(to: repository.appendingPathComponent("registry/catalog.json"))
     }
@@ -192,6 +192,6 @@ private struct LibraryFixture {
         let analysis = try SkillAssetCopier.analyze(from: source)
         return SkillEntry(id: "workspace/demo", slug: "demo", declaredName: "demo", description: "原始来源", declaredVersion: nil,
                           metadataReview: "not-schema-validated", sourceId: "workspace", path: "skills/demo", contentHash: analysis.contentHash,
-                          fileCount: 2, bytes: analysis.bytes, integrity: "snapshotted", issues: [], licenseReview: "required", excludedPaths: [])
+                          fileCount: 2, bytes: analysis.bytes, integrity: "snapshotted", issues: [], excludedPaths: [])
     }
 }

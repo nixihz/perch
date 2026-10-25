@@ -10,15 +10,13 @@ struct SkillsView: View {
     @State private var checkedSkillIDs: Set<String> = []
 
     @State private var filter: SkillLibraryFilter = .all
-    @State private var sourceID = ""
+    @State private var sourceKey = ""
 
     private var libraryIndex: SkillLibraryIndex { model.skillLibraryIndex }
     private var sourceLabels: [String: String] { model.skillSourceLabels }
     private var visibleSkills: [SkillEntry] {
         let index = libraryIndex
-        return model.filteredSkills.filter {
-            (sourceID.isEmpty || $0.sourceId == sourceID) && index.matches($0, filter: filter)
-        }
+        return model.skills(from: sourceKey).filter { index.matches($0, filter: filter) }
     }
 
     private func reconcileSelection() {
@@ -80,7 +78,7 @@ struct SkillsView: View {
                 checkedSkillIDs.subtract(removed)
                 removal = []
             }
-            Button(L10n.tr("取消"), role: .cancel) { removal = [] }
+            Button(L10n.tr("先不移除"), role: .cancel) { removal = [] }
         } message: {
             Text(removalExplanation)
         }
@@ -135,18 +133,18 @@ struct SkillsView: View {
                         }
                     }
                     .accessibilityIdentifier("skills.filter")
-                    AppPicker(title: L10n.tr("技能来源"), selection: $sourceID,
-                              valueLabel: sourceID.isEmpty ? L10n.tr("全部来源") : (sourceLabels[sourceID] ?? sourceID), showsLabel: false) {
+                    AppPicker(title: L10n.tr("技能来源"), selection: $sourceKey,
+                              valueLabel: sourceKey.isEmpty ? L10n.tr("全部来源") : (sourceLabels[sourceKey] ?? sourceKey), showsLabel: false) {
                         Text(L10n.tr("全部来源")).tag("")
-                        ForEach(Set(model.snapshot.catalog.entries.map(\.sourceId)).sorted(), id: \.self) { source in
+                        ForEach(sourceLabels.keys.sorted { (sourceLabels[$0] ?? $0, $0) < (sourceLabels[$1] ?? $1, $1) }, id: \.self) { source in
                             Text(sourceLabels[source] ?? source).tag(source)
                         }
                     }
                     .accessibilityIdentifier("skills.sourceFilter")
                 }
-                if filter != .all || !sourceID.isEmpty || !model.query.isEmpty {
+                if filter != .all || !sourceKey.isEmpty || !model.query.isEmpty {
                     Button(L10n.tr("清空筛选")) {
-                        filter = .all; sourceID = ""; model.updateQuery("")
+                        filter = .all; sourceKey = ""; model.updateQuery("")
                     }
                     .accessibilityIdentifier("skills.clearFilters")
                 }
@@ -203,11 +201,7 @@ struct SkillsView: View {
                                                     StatusBadge(text: L10n.tr("暂不可用"), tone: .danger)
                                                 }
                                             }
-                                            Text(SkillSourceLabel.title(
-                                                sourceID: skill.sourceId,
-                                                origin: model.sourceOrigins[skill.id]?.url,
-                                                registeredTitle: model.snapshot.sources.sources.first { $0.id == skill.sourceId }?.title
-                                            ))
+                                            Text(model.skillSourceTitle(skill))
                                                 .font(AppFont.metadata.monospaced())
                                                 .foregroundStyle(.secondary)
                                                 .lineLimit(1)
@@ -275,7 +269,7 @@ struct SkillsView: View {
                                         .font(AppFont.secondary).foregroundStyle(.secondary)
                                     ForEach(namesakes) { other in
                                         Button {
-                                            filter = .all; sourceID = ""; model.updateQuery("")
+                                            filter = .all; sourceKey = ""; model.updateQuery("")
                                             model.selectedSkillID = other.id
                                         } label: {
                                             VStack(alignment: .leading, spacing: 4) {
@@ -310,7 +304,6 @@ struct SkillsView: View {
                                     Text(L10n.tr("内容指纹用于核对文件、路径和执行权限是否改变。"))
                                         .font(AppFont.secondary).foregroundStyle(.secondary)
                                     KeyValueLine(key: L10n.tr("存储路径"), value: SkillStoragePath.display(skill, storageURLs: model.skillStorageURLs), monospaced: true)
-                                    KeyValueLine(key: L10n.tr("许可"), value: L10n.text(UserFacingText.metadata(skill.licenseReview, field: .licenseReview)))
                                     KeyValueLine(key: L10n.tr("技能信息"), value: L10n.text(UserFacingText.metadata(skill.metadataReview, field: .metadataReview)))
                                     if !skill.excludedPaths.isEmpty {
                                         Text(L10n.tr("排除路径：\(skill.excludedPaths.joined(separator: "、"))"))
@@ -375,11 +368,11 @@ private struct UserSkillInstallSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text(L10n.tr("安装到本机")).font(AppFont.title)
-            Text(L10n.tr("用户级技能会影响所选 AI 工具的全部项目。已有受管技能会保留；安装方式也会应用于它们。"))
+            Text(L10n.tr("安装后用于所选 AI 工具的全部项目。栖集已管理的技能会保留，并改用这次选择的安装方式。"))
                 .font(AppFont.secondary).foregroundStyle(.secondary)
             AppPicker(title: L10n.tr("目标 AI 工具"), selection: $host,
-                      valueLabel: host == "codex" ? "Codex · ~/.agents/skills" : "Claude Code · ~/.claude/skills") {
-                Text("Codex · ~/.agents/skills").tag("codex")
+                      valueLabel: host == "codex" ? "Codex · ~/.codex/skills" : "Claude Code · ~/.claude/skills") {
+                Text("Codex · ~/.codex/skills").tag("codex")
                 Text("Claude Code · ~/.claude/skills").tag("claude-code")
             }
             Picker(L10n.tr("技能安装方式"), selection: $method) {

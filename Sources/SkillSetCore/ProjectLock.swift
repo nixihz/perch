@@ -201,7 +201,6 @@ public struct LockedSkillRevision: Codable, Hashable, Sendable {
     public let sourcePath: String
     public let declaredVersion: String?
     public let contentHash: String
-    public let licenseReview: String
     public let files: [SkillAssetFile]
 
     public init(
@@ -210,7 +209,6 @@ public struct LockedSkillRevision: Codable, Hashable, Sendable {
         sourcePath: String,
         declaredVersion: String?,
         contentHash: String,
-        licenseReview: String,
         files: [SkillAssetFile]
     ) {
         self.id = id
@@ -218,7 +216,6 @@ public struct LockedSkillRevision: Codable, Hashable, Sendable {
         self.sourcePath = sourcePath
         self.declaredVersion = declaredVersion
         self.contentHash = contentHash
-        self.licenseReview = licenseReview
         self.files = files.sorted { $0.path < $1.path }
     }
 }

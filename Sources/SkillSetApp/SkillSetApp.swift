@@ -13,6 +13,7 @@ struct SkillSetApp: App {
                 .modifier(MainWindowReopenRegistration(appDelegate: appDelegate))
         }
         .defaultSize(width: 1280, height: 820)
+        .windowStyle(.hiddenTitleBar)
         .windowToolbarStyle(.unified)
         .commands {
             MainWindowCommands()

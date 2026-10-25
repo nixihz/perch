@@ -44,6 +44,9 @@ struct PluginScanSheet: View {
                 .frame(maxWidth: .infinity, alignment: .leading).padding(2)
             }
             if let error { Text(L10n.text(error)).font(AppFont.secondary).foregroundStyle(.red) }
+            if !busy && selected.isEmpty && candidates.contains(where: \.canImport) {
+                Text(L10n.tr("请勾选要收录的插件。")).font(AppFont.secondary).foregroundStyle(.secondary)
+            }
             HStack {
                 Button(L10n.tr("重新扫描")) { scan() }
                 Spacer()

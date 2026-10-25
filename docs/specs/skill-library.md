@@ -10,9 +10,19 @@
 
 ## 库
 
-技能库是用户主目录下的一个目录。每个技能是该目录的一个直接子项，要么是文件夹，要么是单个文件。子项名字就是技能名。
+技能库是栖集私有库存目录 `~/.perch/skills/library/`。每个技能是该目录的一个直接子项，要么是文件夹，要么是单个文件。子项名字就是技能名。
 
-扫描技能库就是读这个目录。默认目录是 `~/.agents/skills`。库只有这一处。`~/.codex/skills`、`~/.claude/skills` 以及项目中的技能目录都是应用目标，不是第二套库。
+扫描技能库先读这个目录，再补上 `~/.perch/sources/custom/` 里没有同名条目的自建技能。库内容因此是私有库存与自建技能的并集。
+
+`~/.agents/skills` 是跨工具通用目录，不再被栖集当作库读写，只当普通安装目标。`~/.codex/skills`、`~/.claude/skills` 以及项目中的技能目录同样是安装目标。栖集不再往 `~/.agents/skills` 写任何东西；里面原有的软链保持原样，Codex 侧照旧可见。
+
+这些官方目录只在首次初始化时读取一次，用来把已经安装、且不是跟随技能来源的技能放进 `custom`。之后扫描已安装技能不再读取它们。
+
+## 迁移
+
+技能库早期放在 `~/.agents/skills`。搬库时做一次性迁移：把该目录里指向栖集目录（`~/.perch` 下）的软链复制进私有库存，链接目标不变，旧位置的软链原样保留。旧目录里的其它条目留在原处，不收进库存。
+
+迁移完成后不再回扫旧位置。否则用户在栖集里移除的技能会在下次启动时被重新加回来。迁移标记写在 `~/.perch/sources/.migrated-library-location`。
 
 技能来源区保存来源。GitHub 仓库和本地目录各占一个来源目录。自己新建的技能也是来源，固定放在 `~/.perch/sources/custom/`。文件只存在这里。
 
@@ -23,7 +33,7 @@
   stc/
     SKILL.md
 
-~/.agents/skills/
+~/.perch/skills/library/
   stc -> /Users/brian/.perch/sources/custom/stc
 ```
 
@@ -74,7 +84,7 @@
     SKILL.md
   README.md
 
-~/.agents/skills/
+~/.perch/skills/library/
   stc -> /Users/brian/.perch/sources/custom/stc
   skill-01 -> /Users/brian/.perch/sources/github.com/example/skills/skill-01
   skill-02 -> /Users/brian/.perch/sources/github.com/example/skills/skill-02
@@ -119,7 +129,7 @@
   skill-10/
     SKILL.md
 
-~/.agents/skills/
+~/.perch/skills/library/
   stc -> /Users/brian/.perch/sources/custom/stc
   skill-01 -> /Users/brian/.perch/sources/custom/skill-01
   skill-02 -> /Users/brian/.perch/sources/custom/skill-02
@@ -137,7 +147,9 @@
 
 ## 应用
 
-应用是单独动作。用户指定位置后，为选中的技能建立软链，指向库中的同名技能。
+应用是单独动作。用户指定位置后，为选中的技能建立软链，指向私有库存里的同名技能。
+
+安装位置不能落在私有库存里。库存归栖集自己所有，宿主目录和项目目录是应用目标，两边不重合。
 
 技能在库中，还不等于已经应用。取消应用只去掉目标位置的软链，不删除库中的技能。写入应用位置必须由用户明确执行。
 
@@ -152,4 +164,5 @@
 - 不用 `personal/<slug>`、`source-…/<slug>`、`packages/<uuid>` 或内容哈希作为技能身份。
 - 不因为来源不同而保留两个同名技能。
 - 导入时不先复制进哈希版本包，再软链到版本包。
+- 不再把 `~/.agents/skills` 当作技能库读写。
 - 不在本文件中改变 MCP、插件、预设和规则片段。

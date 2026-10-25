@@ -35,7 +35,7 @@ final class UpdateConfigurationTests: XCTestCase {
     func testUnconfiguredBuildShowsVersionAndKeepsUpdateActionsUnavailable() {
         let updates = AppUpdates(info: ["CFBundleShortVersionString": "1.2.3", "CFBundleVersion": "42"])
         XCTAssertEqual(updates.version, "1.2.3 (42)")
-        XCTAssertEqual(updates.unavailableReason, "此版本尚未开启在线更新。")
+        XCTAssertEqual(updates.unavailableReason, "这个版本暂不支持在线更新，请到官网下载新版。")
         updates.checkForUpdates()
         updates.setAutomaticallyChecksForUpdates(true)
         XCTAssertFalse(updates.isReady)

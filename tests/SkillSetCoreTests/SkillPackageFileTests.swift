@@ -110,6 +110,6 @@ private struct PackageFixture {
         SkillEntry(id: "workspace/demo", slug: "demo", declaredName: "demo", description: "文件预览",
                    declaredVersion: nil, metadataReview: "not-schema-validated", sourceId: "workspace",
                    path: "skills/demo", contentHash: "fixture", fileCount: 1, bytes: 0,
-                   integrity: "snapshotted", issues: [], licenseReview: "required", excludedPaths: excluded)
+                   integrity: "snapshotted", issues: [], excludedPaths: excluded)
     }
 }

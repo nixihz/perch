@@ -68,7 +68,7 @@ final class MCPStdioServer {
                 "protocolVersion": "2025-11-25",
                 "capabilities": ["tools": ["listChanged": false]],
                 "serverInfo": ["name": "perch", "version": "0.1.0"],
-                "instructions": "Perch：支持技能库、来源、片段、预设、项目和 MCP 配置库的增删改查；库删除不卸载已部署内容。用 templates_list 读取规则片段，用 global_config_plan 或 deployment_plan 生成应用/移除计划。用 presets_list 列出预设、skills_search 搜索技能；用 skills_install 或 presets_install 为明确的已登记项目生成追加安装计划。mcp_batch 可在单请求内顺序处理最多 50 项工具调用。projectPath 必须是调用方当前项目的绝对路径，不能猜测服务工作目录。用户在本机 UI 或 CLI 批准后，再调用 deployment_apply 完成安装。"
+                "instructions": "Perch：支持技能库、来源、片段、预设、项目和 MCP 配置库的增删改查。技能名在库内唯一；技能编辑会立即影响软链部署，删除库条目或其跟随来源会使对应软链部署失效，复制部署不变。复制技能用 skills_create 的 sourceSkillId 保留完整包。用 templates_list 读取规则片段，用 global_config_plan 或 deployment_plan 生成应用/移除计划。用 presets_list 列出预设、skills_search 搜索技能；用 skills_install 或 presets_install 为明确的已登记项目生成追加安装计划。mcp_batch 可顺序处理最多 50 项调用，可能包含删除、部署和联网操作。projectPath 必须是调用方当前项目的绝对路径，不能猜测服务工作目录。用户在本机 UI 或 CLI 批准后，再调用 deployment_apply 完成安装。"
             ])
         case "notifications/initialized", "notifications/cancelled":
             return nil
@@ -101,7 +101,7 @@ final class MCPStdioServer {
     ) -> [String: Any] {
         do {
             try validateToolArguments(name: name, arguments: arguments)
-            // 技能索引、片段和预设未变化时复用已解析快照；变化后重新加载。项目和计划仍按调用读盘。
+            // 库及完整技能包未变化时复用快照，避免附属文件变化后仍使用旧指纹。
             let current: SkillSetService
             if let serviceOverride {
                 current = serviceOverride
@@ -378,7 +378,7 @@ final class MCPStdioServer {
         }
     }
 
-    /// 在一个 MCP 调用内顺序处理多项操作。读操作共享服务快照；技能索引、片段或预设一旦变化就刷新，
+    /// 在一个 MCP 调用内顺序处理多项操作。读操作共享服务快照；技能包或库元数据一旦变化就刷新，
     /// 使本批后续项看到刚才的写入。单项失败不会吞掉同批其它结果。
     private func callBatch(arguments: [String: Any], service initial: SkillSetService) throws -> [String: Any] {
         guard let operations = arguments["operations"] as? [[String: Any]],
@@ -409,7 +409,7 @@ final class MCPStdioServer {
             if result["isError"] as? Bool != true { succeeded += 1 }
             results.append(["index": index, "name": name, "result": result])
             let now = MCPLibraryGeneration.capture(paths: libraryCache.paths)
-            guard now != generation else { continue }
+            guard !now.isComplete || now != generation else { continue }
             do {
                 current = try libraryCache.reload()
                 generation = libraryCache.generation
@@ -443,7 +443,7 @@ final class MCPStdioServer {
         [
             tool(
                 name: "mcp_batch",
-                description: "在一个请求中顺序处理最多 50 项 MCP 工具调用。读操作共享已加载的技能库快照；技能索引、片段或预设写入后刷新，后续项能看到新内容。单项失败会保留并返回其它结果。",
+                description: "顺序处理最多 50 项 MCP 工具调用，可能删除本机内容、执行已批准计划或联网；每项仍遵循自身校验与审批。技能包、片段或预设变化后刷新快照。单项失败会保留其它结果，不回滚先前成功项。",
                 properties: [
                     "operations": [
                         "type": "array",
@@ -462,8 +462,9 @@ final class MCPStdioServer {
                 ],
                 required: ["operations"],
                 readOnly: false,
-                destructive: false,
-                idempotent: false
+                destructive: true,
+                idempotent: false,
+                openWorld: true
             ),
             tool(name: "presets_list", description: "列出或搜索可安装的预设，返回标识、版本、技能、规则、插件与 MCP 组件。",
                  properties: ["query": ["type": "string", "maxLength": 200]], required: [], readOnly: true),
@@ -483,7 +484,7 @@ final class MCPStdioServer {
             ),
             tool(
                 name: "skills_search",
-                description: "按名称、namespace 或描述搜索本地 Skill catalog。",
+                description: "按唯一技能名、来源或描述搜索本机技能库，返回内容指纹和完整性状态。",
                 properties: [
                     "query": ["type": "string", "maxLength": 200],
                     "sourceId": ["type": "string"],
@@ -501,7 +502,7 @@ final class MCPStdioServer {
             ),
             tool(
                 name: "sources_preview",
-                description: "同步 Git 仓库或本地目录到栖集缓存并建立技能库搜索索引；不执行脚本或启用技能。",
+                description: "隔离下载 Git 仓库或复制本地目录，保存来源与候选技能；不执行脚本，不加入技能库或启用。加入库需调用 sources_import_skill。",
                 properties: [
                     "url": ["type": "string", "maxLength": 2_048],
                     "ref": ["type": "string", "maxLength": 256]

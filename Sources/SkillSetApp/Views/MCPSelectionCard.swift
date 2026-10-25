@@ -54,15 +54,15 @@ struct MCPSelectionCard: View {
             library.refreshUsage()
             model.refreshMCPConfigurations()
         }
-        .confirmationDialog(L10n.tr("确认覆盖外部 MCP 服务？"), isPresented: $overwriteConfirmationPresented,
+        .confirmationDialog(L10n.tr("覆盖已有的同名 MCP 服务？"), isPresented: $overwriteConfirmationPresented,
                             titleVisibility: .visible) {
-            Button(L10n.tr("确认覆盖并预览"), role: .destructive) {
+            Button(L10n.tr("覆盖并预览"), role: .destructive) {
                 let names = pendingOverwriteNames
                 pendingOverwriteNames = []
                 library.approveExternalOverwrite(host: host, projectID: projectID, names: names)
                 model.prepareMCPLibraryPlan(host: host, projectID: projectID)
             }
-            Button(L10n.tr("取消"), role: .cancel) { pendingOverwriteNames = [] }
+            Button(L10n.tr("先不覆盖"), role: .cancel) { pendingOverwriteNames = [] }
         } message: {
             let names = pendingOverwriteNames.joined(separator: "、")
             let path = target?.configPath ?? L10n.tr("目标配置")
@@ -73,7 +73,7 @@ struct MCPSelectionCard: View {
     private var selectionList: some View {
         VStack(alignment: .leading, spacing: 10) {
             if library.entries.isEmpty {
-                Text(L10n.tr("配置库为空，先添加服务或扫描已有配置入库。"))
+                Text(L10n.tr("配置库里还没有服务，请到「MCP 服务」添加或扫描已有配置。"))
                     .font(AppFont.secondary).foregroundStyle(.secondary)
             } else {
                 Text(L10n.tr("配置库 \(library.entries.count) 个 · 草稿已选 \(selectedIDs.count) 个"))
@@ -130,7 +130,7 @@ struct MCPSelectionCard: View {
                         .font(AppFont.secondary).foregroundStyle(.red)
                     Text(conflicts.map(\.name).joined(separator: "、"))
                         .font(AppFont.code).foregroundStyle(.secondary)
-                    Button(L10n.tr("确认覆盖同名服务…")) {
+                    Button(L10n.tr("覆盖同名服务…")) {
                         pendingOverwriteNames = conflicts.map(\.name)
                         overwriteConfirmationPresented = true
                     }

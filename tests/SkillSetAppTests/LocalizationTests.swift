@@ -62,6 +62,21 @@ final class LocalizationTests: XCTestCase {
         }
     }
 
+    func testServiceNameValidationExplainsLengthAndFirstCharacterRules() {
+        let valid = MCPConfigurationDraft(name: String(repeating: "a", count: 64), commandOrURL: "/usr/bin/true")
+        XCTAssertTrue(valid.validationIssues().isEmpty)
+        for name in ["-service", String(repeating: "a", count: 65)] {
+            var draft = valid
+            draft.name = name
+            let issues = draft.validationIssues()
+            XCTAssertEqual(issues.count, 1)
+            let message = issues[0]
+            XCTAssertTrue(message.contains("64"))
+            XCTAssertTrue(message.contains("以字母或数字开头"))
+            XCTAssertFalse(containsChinese(L10n.text(message, language: .english)))
+        }
+    }
+
     func testCodedAndSystemErrorsHaveTranslatedSafeMessages() {
         let codes = [
             "PLAN_EXPIRED", "APPROVAL_REQUIRED", "PLAN_ALREADY_APPLIED", "PLAN_NO_CHANGES",

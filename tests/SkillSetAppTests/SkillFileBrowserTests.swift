@@ -88,7 +88,8 @@ final class SkillFileBrowserTests: XCTestCase {
             }
             model.selectedSkillID = "workspace/single"
             try await settle(controller.view)
-            XCTAssertTrue(descendants(controller.view).compactMap { $0 as? NSSegmentedControl }.isEmpty)
+            XCTAssertFalse(descendants(controller.view).compactMap { $0 as? NSSegmentedControl }
+                .contains { $0.label(forSegment: 0) == L10n.tr("正文") })
             model.selectedSkillID = "workspace/demo"
             try await settle(controller.view)
             XCTAssertEqual(descendants(controller.view).compactMap { $0 as? NSSegmentedControl }.first?.selectedSegment, 0)
@@ -186,7 +187,7 @@ final class SkillFileBrowserTests: XCTestCase {
                                   declaredVersion: "1.0", metadataReview: "not-schema-validated", sourceId: "workspace",
                                   path: "skills/" + slug, contentHash: analysis.contentHash, fileCount: analysis.files.count,
                                   bytes: analysis.bytes, integrity: "snapshotted", issues: [],
-                                  licenseReview: "required", excludedPaths: [])
+                                  excludedPaths: [])
             }
             try FileManager.default.createDirectory(at: repo.appendingPathComponent("registry"), withIntermediateDirectories: true)
             try JSONEncoder().encode(CatalogDocument(schemaVersion: 1, hashAlgorithm: "sha256:path-content-executable:v1", entries: entries))

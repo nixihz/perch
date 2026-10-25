@@ -6,6 +6,7 @@ import SkillSetCore
 struct SkillContentView: View {
     @Bindable var model: AppModel
     @State private var showsFiles = false
+    @State private var showsSource = false
     private var canBrowseFiles: Bool { !model.selectedSkillFiles.isEmpty || model.skillFilesError != nil }
 
     var body: some View {
@@ -30,8 +31,25 @@ struct SkillContentView: View {
                     if let file = model.selectedSkillFile { filePreview(file) }
                     else { fileList }
                 } else {
-                    Text("SKILL.md").font(AppFont.heading)
-                    if !model.selectedSkillDocument.isEmpty { document(model.selectedSkillDocument) }
+                    HStack {
+                        Text("SKILL.md").font(AppFont.heading)
+                        Spacer()
+                        Picker(L10n.tr("显示方式"), selection: $showsSource) {
+                            Text(L10n.tr("预览")).tag(false)
+                            Text(L10n.tr("原文")).tag(true)
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        .fixedSize()
+                        .accessibilityIdentifier("skills.content.format")
+                    }
+                    if !model.selectedSkillDocument.isEmpty {
+                        if showsSource { document(model.selectedSkillDocument) }
+                        else {
+                            SkillMarkdownView(source: model.selectedSkillDocument)
+                                .accessibilityIdentifier("skills.content.preview")
+                        }
+                    }
                     else if !model.isLoadingSkillDocument {
                         Text(L10n.tr("暂无可读取的正文，请核对来源文件。"))
                             .font(AppFont.secondary).foregroundStyle(.secondary)
@@ -48,7 +66,7 @@ struct SkillContentView: View {
                 Button(L10n.tr("重新读取")) { Task { await model.loadSelectedSkillDocumentInBackground() } }
                     .padding(.top, 12)
             } else if model.selectedSkillFiles.isEmpty {
-                Text(L10n.tr("此技能没有附属文件。"))
+                Text(L10n.tr("这个技能没有附属文件，可在「SKILL.md」查看正文。"))
                     .font(AppFont.secondary).foregroundStyle(.secondary)
             } else {
                 Text(L10n.tr("参考文档、脚本与资源，仅供查看。"))
@@ -116,13 +134,13 @@ struct SkillContentView: View {
                 switch model.selectedSkillFilePreview {
                 case let .text(text):
                     if text.isEmpty {
-                        Text(L10n.tr("此文件为空。"))
+                        Text(L10n.tr("这个文件还没有内容。"))
                             .font(AppFont.secondary).foregroundStyle(.secondary)
                     } else { document(text) }
                 case .tooLarge:
                     previewNotice("文件超过 2 MiB，请在 Finder 中查看。")
                 case .unsupported:
-                    previewNotice("此格式暂不支持预览，请在 Finder 中查看。")
+                    previewNotice("这个格式暂不支持预览，请在 Finder 中查看。")
                 case nil:
                     EmptyView()
                 }

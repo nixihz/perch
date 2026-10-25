@@ -59,7 +59,7 @@ final class ProjectHarnessWorkflowTests: XCTestCase {
         try fixture { root, paths, locations in
             let project = root.appendingPathComponent("project")
             try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
-            let library = paths.makeLibraryStore(home: locations.home)
+            let library = paths.makeLibraryStore()
             let first = try library.save(SkillEditorDraft(slug: "codex-only", document: "---\nname: codex-only\ndescription: Codex 专用\n---\nCodex\n"), repositoryRoot: nil)
             let second = try library.save(SkillEditorDraft(slug: "claude-only", document: "---\nname: claude-only\ndescription: Claude 专用\n---\nClaude\n"), repositoryRoot: nil)
             let model = AppModel(runtimePaths: paths, globalLocations: locations)

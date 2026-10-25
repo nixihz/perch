@@ -124,7 +124,7 @@ Skill Set 是一个**本地 macOS 桌面应用**和 Git 大仓，不是 Web 软�
 - `Plan`：不可变 digest、目标路径、旧/新 hash、diff、风险、有效期和 approval 状态。
 - `Operation`：journal、backup、逐步结果、恢复状态和脱敏审计。
 
-生命周期：`draft → reviewed → promoted → deprecated → archived`。`integrity`、`licenseReview`、`trust` 与生命周期独立保存。
+生命周期：`draft → reviewed → promoted → deprecated → archived`。`integrity`、`trust` 与生命周期独立保存。许可原文随来源保留，系统不设置许可审查状态或流程。
 
 ## 8. 共享仓与本机边界
 

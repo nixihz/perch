@@ -204,7 +204,7 @@ final class PageLoadingTests: XCTestCase {
         XCTAssertNotNil(model.aiAccessError)
     }
 
-    func testManyProjectsKeepRailBoundedAndLastRowsReachableInBothAppearances() async throws {
+    func testManyProjectsKeepSelectorCompactAndLastProjectReachableInBothAppearances() async throws {
         let fixture = try Fixture()
         defer { fixture.cleanup() }
         let model = fixture.model
@@ -227,16 +227,16 @@ final class PageLoadingTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(150))
             controller.view.layoutSubtreeIfNeeded()
             let rail = try XCTUnwrap(descendants(controller.view).compactMap { $0 as? NSScrollView }.first {
-                $0.bounds.width <= 320 && ($0.documentView?.frame.height ?? 0) > 1000
+                $0.bounds.height <= 40 && ($0.documentView?.frame.width ?? 0) > 1000
             })
-            XCTAssertLessThanOrEqual(rail.bounds.height, 361)
+            XCTAssertLessThanOrEqual(rail.bounds.height, 40)
             let document = try XCTUnwrap(rail.documentView)
-            document.scroll(NSPoint(x: 0, y: document.bounds.maxY))
+            document.scroll(NSPoint(x: document.bounds.maxX, y: 0))
             try await Task.sleep(for: .milliseconds(100))
             controller.view.layoutSubtreeIfNeeded()
-            XCTAssertGreaterThan(rail.contentView.bounds.origin.y, 0)
-            // 原生滚动容器可能保留几像素尾部内边距，但不能挡住末行。
-            XCTAssertLessThanOrEqual(document.bounds.maxY - rail.documentVisibleRect.maxY, 12)
+            XCTAssertGreaterThan(rail.contentView.bounds.origin.x, 0)
+            // 横向项目选择器不能因为项目数量增长而增高，末项仍可滚到。
+            XCTAssertLessThanOrEqual(document.bounds.maxX - rail.documentVisibleRect.maxX, 12)
             XCTAssertLessThanOrEqual(controller.view.fittingSize.height, 701)
             let bitmap = try XCTUnwrap(controller.view.bitmapImageRepForCachingDisplay(in: controller.view.bounds))
             controller.view.cacheDisplay(in: controller.view.bounds, to: bitmap)

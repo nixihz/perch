@@ -207,7 +207,7 @@ def build_catalog(repo, source, allowed_roots, copy=False):
                 "path": destination.relative_to(repo).as_posix(), "contentHash": info["contentHash"],
                 "fileCount": len(info["files"]), "bytes": info["bytes"],
                 "integrity": "blocked" if info["issues"] else "snapshotted",
-                "issues": info["issues"], "licenseReview": "required",
+                "issues": info["issues"],
                 "excludedPaths": ignored,
             })
     return catalog, report

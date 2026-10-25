@@ -55,7 +55,11 @@ Tests/SkillSetCoreTests/        Swift Testing 行为测试
 
 正常运行时片段和预设只读取 ~/.perch/templates.json 与 ~/.perch/presets.json，初始为空；仓库 JSON/Markdown 与 SwiftPM 快照仅用于显式启用的开发夹具，不作为用户的预置内容。技能库只读取用户配置来源与本机索引，不自动加载仓库 catalog。项目草稿、计划、staging、operation 和来源缓存写入 ~/.perch。所有部署写入经过 `SkillSetService`，UI、CLI 和 MCP 不各自实现安装逻辑。
 
-技能库按 [技能库](skill-library.md) 存放。自建、本地导入和复制的技能都写在 `~/.perch/sources/custom/<技能名>/`，`~/.agents/skills/<技能名>` 软链指向它。跟随来源的导入则让软链指向来源目录。技能名唯一，不再使用 `personal/<slug>`、`packages/<uuid>` 或内容哈希作为身份。分类记在 `~/.perch/skill-categories.json`。
+技能库按 [技能库](skill-library.md) 存放。库是私有库存 `~/.perch/skills/library/`，只留软链；自建、本地导入和复制的技能实体写在 `~/.perch/sources/custom/<技能名>/`，库存里的同名软链指向它。跟随来源的导入则让库存软链指向来源目录。技能名唯一，不再使用 `personal/<slug>`、`packages/<uuid>` 或内容哈希作为身份。分类记在 `~/.perch/skill-categories.json`。
+
+搬库时做一次性迁移：旧库位置 `~/.agents/skills` 里指向栖集目录的软链复制进私有库存，旧位置原样保留。标记写在 `~/.perch/sources/.migrated-library-location`，迁移后不再回扫旧位置。
+
+首次初始化读取 Codex 与 Claude Code 的技能目录一次：跟随技能来源的软链留在来源检出，其余已安装技能复制进 `custom` 并在库存里留下同名软链。标记写在 `~/.perch/sources/.adopted-installed-skills`。之后的已安装技能扫描只接受调用方追加的目录，不再读取这些官方目录。
 
 `SkillSetService` 初始化时合并仓库 catalog 和本机索引；部署计划从索引解析本地包路径，仍由原计划审批、对象存储和文件事务落地。编辑不写 `registry/catalog.json`、`vendor/`、全局技能或项目配置。`SKILL.md` 编辑只提取 name、description 和 version 供展示，保留原文与未知字段，不宣称完成完整 YAML schema 校验。
 
@@ -63,7 +67,9 @@ Tests/SkillSetCoreTests/        Swift Testing 行为测试
 
 来源导入经 `SkillSetService.sourceSkillImportDraft` / `importSourceSkill` 进入本机技能库。目录只从预览 UUID 和已扫描的相对路径推导，不信任 `workspacePath`；拒绝越界、目录软链替换及有完整性问题的候选。审阅和提交分别核对预览指纹与仓库根许可文件摘要，复制后再次验证原始包指纹。包中的 Git 数据不导入；仓库根 LICENSE / LICENCE / COPYING / NOTICE 文件保存在独立的 `_source_licenses` 目录（重名时追加下划线）。索引原子发布前失败会清理新包，既有同标识技能不可覆盖。
 
-导入条目使用 `personal/<slug>`，可在导入表单修改标识；`LibrarySkillRecord.sourceOrigin` 保存仓库、固定 commit、原始相对路径、原始包指纹、许可线索和许可摘要。该可选字段兼容旧索引，本机编辑保留原始来源证据。部署指纹按最终包重新计算，包括保存的许可文件。预览删除或替换后，独立技能包仍可阅读、编辑并通过原部署计划部署；不自动更新已导入技能，不将导入等同于许可审核或项目启用。
+批量导入经 `SkillSetService.importSourceSkills` 进入本机技能库，界面入口在来源页的“发现的技能”。请求带预览 UUID、每项的相对路径与本机标识、整批存放方式与分类。每项复用 `sourceForImport` 的同一套校验（内容指纹一致、路径不越界、许可文件收集），逐项执行，单项失败只记在该项结果上，不影响同批其他项。标识与技能库重名时该项记为已跳过，界面预填时先加序号（`xxx-2`）并允许用户改写，既有同标识技能不被覆盖。技能库侧 `SkillLibraryStore.importSourceBatch` 只加载一次元数据、一次枚举库目录，元数据一次写回，写回失败回滚本批创建的链接与目录；复制模式复核包指纹、移除 `.git`、写入 `_source_licenses` 后再建库内软链。
+
+导入条目使用技能库平铺的 `<技能名>`，可在导入表单或批量面板修改标识；`LibrarySkillRecord.sourceOrigin` 保存仓库、固定 commit、原始相对路径、原始包指纹、许可线索和许可摘要。该可选字段兼容旧索引，本机编辑保留原始来源证据。部署指纹按最终包重新计算，包括保存的许可文件。预览删除或替换后，独立技能包仍可阅读、编辑并通过原部署计划部署；不自动更新已导入技能，导入不启用项目配置。
 
 ## 3. 共享仓与本机状态
 
@@ -86,7 +92,9 @@ Tests/SkillSetCoreTests/        Swift Testing 行为测试
 
 ### Source / SkillRevision
 
-`Source` 使用 `sourceId` 表示身份，字段包括 kind、canonical URL、requested ref、resolved commit、子路径、licenseReview 和 trust。`SkillRevision` 记录 skill ID、完整 commit 或 local snapshot、contentHash、逐文件 manifest、声明版本、许可和完整性。裸 skill name 不能作为唯一键。
+系统不再维护 `licenseReview`，目录条目、来源记录和新生成的项目锁均不写此字段；旧 JSON 中该字段作为未知字段兼容读取。部署计划不生成逐技能许可提醒；原有计划中的这类提醒在界面中忽略。来源许可证和导入包的许可文件摘要仍保留，用于追溯原文，不参与启用或部署判断。
+
+`Source` 使用 `sourceId` 表示身份，字段包括 kind、canonical URL、requested ref、resolved commit、子路径和 trust。`SkillRevision` 记录 skill ID、完整 commit 或 local snapshot、contentHash、逐文件 manifest、声明版本、许可和完整性。裸 skill name 不能作为唯一键。
 
 内容 hash 算法为 `sha256:path-content-executable:v1`：解引用批准边界内的链接，按相对路径、文件 bytes 和 executable 位排序后对 canonical JSON 求 SHA-256；不包含 mtime、绝对路径或被明确排除的缓存。断链、循环、越界、特殊文件、大小/深度限制和秘密模式进入 blocked 报告。
 
@@ -126,9 +134,9 @@ ProjectBinding 以本机 canonical realpath + UUID 注册，包含目标 agent�
 
 项目界面的 `editingAgent` 只决定正在编辑哪个宿主。切换宿主不保存草稿或启用宿主；实际改变技能、片段或载入预设时才更新对应选择。预设中的技能与片段只替换当前宿主；结构化 MCP 草稿和插件引用仍保留条目自己的宿主与范围。MCP 配置库按 UUID 保存的选择继续独立，不在本次迁移中与预设 MCP 草稿合并。
 
-`makeHarnessPlan(projectID:agent:selection:installMethod:)` 提交当前宿主的选择，其他宿主采用已部署 manifest 中的选择，不能将另一宿主未部署草稿一起带入计划。项目界面和片段“用于配置”复用此入口。计划生成后、保存待批准记录之前，`onlyChangingAgent` 检查真实变更路径：允许当前宿主的技能目录、规则文件和本机项目状态文件；如果其他宿主文件也将改变，清理 staging 并返回 `HARNESS_SCOPE_CONFLICT`，不保存可批准计划。
+`makeHarnessPlan` 提交当前宿主的选择，其他宿主采用已部署 manifest 中的选择，不能将另一宿主未部署草稿一起带入计划。项目界面和片段“用于配置”传入 `allowRelatedHarnessUpdates: true`：共享库内容、片段正文或 copy/symlink 方式变化导致其他宿主已部署文件需要更新时，生成包含关联更新的同一计划。计划页按实际变更路径显示涉及的工具和全部差异，用户保存后共同执行；归属、漂移、审批和事务检查保持有效。
 
-这一限制处理共享库内容或安装方式变化的边界：即使技能 ID 不变，当前库中的版本、片段正文或 copy/symlink 方式也可能不同于另一宿主的已部署内容。界面要求核对共用技能、规则和安装方式，不会顺带更新；共用内容必须一起更新时，可通过 CLI / MCP 明确生成多宿主计划。当前锁仍对每个技能 ID 记录一份 revision，**尚未提供同一技能 ID 在不同宿主固定不同 revision 的模型**；独立选择不等于独立版本管理。
+该参数默认 false，未对 MCP 暴露。CLI / MCP 单宿主调用继续通过 `onlyChangingAgent` 检查真实变更路径：允许当前宿主的技能目录、规则文件和本机项目状态文件；其他宿主文件也将改变时，清理 staging 并返回 `HARNESS_SCOPE_CONFLICT`，不保存可批准计划。当前锁仍对每个技能 ID 记录一份 revision，**尚未提供同一技能 ID 在不同宿主固定不同 revision 的模型**；独立选择不等于独立版本管理。
 
 部署器按宿主选择过滤实际目标，技能裸名称冲突在单个宿主内判断；观察器匹配锁中的技能时也限定宿主，避免跨宿主同名、同内容的不同来源被误报为来源不唯一。映射进入 manifest digest；锁继续核对 digest、目标及技能/片段并集，不重复保存第二份映射。归属收据、旧文件指纹、计划读取依赖与回滚仍沿用原文件事务。
 
@@ -231,6 +239,16 @@ MCP 目标由宿主与范围共同确定。Codex 用户级使用 `$CODEX_HOME/co
 
 ### MCP 管理能力补齐（2026-10-23）
 
-stdio MCP 从 17 个扩展为 59 个工具，覆盖技能库、规则片段、预设、来源、项目、MCP 配置库和插件来源的管理，以及项目/全局应用计划。`mcp_batch` 复用单次服务快照处理最多 50 项调用；技能索引、片段或预设文件变化后刷新。JSON-RPC 数组请求按批响应。复用现有 Swift Core store 与服务，不新增数据库或部署执行器。具体矩阵见 [MCP 契约](mcp.md)。此变更解除此前“库写操作仅限本机 UI”的接口限制；库写操作只影响本机状态，宿主变更仍逐计划由本机批准。
+stdio MCP 从 17 个扩展为 59 个工具，覆盖技能库、规则片段、预设、来源、项目、MCP 配置库和插件来源的管理，以及项目/全局应用计划。`mcp_batch` 复用单次服务快照处理最多 50 项调用；完整技能包、分类及来源证据、片段或预设变化后刷新。JSON-RPC 数组请求按批响应。复用现有 Swift Core store 与服务，不新增数据库或部署执行器。具体矩阵见 [MCP 契约](mcp.md)。此变更解除此前“库写操作仅限本机 UI”的接口限制；库写操作不主动改写宿主目标；已软链部署的技能按库约定实时跟随编辑，库条目或其跟随来源删除后链接失效，复制部署不变。新增、移除宿主目标及复制部署更新仍逐计划由本机批准。`skills_create` 的可选 `sourceSkillId` 复用完整包复制逻辑，保留附属文件权限和来源证据，不增加部署入口。
 
-普通工具调用在技能索引、片段和预设文件身份未变化时复用已解析服务，避免重复解析 catalog 和重建检索索引；这些文件变化后的下一次调用重新加载。`mcp_batch` 在批内复用读快照，并在上述文件变化后刷新，使后续项看到刚才的写入。删除后不再使用旧快照生成新计划。已生成计划仍绑定原有 staging 和 digest，后续库修改不改写旧计划。项目登记通过显式绝对路径开放，取消登记不删除项目目录。跨进程锁仍未实现。
+普通工具调用在技能库及完整包、分类及来源证据、片段和预设文件身份未变化时复用已解析服务。元数据检查覆盖嵌套文件及目录的新增、修改、删除、重命名和权限变化，不重读正文。包根解引用库入口，内部目录软链不遍历；遍历失败或超过单包 12,000 项、64 层时不复用缓存，避免把不完整扫描当作有效快照。变化后的下一次调用重新加载，避免重复解析 catalog 和重建检索索引。`mcp_batch` 在批内复用读快照，并在上述文件变化后刷新，使后续项看到刚才的写入。删除后不再使用旧快照生成新计划。已生成计划仍绑定原有 staging 和 digest，后续库修改不改写旧计划。项目登记通过显式绝对路径开放，取消登记不删除项目目录。跨进程锁仍未实现。
+
+### 项目与全局的统一配置界面
+
+`ConfigurationResourceView` 统一资源标签、搜索、工具图标开关和预览入口，全局范围不传 `projectID`，项目范围显式绑定登记项目 UUID；切换项目重建该项目视图，过期的异步插件读取不能覆盖新项目。项目选择区横向滚动，资源列表占满详情宽度。`AppModel.setInstruction` 按宿主更新独立选择，`prepareDeploymentPlan(host:)` 不切换编辑宿主，只提交指定宿主的选择。两种范围的计划页均以“保存”批准当前 digest 并执行，其他页面的二次确认保持原样。
+
+`PluginSelectionModel` 复用原生命周期计划：全局草稿仍在 `global/plugin-draft.json`，各项目草稿位于 `plugin-drafts/<projectUUID>.json`。项目只允许 Claude Code，过滤掉用户级安装，安装使用 project scope；Codex 插件继续在全局配置中操作。草稿保存不运行宿主命令，风险确认不持久化。
+
+### 预设页面的草稿与保存
+
+预设页改为顶部横向选择区与下方 `PresetConfigurationEditor`，新建／复制的 `PresetEditorSheet` 复用同一编辑器。`AppModel.presetDrafts` 按预设 ID 保留当前会话的未保存组合，切换预设和导航不写库；保存成功只清除当前 ID 的临时草稿，失败保留所有修改。`PresetSavePreview` 使用不可变的当前草稿展示四类资源的新增、更新、移除和最终内容，保存仍通过 `AppModel.savePreset` 与 `PresetStore` 校验后原子写入，不生成部署计划。更新已有记录保持原顺序，新增记录追加。技能和片段继续作为可复用组合，在载入项目时确定目标宿主；插件引用与 MCP 草稿保留原有宿主、范围和具体配置。

@@ -305,7 +305,7 @@ extension Cucumber: @retroactive StepImplementation {
         When("在原生界面打开 MCP 配置表单") { _, _ in
             let nativeUI = try XCTUnwrap(try XCTUnwrap(world).nativeUI)
             try nativeUI.pressButton("添加 MCP 服务")
-            try nativeUI.waitForStaticText("保存 MCP 配置")
+            try nativeUI.waitForStaticText("编辑 MCP 服务")
         }
 
         When("在原生界面填写 MCP 字段 {string} 为 {string}") { match, _ in

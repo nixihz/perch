@@ -5,11 +5,6 @@ struct PresetEditorSheet: View {
     @Bindable var model: AppModel
     @Environment(\.dismiss) private var dismiss
     @State private var draft: PresetEditorDraft
-    @State private var category: PresetComponent = .skills
-    @State private var search = ""
-    @State private var confirmDiscard = false
-    @State private var mcpEditor: MCPEditRequest?
-    @FocusState private var nameFocused: Bool
     private let initial: PresetEditorDraft
 
     init(model: AppModel, draft: PresetEditorDraft) {
@@ -19,126 +14,121 @@ struct PresetEditorSheet: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(L10n.tr(initial.name.isEmpty ? "新建预设" : "编辑预设")).font(AppFont.title)
-                    Text(L10n.tr("把常用组件整理成组合，随时载入项目草稿。"))
-                        .font(AppFont.secondary).foregroundStyle(.secondary)
+        PresetConfigurationEditor(model: model, draft: $draft, initial: initial, onClose: { dismiss() })
+            .padding(24).frame(width: 900, height: 670).background(.regularMaterial)
+            .interactiveDismissDisabled(draft != initial)
+    }
+}
+
+/// 页面和新建面板共用同一编辑器；预设内容不直接写入项目或宿主。
+struct PresetConfigurationEditor: View {
+    @Bindable var model: AppModel
+    @Binding var draft: PresetEditorDraft
+    let initial: PresetEditorDraft
+    var onClose: (() -> Void)? = nil
+    @State private var category: PresetComponent = .skills
+    @State private var search = ""
+    @State private var availableHeight: CGFloat = 0
+    @State private var confirmDiscard = false
+    @State private var mcpEditor: MCPEditRequest?
+    @State private var preview: PresetEditorDraft?
+    @State private var closeAfterSave = false
+    @FocusState private var nameFocused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: availableHeight < 500 ? 8 : 14) {
+            ConfigurationSectionHeader {
+                Text(L10n.tr(onClose == nil ? "配置草稿" : initial.name.isEmpty ? "新建预设" : "编辑预设"))
+                    .font(AppFont.heading)
+            } actions: {
+                Button(L10n.tr("预览")) { preview = draft }
+                    .buttonStyle(AppButtonStyle(kind: .primary))
+                    .disabled(draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        || draft.record.componentCount == 0 || !draftBlockingReasons.isEmpty)
+                    .accessibilityIdentifier("presets.editor.preview")
+            }
+            HStack(spacing: 10) {
+                TextField(L10n.tr("预设名称"), text: $draft.name)
+                    .textFieldStyle(AppTextFieldStyle()).focused($nameFocused).accessibilityIdentifier("presets.editor.name")
+                TextField(L10n.tr("说明（可选）"), text: $draft.description)
+                    .textFieldStyle(AppTextFieldStyle()).accessibilityIdentifier("presets.editor.description")
+            }
+            Picker(L10n.tr("资源类型"), selection: $category) {
+                ForEach([PresetComponent.skills, .instructions, .mcp, .plugins]) { item in
+                    Text(L10n.text(item.title)).tag(item)
                 }
+            }
+            .pickerStyle(.segmented).accessibilityIdentifier("presets.editor.categories")
+            if category == .skills {
+                selectedSkillPills
+            }
+            HStack(spacing: 10) {
+                AppSearchField(query: $search, prompt: L10n.tr("搜索名称、来源或说明"),
+                    label: L10n.tr("搜索配置资源"), identifier: "presets.editor.search")
+                if category == .mcp {
+                    Button { mcpEditor = MCPEditRequest() } label: {
+                        Label(L10n.tr("添加 MCP 服务"), systemImage: "plus")
+                    }.accessibilityIdentifier("presets.editor.addMCP")
+                }
+            }
+            HStack {
+                Text(L10n.tr("勾选只改预设草稿，预览后保存；用于项目时再选择 AI 工具。"))
+                    .font(AppFont.secondary).foregroundStyle(.secondary)
                 Spacer()
-            }
-            .padding(24)
-            Divider()
-            HStack(spacing: 0) {
-                VStack(spacing: 6) {
-                    ForEach(PresetComponent.allCases) { item in
-                        Button { category = item } label: {
-                            HStack(spacing: 10) {
-                                Image(systemName: item.icon).frame(width: 20)
-                                Text(L10n.text(item.title)).lineLimit(1).fixedSize(horizontal: true, vertical: false)
-                                Spacer()
-                                Text("\(count(item))").monospacedDigit().foregroundStyle(.secondary)
-                            }
-                            .font(AppFont.secondary.weight(.medium))
-                            .foregroundStyle(.primary)
-                            .padding(12).selectionRow(item == category)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("presets.editor.category.\(item.rawValue)")
-                    }
-                    Spacer()
-                    Text(L10n.tr("保存预设只保存组合，不会安装插件或修改项目文件。"))
-                        .font(AppFont.metadata).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true).padding(10)
-                }
-                .padding(12).frame(width: 210)
-                .background(AppColor.surface.opacity(0.6))
-                Divider()
-                VStack(alignment: .leading, spacing: 16) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        TextField(L10n.tr("预设名称"), text: $draft.name)
-                            .textFieldStyle(AppTextFieldStyle())
-                            .focused($nameFocused).accessibilityIdentifier("presets.editor.name")
-                        TextField(L10n.tr("说明（可选）"), text: $draft.description, axis: .vertical)
-                            .textFieldStyle(AppTextFieldStyle()).lineLimit(2...3)
-                            .accessibilityIdentifier("presets.editor.description")
-                    }
-                    Divider()
-                    HStack {
-                        Label(L10n.text(category.title), systemImage: category.icon).font(AppFont.heading)
-                        Spacer()
-                        Text(L10n.tr("已选 \(count(category)) 项")).font(AppFont.secondary).foregroundStyle(.secondary)
-                        if category == .mcp {
-                            Button { mcpEditor = MCPEditRequest() } label: {
-                                Label(L10n.tr("添加 MCP 服务"), systemImage: "plus")
-                                    .frame(minHeight: 32)
-                                    .contentShape(Rectangle())
-                            }
-                                .help(L10n.tr("添加 MCP 服务"))
-                                .accessibilityLabel(L10n.tr("添加 MCP 服务"))
-                                .accessibilityIdentifier("presets.editor.addMCP")
-                        }
-                    }
-                    if category == .skills {
-                        AppSearchField(query: $search, prompt: L10n.tr("搜索技能、来源或路径"),
-                                       label: L10n.tr("搜索技能"), identifier: "presets.editor.search")
-                    }
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 14) {
-                            switch category {
-                            case .skills: skills
-                            case .plugins: plugins
-                            case .mcp: servers
-                            case .instructions: instructions
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.trailing, 8)
-                    }
-                    .id(category)
-                }
-                .padding(20).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                Text(L10n.tr("已选 \(count(category)) 项")).font(AppFont.metadata).foregroundStyle(.secondary)
             }
             Divider()
-            VStack(alignment: .leading, spacing: 10) {
-                let reasons = draftBlockingReasons
-                if !reasons.isEmpty {
-                    ForEach(Array(reasons.enumerated()), id: \.offset) { _, reason in
-                        Label(L10n.tr(reason), systemImage: "exclamationmark.circle")
-                            .font(AppFont.secondary).foregroundStyle(.red)
-                            .fixedSize(horizontal: false, vertical: true)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    switch category {
+                    case .skills: skills
+                    case .plugins: plugins
+                    case .mcp: servers
+                    case .instructions: instructions
                     }
-                } else if let error = model.presetError {
-                    Label(L10n.tr(error), systemImage: "exclamationmark.circle")
-                        .font(AppFont.secondary).foregroundStyle(.red)
-                        .fixedSize(horizontal: false, vertical: true)
+                }.frame(maxWidth: .infinity, alignment: .leading)
+            }.id(category)
+            if !draftBlockingReasons.isEmpty {
+                ForEach(Array(draftBlockingReasons.enumerated()), id: \.offset) { _, reason in
+                    Text(L10n.tr(reason)).font(AppFont.secondary).foregroundStyle(.red)
                 }
-                HStack {
-                    Text(L10n.tr("共 \(draft.record.componentCount) 项内容"))
-                        .font(AppFont.secondary).foregroundStyle(.secondary)
-                    Spacer()
+            } else if let error = model.presetError {
+                Text(L10n.tr(error)).font(AppFont.secondary).foregroundStyle(.red)
+            } else if draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text(L10n.tr("请填写预设名称，并至少选择一项内容。"))
+                    .font(AppFont.secondary).foregroundStyle(.secondary)
+            } else if draft.record.componentCount == 0 {
+                Text(L10n.tr("请至少选择一项内容，再预览保存。"))
+                    .font(AppFont.secondary).foregroundStyle(.secondary)
+            }
+            HStack {
+                Text(L10n.tr("共 \(draft.record.componentCount) 项内容")).font(AppFont.secondary).foregroundStyle(.secondary)
+                Spacer()
+                if onClose != nil {
                     Button(L10n.tr("取消")) { cancel() }.keyboardShortcut(.cancelAction)
-                    Button(L10n.tr("保存预设")) {
-                        if model.savePreset(draft) { dismiss() }
-                    }
-                    .buttonStyle(AppButtonStyle(kind: .primary)).keyboardShortcut("s", modifiers: .command)
-                    .disabled(draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || draft.record.componentCount == 0)
-                    .accessibilityIdentifier("presets.editor.save")
+                } else if draft != initial {
+                    Button(L10n.tr("放弃修改")) { confirmDiscard = true }
                 }
             }
-            .padding(.horizontal, 24).padding(.vertical, 16)
         }
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { availableHeight = $0 }
         .appControls()
-        .frame(width: 900, height: 670).background(.regularMaterial)
         .disclosureGroupStyle(FullRowDisclosureGroupStyle())
-        .defaultFocus($nameFocused, true)
-        .interactiveDismissDisabled(draft != initial)
         .onChange(of: draft) { _, _ in model.presetError = nil }
+        .onAppear { if onClose != nil && initial.name.isEmpty { nameFocused = true } }
         .confirmationDialog(L10n.tr("放弃未保存的修改？"), isPresented: $confirmDiscard, titleVisibility: .visible) {
-            Button(L10n.tr("放弃修改"), role: .destructive) { dismiss() }
+            Button(L10n.tr("放弃修改"), role: .destructive) {
+                if let onClose { onClose() } else { draft = initial }
+            }
             Button(L10n.tr("继续编辑"), role: .cancel) {}
+        }
+        .sheet(item: $preview, onDismiss: {
+            if closeAfterSave { closeAfterSave = false; onClose?() }
+        }) { reviewed in
+            PresetSavePreview(model: model, draft: reviewed, initial: initial) {
+                closeAfterSave = true
+                preview = nil
+            }
         }
         .sheet(item: $mcpEditor) { request in
             PresetMCPForm(initial: request.draft) { value in
@@ -150,6 +140,18 @@ struct PresetEditorSheet: View {
                 return nil
             }
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("presets.configuration")
+    }
+
+    private var selectedSkillPills: some View {
+        let entries = Dictionary(uniqueKeysWithValues: model.snapshot.catalog.entries.map { ($0.id, $0) })
+        let items = draft.skills.map { id in
+            SelectedSkillPills.Item(id: id, name: model.skillDisplayTitle(id),
+                detail: entries[id].map { model.skillDisplayTitle(id) + " · " + model.skillSourceTitle($0) }
+                    ?? L10n.tr("不在技能库"))
+        }.sorted { ($0.name, $0.id) < ($1.name, $1.id) }
+        return SelectedSkillPills(items: items, identifierPrefix: "presets.editor", compact: availableHeight < 500, remove: { draft.skills.remove($0) })
     }
 
     private var skills: some View {
@@ -170,17 +172,27 @@ struct PresetEditorSheet: View {
                 }
                 .help(unresolvedSkillTitle(id))
             }
-            if entries.isEmpty { Text(L10n.tr("没有匹配的技能")).foregroundStyle(.secondary) }
+            if entries.isEmpty {
+                Text(L10n.tr("没有匹配的技能，请调整搜索或先到技能库添加。")).foregroundStyle(.secondary)
+            }
             ForEach(entries) { skill in
-                Toggle(isOn: membership(skill.id, in: $draft.skills)) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(skill.declaredName).font(AppFont.secondary.weight(.medium))
+                HStack(alignment: .top, spacing: 20) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(skill.declaredName).font(AppFont.body.weight(.semibold))
                         Text(model.skillSourceTitle(skill)).font(AppFont.metadata).foregroundStyle(.secondary)
-                        if skill.isBlocked { Text(L10n.tr("暂不可用")).font(AppFont.metadata).foregroundStyle(.red) }
-                    }
-                }
-                .toggleStyle(.checkbox).disabled(skill.isBlocked && !draft.skills.contains(skill.id))
-                .help(skill.declaredName).accessibilityIdentifier("presets.editor.skill.\(skill.id)")
+                        Text(skill.description).font(AppFont.secondary).foregroundStyle(.secondary).lineLimit(2)
+                        if skill.isBlocked {
+                            Text(L10n.tr("未通过文件检查，请到技能库查看原因。"))
+                                .font(AppFont.secondary).foregroundStyle(.red)
+                        }
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                    selectionButton(skill.declaredName, selected: draft.skills.contains(skill.id),
+                        identifier: "presets.editor.skill.\(skill.id)") {
+                        if draft.skills.contains(skill.id) { draft.skills.remove(skill.id) }
+                        else { draft.skills.insert(skill.id) }
+                    }.disabled(skill.isBlocked && !draft.skills.contains(skill.id))
+                }.padding(.vertical, 8)
+                Divider()
             }
         }
     }
@@ -190,26 +202,32 @@ struct PresetEditorSheet: View {
             Text(L10n.tr("选择要保存的插件版本。用于项目时，再预览并批准安装或启用。"))
                 .font(AppFont.secondary).foregroundStyle(.secondary)
             if model.plugins.isEmpty {
-                Text(L10n.tr("还没有发现插件，请先到「插件」查看本机插件。"))
+                Text(L10n.tr("还没有找到插件，请到「插件来源」扫描本机插件。"))
                     .font(AppFont.secondary).foregroundStyle(.secondary)
             }
-            ForEach(model.plugins) { plugin in
+            if !model.plugins.isEmpty && !model.plugins.contains(where: { matches([$0.name, $0.description, $0.marketplaceID ?? ""]) }) {
+                Text(L10n.tr("没有匹配的配置资源，请调整搜索。"))
+                    .font(AppFont.secondary).foregroundStyle(.secondary)
+            }
+            ForEach(model.plugins.filter { matches([$0.name, $0.description, $0.marketplaceID ?? ""]) }) { plugin in
                 let selected = draft.plugins.contains { $0.host == plugin.host && $0.pluginID == plugin.pluginID && $0.manifestDigest == plugin.manifestDigest }
-                Toggle(isOn: Binding(get: { selected }, set: { checked in
-                    draft.plugins.removeAll { $0.host == plugin.host && $0.pluginID == plugin.pluginID }
-                    if checked {
-                        let scope = plugin.host == .codex ? PluginLifecycleScope.user : PluginLifecycleScope(rawValue: plugin.scope ?? "project") ?? .project
-                        draft.plugins.append(PresetPluginReference(plugin: plugin, scope: scope))
-                    }
-                })) {
+                HStack(alignment: .top, spacing: 20) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(plugin.name).font(AppFont.secondary.weight(.medium))
+                        Text(plugin.name).font(AppFont.body.weight(.semibold))
                         Text("\(plugin.host.displayName) · \(plugin.version ?? String(plugin.manifestDigest.prefix(10)))")
                             .font(AppFont.metadata).foregroundStyle(.secondary)
-                        Text(plugin.components.joined(separator: " · ")).font(AppFont.metadata).foregroundStyle(.secondary)
-                    }
+                        Text(plugin.description).font(AppFont.secondary).foregroundStyle(.secondary).lineLimit(2)
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                    SkillHostToggles(skillName: plugin.name, identifierPrefix: "presets.editor.plugin.\(plugin.id)",
+                        isSelected: { $0 == plugin.host && selected }, isEnabled: { $0 == plugin.host },
+                        setSelected: { _, checked in
+                            draft.plugins.removeAll { $0.host == plugin.host && $0.pluginID == plugin.pluginID }
+                            if checked {
+                                let scope = plugin.host == .codex ? PluginLifecycleScope.user : PluginLifecycleScope(rawValue: plugin.scope ?? "project") ?? .project
+                                draft.plugins.append(PresetPluginReference(plugin: plugin, scope: scope))
+                            }
+                        })
                 }
-                .toggleStyle(.checkbox).help(plugin.name)
                 if selected {
                     AppPicker(title: L10n.tr("使用范围"), selection: Binding(
                         get: { draft.plugins.first { $0.host == plugin.host && $0.pluginID == plugin.pluginID }?.scope ?? .user },
@@ -240,10 +258,31 @@ struct PresetEditorSheet: View {
         VStack(alignment: .leading, spacing: 14) {
             Text(L10n.tr("保存连接配置，用于项目时再批准写入。选择「用户」范围会影响这个 AI 工具的所有项目。"))
                 .font(AppFont.secondary).foregroundStyle(.secondary)
-            if draft.mcpServers.isEmpty {
+            if !search.isEmpty && !model.mcpLibrary.entries.contains(where: { matches([$0.name, $0.commandOrURL]) })
+                && !draft.mcpServers.contains(where: { matches([$0.name, $0.commandOrURL]) }) {
+                Text(L10n.tr("没有匹配的配置资源，请调整搜索。"))
+                    .font(AppFont.secondary).foregroundStyle(.secondary)
+            }
+            ForEach(model.mcpLibrary.entries.filter { matches([$0.name, $0.commandOrURL]) }) { entry in
+                HStack(alignment: .top, spacing: 20) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(entry.name).font(AppFont.body.weight(.semibold))
+                        Text(MCPConnectionFields.transportTitle(entry.transport)).font(AppFont.secondary).foregroundStyle(.secondary)
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                    SkillHostToggles(skillName: entry.name, identifierPrefix: "presets.editor.mcp.\(entry.id)",
+                        isSelected: { host in draft.mcpServers.contains { $0.presetID == entry.draft(host: host, scope: .project).presetID } },
+                        setSelected: { host, enabled in
+                            let server = entry.draft(host: host, scope: .project)
+                            draft.mcpServers.removeAll { $0.presetID == server.presetID }
+                            if enabled { draft.mcpServers.append(server) }
+                        })
+                }.padding(.vertical, 8)
+                Divider()
+            }
+            if draft.mcpServers.isEmpty && model.mcpLibrary.entries.isEmpty {
                 EmptyState(icon: PresetComponent.mcp.icon, title: L10n.tr("还没有 MCP 服务"), detail: L10n.tr("点「添加 MCP 服务」保存连接配置。"))
             }
-            ForEach(Array(draft.mcpServers.enumerated()), id: \.element.presetID) { index, server in
+            ForEach(Array(draft.mcpServers.enumerated()).filter { matches([$0.element.name, $0.element.commandOrURL]) }, id: \.element.presetID) { index, server in
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(server.name).font(AppFont.secondary.weight(.semibold))
@@ -263,6 +302,10 @@ struct PresetEditorSheet: View {
         VStack(alignment: .leading, spacing: 14) {
             Text(L10n.tr("选择项目要使用的规则。栖集只更新标记之间的内容，保留文件中的其他内容；Claude Code 使用 CLAUDE.md。"))
                 .font(AppFont.secondary).foregroundStyle(.secondary)
+            if !model.snapshot.templates.contains(where: { matches([$0.title, $0.purpose, $0.body]) }) {
+                Text(L10n.tr("没有匹配的 AGENTS 片段，请调整搜索或到「AGENTS 片段」添加。"))
+                    .font(AppFont.secondary).foregroundStyle(.secondary)
+            }
             ForEach(draft.instructions.filter { id in !model.snapshot.templates.contains { $0.id == id } }.sorted(), id: \.self) { id in
                 HStack {
                     Text(L10n.tr("片段已删除，请移除引用后重新选择。"))
@@ -271,22 +314,23 @@ struct PresetEditorSheet: View {
                     Button(L10n.tr("移除引用")) { draft.instructions.remove(id) }
                 }
             }
-            ForEach(model.snapshot.templates) { template in
+            ForEach(model.snapshot.templates.filter { matches([$0.title, $0.purpose, $0.body]) }) { template in
                 VStack(alignment: .leading, spacing: 8) {
-                    Toggle(isOn: membership(template.id, in: $draft.instructions)) {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(UserFacingText.templateTitle(template)).font(AppFont.secondary.weight(.medium))
-                            Text(UserFacingText.templatePurpose(template))
-                                .font(AppFont.secondary).foregroundStyle(.secondary)
+                    HStack(alignment: .top, spacing: 20) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(UserFacingText.templateTitle(template)).font(AppFont.body.weight(.semibold))
+                            Text(UserFacingText.templatePurpose(template)).font(AppFont.secondary).foregroundStyle(.secondary)
+                        }.frame(maxWidth: .infinity, alignment: .leading)
+                        selectionButton(UserFacingText.templateTitle(template), selected: draft.instructions.contains(template.id),
+                            identifier: "presets.editor.rule.\(template.id)") {
+                            if draft.instructions.contains(template.id) { draft.instructions.remove(template.id) }
+                            else { draft.instructions.insert(template.id) }
                         }
                     }
-                    .toggleStyle(.checkbox).accessibilityIdentifier("presets.editor.rule.\(template.id)")
-                    DisclosureGroup(L10n.tr("查看正文")) {
-                        Text(template.body).font(AppFont.metadata.monospaced()).textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
-                    }
-                    .font(AppFont.secondary).foregroundStyle(.secondary).padding(.leading, 20)
-                    .accessibilityIdentifier("presets.editor.rule.details.\(template.id)")
+                    Text(template.body).font(AppFont.code).textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("presets.editor.rule.details.\(template.id)")
                 }
                 Divider()
             }
@@ -317,14 +361,24 @@ struct PresetEditorSheet: View {
         PresetDraftPreview.referenceName(id)
     }
 
-    private func membership(_ id: String, in values: Binding<Set<String>>) -> Binding<Bool> {
-        Binding(get: { values.wrappedValue.contains(id) }, set: { value in
-            if value { values.wrappedValue.insert(id) } else { values.wrappedValue.remove(id) }
-        })
+    private func matches(_ fields: [String]) -> Bool {
+        search.isEmpty || fields.contains { $0.localizedCaseInsensitiveContains(search) }
+    }
+
+    private func selectionButton(_ name: String, selected: Bool, identifier: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: selected ? "checkmark" : "plus")
+                .frame(width: 12, height: 12)
+        }
+        .buttonStyle(AppButtonStyle(selected: selected))
+        .accessibilityIdentifier(identifier)
+        .accessibilityLabel(L10n.tr("在预设中使用「\(name)」"))
+        .accessibilityValue(selected ? L10n.tr("已选择") : L10n.tr("未选择"))
+        .accessibilityAddTraits(selected ? [.isSelected] : [])
     }
 
     private func cancel() {
-        if draft != initial { confirmDiscard = true } else { dismiss() }
+        if draft != initial { confirmDiscard = true } else { onClose?() }
     }
 }
 
@@ -386,7 +440,7 @@ private struct PresetMCPForm: View {
                             .accessibilityIdentifier("presets.mcp.command")
                     }
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(L10n.tr("启动参数（每行一项）"))
+                        Text(L10n.tr("启动参数（每行一项，保留项内空格）"))
                         TextEditor(text: $arguments).font(AppFont.metadata.monospaced()).frame(height: 70).appEditorSurface()
                     }
                     AppFormField(L10n.tr("环境变量名称（逗号分隔）")) {

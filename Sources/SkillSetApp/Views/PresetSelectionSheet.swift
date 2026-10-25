@@ -245,7 +245,7 @@ struct PresetSelectionSheet: View {
                     Text("Codex").tag("codex")
                     Text("Claude Code").tag("claude-code")
                 }
-                Text(L10n.tr("预设的技能与规则只替换此工具的草稿；插件与 MCP 沿用条目中标明的宿主和范围。"))
+                Text(L10n.tr("技能和规则只替换所选 AI 工具的草稿；插件和 MCP 服务使用各自标明的工具与范围。"))
                     .font(AppFont.metadata).foregroundStyle(.secondary)
                 Text(project.path)
                     .font(AppFont.metadata.monospaced()).foregroundStyle(.secondary)
@@ -299,7 +299,7 @@ struct PresetSelectionSheet: View {
                 .accessibilityIdentifier("presets.retained.\(category == .instructions ? "rules" : category.rawValue)")
             }
             if value.added.isEmpty && value.updated.isEmpty && value.removed.isEmpty && value.retained.isEmpty {
-                Text(L10n.tr("未包含条目")).font(AppFont.secondary).foregroundStyle(.secondary)
+                Text(L10n.tr("没有选择这类内容")).font(AppFont.secondary).foregroundStyle(.secondary)
             }
         }
     }

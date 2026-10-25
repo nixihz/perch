@@ -19,7 +19,7 @@ final class AppUpdates: ObservableObject {
         let build = info["CFBundleVersion"] as? String ?? "—"
         version = "\(release) (\(build))"
         guard UpdateConfiguration(info: info) != nil else {
-            unavailableReason = "此版本尚未开启在线更新。"
+            unavailableReason = "这个版本暂不支持在线更新，请到官网下载新版。"
             return
         }
         let controller = SPUStandardUpdaterController(

@@ -25,13 +25,9 @@ extension GlobalConfigurationManager {
             guard allowedResource(target, host: host), slugs.insert(entry.slug).inserted else { throw DeploymentError.invalidPlan }
             desired.insert(target.path)
             let actual = try builder.observe(target)
-            let libraryEntry = locations.libraryRoot.appendingPathComponent(entry.slug, isDirectory: true)
-            if target.standardizedFileURL.path == libraryEntry.standardizedFileURL.path, let actual {
-                // 当目标目录与技能库重合时，只登记已有条目，不把库内软链换成另一份副本。
-                let old = current?.managed[target.path]
-                next.managed[target.path] = GlobalManagedResource(hash: actual, baselineID: old?.baselineID,
-                    baselineHash: old?.baselineHash ?? actual, originalRules: nil, writtenRules: nil)
-                continue
+            // 私有库存归栖集自己所有，宿主安装目标不能落在库存里。
+            guard !target.standardizedFileURL.path.hasPrefix(paths.libraryDirectoryURL.standardizedFileURL.path + "/") else {
+                throw DeploymentError.pathOutsideRoot(target.path)
             }
             let old = current?.managed[target.path]
             if let old, actual != old.hash, actual != nil {
@@ -61,7 +57,7 @@ extension GlobalConfigurationManager {
                 try fileManager.createSymbolicLink(at: destination, withDestinationURL: linkTarget)
                 installedHash = try ManagedSkillLink.hash(
                     destination, versionsRoot: paths.versionsRoot,
-                    libraryRoot: locations.libraryRoot, sourcesRoot: paths.sourcesRoot
+                    libraryRoot: paths.libraryDirectoryURL, sourcesRoot: paths.sourcesRoot
                 )!
             } else {
                 let result = try SkillAssetCopier.copy(from: source, to: destination)

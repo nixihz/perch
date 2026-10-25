@@ -505,7 +505,7 @@ private struct GlobalFixture {
         locations = GlobalConfigurationLocations(home: home, stateRoot: paths.applicationSupportRoot,
             codexRoot: home.appendingPathComponent("custom-codex"))
         try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
-        let library = paths.makeLibraryStore(home: home)
+        let library = paths.makeLibraryStore()
         entry = try library.save(SkillEditorDraft(slug: "demo", document: "---\nname: demo\ndescription: 全局测试\n---\n第一版\n"), repositoryRoot: nil)
         source = try #require(library.sourceURLs()[entry.id])
         try FileManager.default.createDirectory(at: source.appendingPathComponent("assets"), withIntermediateDirectories: true)
@@ -520,7 +520,7 @@ private struct GlobalFixture {
         let entry = SkillEntry(id: entry.id, slug: entry.slug, declaredName: entry.declaredName,
             description: entry.description, declaredVersion: nil, metadataReview: "reviewed", sourceId: entry.sourceId,
             path: entry.path, contentHash: copy.contentHash, fileCount: copy.files.count, bytes: copy.bytes,
-            integrity: "ok", issues: [], licenseReview: "pending", excludedPaths: [])
+            integrity: "ok", issues: [], excludedPaths: [])
         return try manager.makeDeploymentPlan(host: host,
             selection: GlobalConfigurationDraft(skillIDs: [entry.id], instructionIDs: instructions ? ["rules"] : []),
             catalog: CatalogDocument(schemaVersion: 1, hashAlgorithm: "sha256:path-content-executable:v1", entries: [entry]),

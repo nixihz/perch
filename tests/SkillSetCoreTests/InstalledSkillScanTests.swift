@@ -30,7 +30,7 @@ struct InstalledSkillScanTests {
         #expect(stored.count == 2)
         #expect(stored.allSatisfy { $0.sourceId == SkillLibraryStore.sourceID })
         let custom = paths.applicationSupportRoot.appendingPathComponent("sources/custom/first")
-        #expect(try fm.destinationOfSymbolicLink(atPath: home.appendingPathComponent(".agents/skills/first").path) == custom.path)
+        #expect(try fm.destinationOfSymbolicLink(atPath: paths.libraryDirectoryURL.appendingPathComponent("first").path) == custom.path)
     }
 
     @Test func legacyLocalImportDirectoriesMigrateAndDeduplicate() throws {
@@ -108,26 +108,23 @@ struct InstalledSkillScanTests {
         defer { try? FileManager.default.removeItem(at: root) }
         let paths = SkillSetRuntimePaths(applicationSupportRoot: root.appendingPathComponent("state"), repositoryRoot: nil)
         let locations = GlobalConfigurationLocations(home: root, stateRoot: paths.applicationSupportRoot)
-        for (folder, body) in [(".agents/skills/demo", "first"), (".claude/skills/demo", "second")] {
+        for (folder, body) in [(".codex/skills/demo", "first"), (".claude/skills/demo", "second")] {
             let skill = root.appendingPathComponent(folder)
             try FileManager.default.createDirectory(at: skill, withIntermediateDirectories: true)
             try Data("---\nname: demo\ndescription: example\n---\n\(body)".utf8).write(to: skill.appendingPathComponent("SKILL.md"))
         }
         let service = try SkillSetService(paths: paths, globalLocations: locations)
-        let importable = try service.scanInstalledSkills().filter(\.canImport)
-        _ = try service.importInstalledSkills(importable)
         let stored = try SkillSetService(paths: paths, globalLocations: locations).skills(query: "demo")
         #expect(stored.count == 1)
         #expect(stored.first?.sourceId == SkillLibraryStore.sourceID)
         #expect(try String(contentsOf: paths.applicationSupportRoot.appendingPathComponent("sources/custom/demo/SKILL.md"), encoding: .utf8).contains("first"))
-        let first = root.appendingPathComponent(".agents/skills/demo")
-        let hash = try SkillAssetCopier.analyze(from: first).contentHash
-        let version = try ManagedSkillLink.prepare(source: first, contentHash: hash, root: paths.versionsRoot)
-        try FileManager.default.removeItem(at: first)
-        try FileManager.default.createSymbolicLink(at: first, withDestinationURL: version)
-        let managed = try #require(service.scanInstalledSkills().first { $0.path == first.path })
-        #expect(managed.managed)
-        #expect(!managed.canImport)
+        #expect(try service.scanInstalledSkills().isEmpty)
+        let late = root.appendingPathComponent(".claude/skills/late")
+        try FileManager.default.createDirectory(at: late, withIntermediateDirectories: true)
+        try Data("---\nname: late\ndescription: example\n---\nlater".utf8).write(to: late.appendingPathComponent("SKILL.md"))
+        let again = try SkillSetService(paths: paths, globalLocations: locations)
+        #expect(again.skills(query: "late").isEmpty)
+        #expect(try again.scanInstalledSkills().isEmpty)
     }
 
     @Test func scanImportDeduplicatesAndPreservesInstallationsAndEvidence() throws {
@@ -148,18 +145,19 @@ struct InstalledSkillScanTests {
         let broken = second.deletingLastPathComponent().appendingPathComponent("broken")
         try FileManager.default.createSymbolicLink(atPath: broken.path, withDestinationPath: root.appendingPathComponent("missing").path)
         let service = try SkillSetService(paths: paths, globalLocations: locations)
+        #expect(service.skills(query: "demo").count == 1)
         let direct = try service.scanInstalledSkills(additionalRoots: [first])
-        #expect(direct.contains { $0.path == first.path && $0.canImport })
-        let scan = try service.scanInstalledSkills(additionalRoots: [first.deletingLastPathComponent()])
-        #expect(scan.filter(\.canImport).count == 2)
+        #expect(direct.contains { $0.path == first.path && $0.collected && !$0.canImport })
+        #expect(try service.scanInstalledSkills().first { $0.path == second.path } == nil)
+        let scan = try service.scanInstalledSkills(additionalRoots: [first.deletingLastPathComponent(), second.deletingLastPathComponent()])
+        #expect(scan.filter(\.canImport).isEmpty)
         #expect(scan.first { $0.path == broken.path }?.issue != nil)
-        try service.importInstalledSkills(scan.filter(\.canImport))
         let reloaded = try SkillSetService(paths: paths, globalLocations: locations)
         #expect(reloaded.skills(query: "demo").count == 1)
         #expect(!FileManager.default.fileExists(atPath: paths.applicationSupportRoot.appendingPathComponent("sources/local-imports").path))
-        #expect(try reloaded.scanInstalledSkills().filter(\.canImport).isEmpty)
+        #expect(try reloaded.scanInstalledSkills().isEmpty)
         let origin = try #require(reloaded.libraryStore().sourceOrigins()["demo"])
-        #expect(origin.url == first.path || origin.url == second.path)
+        #expect(origin.url == second.path)
         #expect(try FileManager.default.destinationOfSymbolicLink(atPath: second.path) == first.path)
         #expect(try Data(contentsOf: first.appendingPathComponent("asset.bin")) == Data([0, 128, 255]))
         let collected = try reloaded.scanInstalledSkills(additionalRoots: [first.deletingLastPathComponent()]).first(where: { $0.path == first.path })!
@@ -190,20 +188,66 @@ struct InstalledSkillScanTests {
         let paths = SkillSetRuntimePaths(applicationSupportRoot: root.appendingPathComponent("state"), repositoryRoot: nil)
         let locations = GlobalConfigurationLocations(home: home, stateRoot: paths.applicationSupportRoot)
         let service = try SkillSetService(paths: paths, globalLocations: locations)
-        let observed = try #require(service.scanInstalledSkills().first { $0.path == wrapper.path })
-        #expect(observed.resolvedPath == real.path)
-        #expect(observed.canImport)
-
-        try service.importInstalledSkills([observed])
+        #expect(try service.scanInstalledSkills().first { $0.path == wrapper.path } == nil)
         #expect(fm.fileExists(atPath: paths.applicationSupportRoot.appendingPathComponent("sources/custom/open-gstack-browser/SKILL.md").path))
         #expect(fm.fileExists(atPath: wrapper.path))
         #expect(try fm.destinationOfSymbolicLink(atPath: wrapper.appendingPathComponent("SKILL.md").path) ==
                 real.appendingPathComponent("SKILL.md").path)
 
-        let collected = try service.scanInstalledSkills().first { $0.path == wrapper.path }
-        #expect(collected?.collected == true)
-        if let collected { try service.removeInstalledSkill(collected) }
+        let collected = try #require(service.scanInstalledSkills(additionalRoots: [wrapper.deletingLastPathComponent()]).first { $0.path == wrapper.path })
+        #expect(collected.resolvedPath == real.path)
+        #expect(collected.collected)
+        try service.removeInstalledSkill(collected)
         #expect(!fm.fileExists(atPath: wrapper.path))
         #expect(fm.fileExists(atPath: real.appendingPathComponent("SKILL.md").path))
+    }
+
+    /// 旧库的软链迁进私有库存，旧位置原样保留；自建技能没有库存软链也算库里的一条。
+    @Test func legacyLibraryLinksMoveIntoPrivateInventoryWhileCustomSkillsNeedNoLink() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString).resolvingSymlinksInPath()
+        defer { try? fm.removeItem(at: root) }
+        let paths = SkillSetRuntimePaths(applicationSupportRoot: root.appendingPathComponent("state"), repositoryRoot: nil)
+        let home = root.appendingPathComponent("home")
+        let locations = GlobalConfigurationLocations(home: home, stateRoot: paths.applicationSupportRoot)
+        let checkout = paths.previewsRoot.appendingPathComponent("source/checkout/followed")
+        try fm.createDirectory(at: checkout, withIntermediateDirectories: true)
+        try Data("---\nname: followed\ndescription: from source\n---\nsource".utf8).write(to: checkout.appendingPathComponent("SKILL.md"))
+        let legacy = home.appendingPathComponent(".agents/skills")
+        try fm.createDirectory(at: legacy, withIntermediateDirectories: true)
+        try fm.createSymbolicLink(at: legacy.appendingPathComponent("followed"), withDestinationURL: checkout)
+        let customOnly = paths.applicationSupportRoot.appendingPathComponent("sources/custom/already")
+        try fm.createDirectory(at: customOnly, withIntermediateDirectories: true)
+        try Data("---\nname: already\ndescription: custom\n---\nalready".utf8).write(to: customOnly.appendingPathComponent("SKILL.md"))
+        let copiedFromSource = paths.applicationSupportRoot.appendingPathComponent("sources/custom/from-source")
+        try fm.createDirectory(at: copiedFromSource, withIntermediateDirectories: true)
+        try Data("---\nname: from-source\ndescription: copied\n---\ncopied".utf8).write(to: copiedFromSource.appendingPathComponent("SKILL.md"))
+        let origin = SourceSkillOrigin(
+            url: "https://github.com/example/skills", commit: String(repeating: "a", count: 40), path: "from-source",
+            contentHash: "unused", licenseEvidence: "", licenseHashes: [:], declaredName: nil
+        )
+        let meta: [String: Any] = ["categories": [:], "hiddenIDs": [], "origins": ["from-source": [
+            "url": origin.url, "commit": origin.commit, "path": origin.path, "contentHash": origin.contentHash,
+            "licenseEvidence": "", "licenseHashes": [:],
+        ]]]
+        try JSONSerialization.data(withJSONObject: meta).write(to: paths.applicationSupportRoot.appendingPathComponent("skill-categories.json"))
+
+        let service = try SkillSetService(paths: paths, globalLocations: locations)
+        let names = Set(service.skills(query: "").map(\.slug))
+        #expect(names.contains("already"))
+        #expect(names.contains("followed"))
+        #expect(!names.contains("from-source"))
+        // 私有库存里留下一条同样的入口，旧位置保持原样。
+        #expect(try fm.destinationOfSymbolicLink(atPath: paths.libraryDirectoryURL.appendingPathComponent("followed").path) == checkout.path)
+        #expect(try fm.destinationOfSymbolicLink(atPath: legacy.appendingPathComponent("followed").path) == checkout.path)
+        #expect(!fm.fileExists(atPath: paths.applicationSupportRoot.appendingPathComponent("sources/custom/followed").path))
+        // 自建技能不需要库存软链也在库里。
+        #expect(names.contains("already"))
+        let late = legacy.appendingPathComponent("late")
+        try fm.createDirectory(at: late, withIntermediateDirectories: true)
+        try Data("---\nname: late\ndescription: after migration\n---\nlate".utf8).write(to: late.appendingPathComponent("SKILL.md"))
+        let again = try SkillSetService(paths: paths, globalLocations: locations)
+        #expect(again.skills(query: "late").isEmpty)
+        #expect(try again.scanInstalledSkills(additionalRoots: []).isEmpty)
     }
 }

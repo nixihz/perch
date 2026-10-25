@@ -43,6 +43,8 @@ final class SourceImportWorkflowTests: XCTestCase {
             let succeeded = await model.importSourceSkill(draft)
             XCTAssertTrue(succeeded, model.sourceImportError ?? "")
             let entry = try XCTUnwrap(model.snapshot.catalog.entries.first { $0.id == "import-workflow" })
+            XCTAssertEqual(model.skillSourceLabels[entry.sourceId], "custom")
+            XCTAssertEqual(model.skillSourceTitle(entry), "custom")
             XCTAssertEqual(model.importedSkillID(preview: preview, candidate: preview.candidates[0]), entry.id)
             XCTAssertEqual(model.query, "")
             XCTAssertTrue(model.selectedProject?.draftSkillIDs.isEmpty == true)
@@ -132,11 +134,87 @@ final class SourceImportWorkflowTests: XCTestCase {
             }
             XCTAssertEqual(try Data(contentsOf: skill.appendingPathComponent("SKILL.md")), body)
             XCTAssertNil(try? FileManager.default.destinationOfSymbolicLink(atPath: skill.path))
-            XCTAssertEqual(try model.scanInstalledSkills(additionalRoots: []).filter(\.canImport).count, 1)
-            let imported = await model.importInstalledSkills(try model.scanInstalledSkills(additionalRoots: []).filter(\.canImport))
-            XCTAssertTrue(imported)
-            XCTAssertTrue(model.snapshot.catalog.entries.contains { $0.slug == "existing" })
+            XCTAssertEqual(try model.scanInstalledSkills(additionalRoots: []).filter(\.canImport).count, 0)
+            XCTAssertFalse(model.snapshot.catalog.entries.contains { $0.slug == "existing" })
             XCTAssertEqual(try Data(contentsOf: skill.appendingPathComponent("SKILL.md")), body)
+        }
+    }
+
+    func testBatchImportAddsOnlySelectedSkillsAndLeavesProjectsUntouched() async throws {
+        try await withFixture { model, preview, root in
+            let project = root.appendingPathComponent("project")
+            try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+            XCTAssertTrue(model.registerProject(project))
+            let items = preview.candidates.map { SourceSkillBatchItem(path: $0.path, slug: $0.slug) }
+            XCTAssertEqual(items.count, 2)
+
+            let raw = await model.importSourceSkills(
+                previewID: preview.id, items: items, mode: .symlink, category: "review"
+            )
+            let outcome = try XCTUnwrap(raw)
+            XCTAssertEqual(outcome.count, 2)
+            XCTAssertTrue(outcome.allSatisfy { if case .imported = $0.status { return true } else { return false } })
+            XCTAssertTrue(model.snapshot.catalog.entries.contains { $0.id == "import-workflow" })
+            XCTAssertTrue(model.snapshot.catalog.entries.contains { $0.id == "import-second" })
+            XCTAssertNotNil(model.importedSkillID(preview: preview, candidate: preview.candidates[0]))
+            XCTAssertNotNil(model.importedSkillID(preview: preview, candidate: preview.candidates[1]))
+            XCTAssertTrue(model.sourceOrigins["import-workflow"]?.path == "skills/import-workflow")
+            // 批量加入只写技能库，不写项目，也不生成部署计划。
+            XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: project.path).isEmpty)
+            XCTAssertTrue(try DeploymentPlanStore(rootURL: model.runtimePaths.plansRoot).list().isEmpty)
+        }
+    }
+
+    func testBatchImportSkipsOccupiedIdentifierInsteadOfOverwriting() async throws {
+        try await withFixture { model, preview, _ in
+            let firstRaw = await model.importSourceSkills(
+                previewID: preview.id, items: [SourceSkillBatchItem(path: "skills/import-workflow", slug: "import-workflow")],
+                mode: .copy, category: ""
+            )
+            let first = try XCTUnwrap(firstRaw)
+            XCTAssertEqual(first.count, 1)
+            let entry = try XCTUnwrap(model.snapshot.catalog.entries.first { $0.id == "import-workflow" })
+            let documentBefore = try model.runtimePaths.makeLibraryStore()
+                .document(for: entry, repositoryRoot: nil)
+
+            let secondRaw = await model.importSourceSkills(
+                previewID: preview.id, items: [SourceSkillBatchItem(path: "skills/import-second", slug: "import-workflow")],
+                mode: .copy, category: ""
+            )
+            let second = try XCTUnwrap(secondRaw)
+            XCTAssertEqual(second.count, 1)
+            guard case .skipped(let code) = second[0].status else {
+                return XCTFail("标识已被占用时应跳过")
+            }
+            XCTAssertEqual(code, SkillLibraryError.duplicate.code)
+            XCTAssertEqual(model.snapshot.catalog.entries.count, 1)
+            let documentAfter = try model.runtimePaths.makeLibraryStore()
+                .document(for: entry, repositoryRoot: nil)
+            XCTAssertEqual(documentBefore, documentAfter)
+        }
+    }
+
+    func testBatchSheetFitsBothAppearancesWithoutWritingLibrary() async throws {
+        try await withFixture { model, preview, _ in
+            let draft = SourceSkillBatchDraft(
+                preview: preview,
+                items: preview.candidates.map { SourceSkillBatchItem(path: $0.path, slug: $0.slug) }
+            )
+            let controller = NSHostingController(rootView: SourceSkillBatchImportSheet(model: model, draft: draft))
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 720, height: 640), styleMask: [.titled], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentViewController = controller
+            window.setContentSize(NSSize(width: 720, height: 640))
+            window.orderFront(nil)
+            defer { window.close() }
+            for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+                window.appearance = NSAppearance(named: appearance)
+                try await Task.sleep(for: .milliseconds(120))
+                controller.view.layoutSubtreeIfNeeded()
+                XCTAssertLessThanOrEqual(controller.view.fittingSize.height, 641)
+                XCTAssertLessThanOrEqual(controller.view.fittingSize.width, 721)
+            }
+            XCTAssertTrue(model.snapshot.catalog.entries.isEmpty)
         }
     }
 
@@ -164,7 +242,12 @@ final class SourceImportWorkflowTests: XCTestCase {
         try "# Reference\n".write(to: package.appendingPathComponent("references/guide.md"), atomically: true, encoding: .utf8)
         let analysis = try SkillAssetCopier.analyze(from: package)
         let candidate = SourceSkillCandidate(id: "fixture/import-workflow", path: "skills/import-workflow", slug: "import-workflow", declaredName: "import-workflow", description: "来源导入", category: "other", state: .other, contentHash: analysis.contentHash, fileCount: 2, bytes: analysis.bytes, issues: [])
-        let preview = SourcePreviewRecord(id: id, inputURL: "https://github.com/fixture/skills", canonicalURL: "https://github.com/fixture/skills", namespace: "fixture-skills", resolvedCommit: String(repeating: "b", count: 40), createdAt: Date(), workspacePath: package.deletingLastPathComponent().path, licenseEvidence: "", candidates: [candidate], excludedCounts: ["other": 1], warnings: [])
+        let secondPackage = paths.previewsRoot.appendingPathComponent(id.uuidString).appendingPathComponent("checkout/skills/import-second")
+        try FileManager.default.createDirectory(at: secondPackage, withIntermediateDirectories: true)
+        try "---\nname: import-second\ndescription: 第二个来源技能\n---\n\n# 第二个正文\n".write(to: secondPackage.appendingPathComponent("SKILL.md"), atomically: true, encoding: .utf8)
+        let secondAnalysis = try SkillAssetCopier.analyze(from: secondPackage)
+        let second = SourceSkillCandidate(id: "fixture/import-second", path: "skills/import-second", slug: "import-second", declaredName: "import-second", description: "第二个来源技能", category: "other", state: .other, contentHash: secondAnalysis.contentHash, fileCount: 1, bytes: secondAnalysis.bytes, issues: [])
+        let preview = SourcePreviewRecord(id: id, inputURL: "https://github.com/fixture/skills", canonicalURL: "https://github.com/fixture/skills", namespace: "fixture-skills", resolvedCommit: String(repeating: "b", count: 40), createdAt: Date(), workspacePath: package.deletingLastPathComponent().path, licenseEvidence: "", candidates: [candidate, second], excludedCounts: ["other": 1], warnings: [])
         try SourcePreviewStore(rootURL: paths.previewsRoot).save(preview)
         let model = AppModel(runtimePaths: paths)
         try await body(model, preview, root)

@@ -87,7 +87,7 @@ class UILocalizationTests(unittest.TestCase):
             self.assertEqual(key.count("%@"), translation.count("%@"), key)
 
     def test_skill_and_rule_bodies_bypass_localization(self):
-        for name in ["SkillsView", "ProjectsView"]:
+        for name in ["SkillsView", "ConfigurationResourceView"]:
             self.assertIn("Text(skill.description)", (APP / f"Views/{name}.swift").read_text())
         self.assertIn("Text(candidate.description)", (APP / "Views/SourcesView.swift").read_text())
         self.assertIn("Text(template.body)", (APP / "Views/TemplatesView.swift").read_text())

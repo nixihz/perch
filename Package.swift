@@ -14,6 +14,7 @@ let package = Package(
         .executable(name: "skillset", targets: ["SkillSetCLI"])
     ],
     dependencies: [
+        .package(url: "https://github.com/swiftlang/swift-markdown.git", exact: "0.6.0"),
         .package(url: "https://github.com/sparkle-project/Sparkle.git", exact: "2.10.0"),
         .package(url: "https://github.com/cucumberswift/cucumberswift.git", from: "6.7.0")
     ],
@@ -24,7 +25,8 @@ let package = Package(
         ),
         .executableTarget(
             name: "SkillSetApp",
-            dependencies: ["SkillSetCore", .product(name: "Sparkle", package: "Sparkle")],
+            dependencies: ["SkillSetCore", .product(name: "Sparkle", package: "Sparkle"),
+                           .product(name: "Markdown", package: "swift-markdown")],
             resources: [.process("Resources")],
             linkerSettings: [
                 // SwiftPM 不负责组装 .app，打包后从包内查找更新框架。

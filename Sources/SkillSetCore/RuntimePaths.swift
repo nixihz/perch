@@ -29,14 +29,19 @@ public struct SkillSetRuntimePaths: Sendable {
         applicationSupportRoot.appendingPathComponent("skills", isDirectory: true)
     }
 
+    /// 私有库存目录。栖集自有的技能库只放在这里，不占用 ~/.agents/skills 这类通用目录。
+    public var libraryDirectoryURL: URL {
+        libraryRoot.appendingPathComponent("library", isDirectory: true)
+    }
+
     public var sourcesRoot: URL {
         applicationSupportRoot.appendingPathComponent("sources", isDirectory: true)
     }
 
-    /// 技能库是主目录下的扁平目录。文件在 sources，库内子项只保留技能名。
-    public func makeLibraryStore(home: URL) -> SkillLibraryStore {
+    /// 技能库是栖集私有的扁平目录。文件在 sources，库内子项只保留技能名。
+    public func makeLibraryStore() -> SkillLibraryStore {
         SkillLibraryStore(
-            libraryURL: home.appendingPathComponent(".agents/skills", isDirectory: true),
+            libraryURL: libraryDirectoryURL,
             sourcesURL: sourcesRoot,
             categoriesURL: applicationSupportRoot.appendingPathComponent("skill-categories.json")
         )

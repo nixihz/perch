@@ -60,11 +60,15 @@ extension MCPStdioServer {
         func string(_ key: String) -> String { a[key] as? String ?? "" }
         func strings(_ key: String) -> [String] { a[key] as? [String] ?? [] }
         func missing(_ id: String) -> MCPToolError { MCPToolError(code: "RESOURCE_NOT_FOUND", message: "找不到条目：\(id)") }
-        func result(_ key: String, _ value: some Encodable) throws -> [String: Any] {
-            toolResult(isError: false, text: "操作完成。", structured: [key: try jsonValue(value)])
+        func result(_ key: String, _ value: some Encodable, warning: String? = nil) throws -> [String: Any] {
+            var structured: [String: Any] = [key: try jsonValue(value)]
+            if let warning { structured["warnings"] = [warning] }
+            return toolResult(isError: false, text: warning.map { "操作完成。\($0)" } ?? "操作完成。", structured: structured)
         }
-        func deleted(_ id: String) -> [String: Any] {
-            toolResult(isError: false, text: "已从本机库或登记记录移除；已部署内容和引用保留。", structured: ["id": id, "deleted": true])
+        func deleted(_ id: String, warning: String? = nil) -> [String: Any] {
+            var structured: [String: Any] = ["id": id, "deleted": true]
+            if let warning { structured["warnings"] = [warning] }
+            return toolResult(isError: false, text: warning.map { "已移除。\($0)" } ?? "已从本机库或登记记录移除；已部署内容和引用保留。", structured: structured)
         }
         func pending(_ record: StoredDeploymentPlan) -> [String: Any] {
             var value = planObject(record)
@@ -73,8 +77,8 @@ extension MCPStdioServer {
             value["nextArguments"] = ["planId": record.id.uuidString, "planDigest": record.plan.digest]
             return toolResult(isError: false, text: "已生成计划；尚未应用，需在本机审阅批准。", structured: value)
         }
-        func skill() throws -> SkillEntry {
-            guard let entry = current.snapshot.catalog.entries.first(where: { $0.id == string("skillId") }) else { throw missing(string("skillId")) }
+        func skill(_ key: String = "skillId") throws -> SkillEntry {
+            guard let entry = current.snapshot.catalog.entries.first(where: { $0.id == string(key) }) else { throw missing(string(key)) }
             return entry
         }
         func host() throws -> MCPHost {
@@ -86,16 +90,20 @@ extension MCPStdioServer {
             let entry = try skill()
             return toolResult(isError: false, text: "已读取技能正文。", structured: ["skill": try jsonValue(entry), "document": try library.document(for: entry, repositoryRoot: paths.repositoryRoot)])
         case "skills_create", "skills_update":
-            let original = name == "skills_update" ? try skill() : nil
+            let updating = name == "skills_update"
+            let original = try updating ? skill() : (a["sourceSkillId"] == nil ? nil : skill("sourceSkillId"))
             // 外部来源不可原地修改；必须显式创建个人副本。
-            if let original, original.sourceId != SkillLibraryStore.sourceID, original.sourceId != SkillLibraryStore.copiedSourceID {
-                throw MCPToolError(code: "LIBRARY_READ_ONLY_SOURCE", message: "来源技能不可原地编辑，请使用 skills_create 创建个人技能。")
+            if updating, let original, original.sourceId != SkillLibraryStore.sourceID, original.sourceId != SkillLibraryStore.copiedSourceID {
+                throw MCPToolError(code: "LIBRARY_READ_ONLY_SOURCE", message: "来源技能不可原地编辑，请调用 skills_create，传入 sourceSkillId=\(original.id)、未占用的 slug 和 document，复制完整技能包后编辑。")
             }
-            return try result("skill", library.save(SkillEditorDraft(slug: original?.slug ?? string("slug"), document: string("document"), original: original), repositoryRoot: paths.repositoryRoot))
+            // create 不能因来源与目标同名而进入 store 的原地编辑分支。
+            if !updating, let original, original.slug == string("slug") { throw SkillLibraryError.duplicate }
+            let saved = try library.save(SkillEditorDraft(slug: updating ? original!.slug : string("slug"), document: string("document"), original: original), repositoryRoot: paths.repositoryRoot)
+            return try result("skill", saved, warning: updating ? "指向该技能库条目的软链部署立即跟随正文变化；复制部署不变，未改写已有计划。" : nil)
         case "skills_delete":
             let entry = try skill()
             try library.remove(entry)
-            return deleted(entry.id)
+            return deleted(entry.id, warning: "指向该技能库条目的软链部署会失效；复制部署不变。项目中的链接和引用未自动移除。")
         case "templates_list":
             let query = string("query")
             return try result("templates", current.snapshot.templates.filter { query.isEmpty || [$0.id, $0.title, $0.purpose, $0.body].joined(separator: " ").localizedCaseInsensitiveContains(query) })
@@ -136,11 +144,11 @@ extension MCPStdioServer {
         case "sources_update":
             let id = try requiredUUID(a, key: "previewId")
             let old = try current.sourcePreview(id: id)
-            return try result("preview", current.previewSource(urlString: a["url"] as? String ?? old.inputURL, ref: a["ref"] as? String ?? old.requestedRef, replacing: id))
+            return try result("preview", current.previewSource(urlString: a["url"] as? String ?? old.inputURL, ref: a["ref"] as? String ?? old.requestedRef, replacing: id), warning: "跟随来源的技能库条目和软链部署会同步变化；复制内容不变。")
         case "sources_delete":
             let id = try requiredUUID(a, key: "previewId")
             try current.removeSource(id)
-            return deleted(id.uuidString)
+            return deleted(id.uuidString, warning: "跟随该来源的技能库软链和对应软链部署会失效；复制内容保留，项目链接与引用未自动移除。")
         case "sources_import_skill":
             var draft = try current.sourceSkillImportDraft(previewID: requiredUUID(a, key: "previewId"), path: string("path"))
             if let slug = a["slug"] as? String { draft.slug = slug }

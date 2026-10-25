@@ -130,6 +130,9 @@ public struct SkillSetService {
         try paths.migrateLegacyState()
         let configuration = GlobalConfigurationManager(paths: paths, locations: globalLocations)
         try Self.absorbLocalImports(paths: paths, home: configuration.locations.home)
+        // 先搬旧库，库存里的内容才算"已知"，首次收编才不会把同一份技能再收一遍。
+        try Self.migrateLibraryLocationIfNeeded(paths: paths, locations: configuration.locations)
+        try Self.adoptInstalledSkillsIfNeeded(paths: paths, locations: configuration.locations)
         self.paths = paths
         self.globalConfiguration = configuration
         let repositorySnapshot = AppSnapshot.load(
@@ -144,7 +147,7 @@ public struct SkillSetService {
             })
         }
         injectedSkillSourceURLs = automaticSources.merging(skillSourceURLs ?? [:]) { _, explicit in explicit }
-        let loadedLibrary = try library ?? paths.makeLibraryStore(home: self.globalConfiguration.locations.home).loadLibrary()
+        let loadedLibrary = try library ?? paths.makeLibraryStore().loadLibrary()
         let localCatalog = loadedLibrary.catalog(merging: base.catalog)
         libraryPackageURLs = loadedLibrary.packageURLs
         skillSearchIndex = SkillSearchIndex(entries: localCatalog.entries, sourceOrigins: loadedLibrary.origins)
@@ -157,7 +160,7 @@ public struct SkillSetService {
         self.planStore = planStore ?? DeploymentPlanStore(rootURL: paths.plansRoot)
         self.executor = executor ?? FileTransactionExecutor(
             operationsRoot: paths.operationsRoot, versionsRoot: paths.versionsRoot,
-            libraryRoot: self.globalConfiguration.locations.libraryRoot, sourcesRoot: paths.sourcesRoot)
+            libraryRoot: paths.libraryDirectoryURL, sourcesRoot: paths.sourcesRoot)
         self.pluginLifecycle = pluginLifecycleManager ?? PluginLifecycleManager(
             planStore: self.planStore,
             stagingRoot: paths.stagingRoot,
@@ -168,6 +171,18 @@ public struct SkillSetService {
     /// 回归夹具显式设置该变量后使用仓库快照；正常启动只接受用户同步进本机技能库的内容。
     public static var usesRepositoryLibrary: Bool {
         ProcessInfo.processInfo.environment["SKILLSET_REPOSITORY_LIBRARY"] == "1"
+    }
+
+    /// 技能库曾放在通用目录 ~/.agents/skills。迁移到私有库存后，旧位置的软链继续保留，
+    /// 通用目录里的技能对 Codex 等宿主仍然可见。
+    private static func migrateLibraryLocationIfNeeded(
+        paths: SkillSetRuntimePaths, locations: GlobalConfigurationLocations
+    ) throws {
+        try paths.makeLibraryStore().migrateLibraryEntries(
+            from: locations.home.appendingPathComponent(".agents/skills", isDirectory: true),
+            acceptedRoots: [paths.sourcesRoot, paths.previewsRoot, paths.versionsRoot],
+            markerURL: paths.sourcesRoot.appendingPathComponent(".migrated-library-location")
+        )
     }
 
     public static func defaultSnapshot(for paths: SkillSetRuntimePaths) -> AppSnapshot {
@@ -183,8 +198,8 @@ public struct SkillSetService {
             .replacingPresets([]).replacingTemplates([])
     }
 
-    public func libraryStore(home: URL? = nil) -> SkillLibraryStore {
-        paths.makeLibraryStore(home: home ?? globalConfiguration.locations.home)
+    public func libraryStore() -> SkillLibraryStore {
+        paths.makeLibraryStore()
     }
 
     /// 本机技能库版本优先，测试注入的仓库快照只在库中没有同名条目时兜底。
@@ -197,7 +212,7 @@ public struct SkillSetService {
             let projectURL = URL(fileURLWithPath: registration.canonicalPath, isDirectory: true)
             let inspection = try ProjectInspector.inspect(
                 projectURL: projectURL, catalog: snapshot.catalog, operationsRoot: executor.operationsRoot, versionsRoot: paths.versionsRoot,
-                libraryRoot: globalConfiguration.locations.libraryRoot, sourcesRoot: paths.sourcesRoot
+                libraryRoot: paths.libraryDirectoryURL, sourcesRoot: paths.sourcesRoot
             )
             let draft = try draftStore.load(projectID: registration.id)
             let projectState = ProjectLockStore(projectRoot: projectURL, stateRoot: paths.applicationSupportRoot).inspect()
@@ -281,7 +296,7 @@ public struct SkillSetService {
             operationsRoot: executor.operationsRoot,
             skillSourceURLs: try resolvedSkillSources(),
             versionsRoot: paths.versionsRoot,
-            libraryRoot: globalConfiguration.locations.libraryRoot,
+            libraryRoot: paths.libraryDirectoryURL,
             sourcesRoot: paths.sourcesRoot
         )
         let plan = try planner.makePlan(
@@ -308,10 +323,11 @@ public struct SkillSetService {
         return try planStore.save(plan: plan, stagingPath: staging.path)
     }
 
-    /// 只提交一个宿主的编辑；另一宿主沿用已部署选择，不顺带启用未部署草稿。
+    /// 只提交一个宿主的编辑；本机预览可包含关联更新，另一宿主仍沿用已部署选择。
     public func makeHarnessPlan(
         projectID: UUID, agent: String, selection: ProjectHarnessSelection?,
-        installMethod: SkillInstallMethod = .symlink
+        installMethod: SkillInstallMethod = .symlink,
+        allowRelatedHarnessUpdates: Bool = false
     ) throws -> StoredDeploymentPlan {
         guard AgentDeploymentAdapter.target(for: agent) != nil else { throw ProjectLockError.unsupportedAgent(agent) }
         let project = try projectStore.project(id: projectID)
@@ -321,7 +337,8 @@ public struct SkillSetService {
         selections[agent] = selection
         return try makePlan(projectID: projectID, skillIDs: [], instructionIDs: [],
             agents: selections.keys.sorted(), ruleBlockID: current?.ruleBlockID ?? "project-rules",
-            installMethod: installMethod, harnessSelections: selections, onlyChangingAgent: agent)
+            installMethod: installMethod, harnessSelections: selections,
+            onlyChangingAgent: allowRelatedHarnessUpdates ? nil : agent)
     }
 
     public func makeUserSkillPlan(
@@ -346,7 +363,7 @@ public struct SkillSetService {
             let analysis = try SkillAssetCopier.analyze(from: target)
             entries.append(SkillEntry(id: id, slug: slug, declaredName: slug, description: "", declaredVersion: nil,
                 metadataReview: "retained", sourceId: "retained", path: "retained/" + slug, contentHash: analysis.contentHash,
-                fileCount: analysis.files.count, bytes: analysis.bytes, integrity: "snapshotted", issues: [], licenseReview: "required", excludedPaths: []))
+                fileCount: analysis.files.count, bytes: analysis.bytes, integrity: "snapshotted", issues: [], excludedPaths: []))
             sources[id] = target
         }
         if adoptExistingSkills {

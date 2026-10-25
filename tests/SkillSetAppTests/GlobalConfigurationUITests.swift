@@ -44,7 +44,7 @@ final class GlobalConfigurationUITests: XCTestCase {
         }
         try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
         let locations = GlobalConfigurationLocations(home: home, stateRoot: paths.applicationSupportRoot)
-        let library = paths.makeLibraryStore(home: home)
+        let library = paths.makeLibraryStore()
         let skill = try library.save(SkillEditorDraft(slug: "global-ui", document: "---\nname: global-ui\ndescription: 全局界面测试\n---\n原始正文\n"), repositoryRoot: nil)
         let savedFragment = TemplateRecord(title: "全局界面规则", body: "提交变更前说明验证结果。", purpose: "验证全局片段草稿与部署")
         _ = try TemplateStore(rootURL: paths.applicationSupportRoot).save(savedFragment, initial: [])

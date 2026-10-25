@@ -58,9 +58,9 @@ struct MCPServersView: View {
                 if let deleting { library.remove(deleting) }
                 deleting = nil
             }
-            Button(L10n.tr("取消"), role: .cancel) { deleting = nil }
+            Button(L10n.tr("先不删"), role: .cancel) { deleting = nil }
         } message: {
-            Text(L10n.tr("删除只影响配置库，已写入的连接保持原样。全局或项目中的失效引用需要取消，并预览 MCP 移除计划。"))
+            Text(L10n.tr("已写入的连接会保留。要移除连接，请到全局配置或项目中取消选择，再预览并保存。"))
         }
         .appControls()
     }
@@ -68,7 +68,7 @@ struct MCPServersView: View {
     private var libraryContent: some View {
         VStack(alignment: .leading, spacing: 18) {
             PageActionHeader(eyebrow: "MCP LIBRARY", title: L10n.tr("MCP 配置库"),
-                detail: L10n.tr("保存连接 → 选择项目或全局范围 → 预览并批准。配置库负责复用，AI 工具负责加载服务。")) {
+                detail: L10n.tr("保存常用连接，在「全局配置」或「项目」中选择服务，预览后写入 AI 工具配置。")) {
                 Button(L10n.tr("扫描已有配置…")) { library.scan(); scanPresented = true }
                     .accessibilityIdentifier("mcp.library.scan")
                 Button { savedFeedback = false; editor = MCPLibraryEntry() } label: {
@@ -93,7 +93,7 @@ struct MCPServersView: View {
                     }.frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     EmptyState(icon: "point.3.connected.trianglepath.dotted", title: L10n.tr("添加可复用的 MCP 配置"),
-                        detail: L10n.tr("手动添加服务，或从系统已有配置扫描入库。"))
+                        detail: L10n.tr("点击「添加 MCP 服务」，或「扫描已有配置」加入服务。"))
                 }
             }
         }
@@ -105,7 +105,7 @@ struct MCPServersView: View {
                 AppSearchField(query: $query, prompt: L10n.tr("搜索名称或命令"),
                     label: L10n.tr("搜索 MCP 服务"), identifier: "mcp.library.search")
                 if filtered.isEmpty {
-                    Text(L10n.tr("没有匹配的服务。添加配置，或扫描已有连接入库。"))
+                    Text(L10n.tr("没有匹配的服务，请调整搜索；也可添加服务或扫描已有配置。"))
                         .font(AppFont.secondary).foregroundStyle(.secondary)
                 }
                 ScrollView {
@@ -161,7 +161,7 @@ struct MCPServersView: View {
                 if let error = library.usageError {
                     Text(L10n.text(error)).font(AppFont.secondary).foregroundStyle(.orange)
                 } else if usages.isEmpty {
-                    Text(L10n.tr("尚未在栖集的项目或全局草稿中选用。"))
+                    Text(L10n.tr("还没有使用这项服务，点击「用于配置…」选择使用范围。"))
                         .font(AppFont.secondary).foregroundStyle(.secondary)
                 }
                 ForEach(usages) { usage in
@@ -269,7 +269,7 @@ private struct MCPLibraryUseSheet: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 14) {
                         Label(L10n.tr(target.projectID == nil
-                            ? "影响当前用户在该 AI 工具中的全部项目。"
+                            ? "影响所选 AI 工具的全部项目。"
                             : "仅写入所选项目；全局 MCP 配置仍可能生效。"), systemImage: target.projectID == nil ? "globe" : "folder")
                             .font(AppFont.secondary).foregroundStyle(target.projectID == nil ? .orange : .secondary)
                         if target.host == .codex && target.projectID != nil {
@@ -314,14 +314,14 @@ private struct MCPLibraryUseSheet: View {
                 .accessibilityIdentifier("mcp.library.use.preview")
             }
         }
-        .confirmationDialog(L10n.tr("确认覆盖外部 MCP 服务？"), isPresented: $overwriteConfirmationPresented,
+        .confirmationDialog(L10n.tr("覆盖已有的同名 MCP 服务？"), isPresented: $overwriteConfirmationPresented,
                             titleVisibility: .visible) {
-            Button(L10n.tr("确认覆盖并预览"), role: .destructive) {
+            Button(L10n.tr("覆盖并预览"), role: .destructive) {
                 guard let target else { return }
                 library.approveExternalOverwrite(host: target.host, projectID: target.projectID, names: [entry.name])
                 prepareUse(target: target)
             }
-            Button(L10n.tr("取消"), role: .cancel) {}
+            Button(L10n.tr("先不覆盖"), role: .cancel) {}
         } message: {
             let path = target?.configPath ?? L10n.tr("目标配置")
             Text(L10n.tr("将替换 \(entry.name) 在 \(path) 中的现有内容。原文件会按计划保留备份；如果文件在审批前发生变化，计划会失效。"))

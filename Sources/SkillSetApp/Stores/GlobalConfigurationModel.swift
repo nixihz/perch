@@ -192,9 +192,15 @@ final class GlobalConfigurationModel {
     }
 
     func setInstallMethod(_ method: SkillInstallMethod) {
-        var next = draft
+        setInstallMethod(method, host: host)
+    }
+
+    func selection(host: MCPHost) -> GlobalConfigurationDraft? { skillDrafts[host] }
+
+    func setInstallMethod(_ method: SkillInstallMethod, host: MCPHost) {
+        guard var next = skillDrafts[host] else { return }
         next.installMethod = method
-        save(next)
+        save(next, host: host)
     }
 
     func setSkill(_ id: String, enabled: Bool) {
@@ -211,12 +217,12 @@ final class GlobalConfigurationModel {
 
     func setSkill(_ skill: SkillEntry, enabled: Bool, host: MCPHost, catalog: [SkillEntry]) {
         guard !enabled || !skill.isBlocked else {
-            error = L10n.tr("\(skill.slug) 含阻塞问题，未加入草稿")
+            error = L10n.tr("\(skill.slug) 未通过文件检查，请到技能库查看原因。")
             return
         }
         if enabled, let selected = skillDrafts[host]?.skillIDs,
            catalog.contains(where: { $0.id != skill.id && $0.slug == skill.slug && selected.contains($0.id) }) {
-            error = L10n.tr("\(skill.slug) 已有另一个来源，先移除同名条目")
+            error = L10n.tr("\(skill.slug) 已选了另一个来源，请先取消同名技能。")
             return
         }
         setSkill(skill.id, enabled: enabled, host: host)
@@ -235,13 +241,17 @@ final class GlobalConfigurationModel {
     }
 
     func setInstruction(_ id: String, enabled: Bool) {
-        var next = draft
-        next.instructionIDs.removeAll { $0 == id }
-        if enabled { next.instructionIDs.append(id) }
-        save(next)
+        setInstruction(id, enabled: enabled, host: host)
     }
 
-    private func save(_ next: GlobalConfigurationDraft) {
+    func isInstructionSelected(_ id: String, host: MCPHost) -> Bool {
+        skillDrafts[host]?.instructionIDs.contains(id) == true
+    }
+
+    func setInstruction(_ id: String, enabled: Bool, host: MCPHost) {
+        guard canEditSkills(host: host), var next = skillDrafts[host] else { return }
+        next.instructionIDs.removeAll { $0 == id }
+        if enabled { next.instructionIDs.append(id) }
         save(next, host: host)
     }
 
@@ -259,13 +269,17 @@ final class GlobalConfigurationModel {
     }
 
     func prepareDeployment() -> StoredDeploymentPlan? {
-        guard canEditSkills(host: host) else {
+        prepareDeployment(host: host)
+    }
+
+    func prepareDeployment(host: MCPHost) -> StoredDeploymentPlan? {
+        guard canEditSkills(host: host), let selection = skillDrafts[host] else {
             error = skillEditingErrors[host]
             return nil
         }
         return prepare {
             try SkillSetService(paths: paths, globalLocations: locations).makeGlobalPlan(
-                host: host, selection: draft, takeOverExisting: takeOverExisting)
+                host: host, selection: selection, takeOverExisting: takeOverExisting)
         }
     }
 

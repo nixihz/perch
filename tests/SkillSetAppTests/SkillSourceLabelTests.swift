@@ -2,6 +2,19 @@ import XCTest
 @testable import SkillSetApp
 
 final class SkillSourceLabelTests: XCTestCase {
+    func testCustomSourceUsesDirectoryNameDespiteImportProvenance() {
+        for origin: String? in [
+            "/Users/brian/.perch/sources/local-imports/installed",
+            "/Users/brian/.perch/sources/custom",
+            "https://github.com/mattpocock/skills",
+            nil
+        ] {
+            XCTAssertEqual(SkillSourceLabel.title(
+                sourceID: "custom", origin: origin, registeredTitle: "旧导入来源"
+            ), "custom")
+        }
+    }
+
     func testRepositoryTransportsUseReadablePath() {
         for origin in [
             "https://github.com/mattpocock/skills",

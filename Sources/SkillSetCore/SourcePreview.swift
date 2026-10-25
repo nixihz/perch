@@ -431,8 +431,7 @@ public struct SourcePreviewService {
             candidates: candidates,
             excludedCounts: excludedCounts,
             warnings: [
-                "预览只 clone 固定提交并读取文本，不执行仓库脚本、hooks、postinstall 或子模块。",
-                "内容指纹与许可提示不等于安全、合规或模型行为审核。"
+                "预览只 clone 固定提交并读取文本，不执行仓库脚本、hooks、postinstall 或子模块。"
             ]
         )
     }
@@ -584,12 +583,12 @@ public struct SourcePreviewService {
             let url = root.appendingPathComponent(name)
             guard let text = try? String(contentsOf: url, encoding: .utf8).prefix(8_192) else { continue }
             let upper = text.uppercased()
-            if upper.contains("MIT LICENSE") { return "MIT · 仍需逐 skill 审查" }
-            if upper.contains("APACHE LICENSE") { return "Apache-2.0 迹象 · 仍需逐 skill 审查" }
-            if upper.contains("GNU GENERAL PUBLIC LICENSE") { return "GPL 迹象 · 需合规审查" }
-            return "检测到许可文件 · 未自动判定"
+            if upper.contains("MIT LICENSE") { return "MIT" }
+            if upper.contains("APACHE LICENSE") { return "Apache-2.0" }
+            if upper.contains("GNU GENERAL PUBLIC LICENSE") { return "GPL" }
+            return "已找到许可文件"
         }
-        return "未检测到根许可文件 · 禁止默认再分发"
+        return "未找到仓库许可文件"
     }
 
     private func sanitizeNamespacePart(_ value: String) -> String {

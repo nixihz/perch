@@ -86,7 +86,7 @@ struct PluginConfigurationView: View {
                             }.buttonStyle(.plain)
                         }
                         if plugins.isEmpty {
-                            Text(L10n.tr("当前范围还没有可操作的本机插件。来源保存在插件页；远程市场安装仍需先由 AI 工具取得本机包。"))
+                            Text(L10n.tr("当前范围没有可配置的插件，请先在 AI 工具中下载插件包，再重新扫描。"))
                                 .font(AppFont.secondary).foregroundStyle(.secondary)
                         }
                     }
@@ -129,7 +129,7 @@ struct PluginConfigurationView: View {
                             ForEach(plugin.risks, id: \.self) { risk in
                                 Text(L10n.text(UserFacingText.pluginRisk(risk))).font(AppFont.secondary).foregroundStyle(.orange)
                             }
-                            Text(L10n.tr("安装、停用或卸载不能撤销脚本已经造成的改动；加载新插件可能需要重启会话。"))
+                            Text(L10n.tr("停用或卸载不会撤销脚本已造成的改动；加载新插件可能需要重启 AI 会话。"))
                                 .font(AppFont.secondary).foregroundStyle(.secondary)
                         }
                     }
@@ -153,8 +153,12 @@ struct PluginConfigurationView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text(L10n.tr("插件操作")).font(AppFont.heading)
                 if !plugin.installed || host == .claudeCode {
-                    Toggle(L10n.tr("我已核对完整插件包，包含自动运行脚本、命令及其他可运行组件。"), isOn: $acknowledgedExecutableRisk)
+                    Toggle(L10n.tr("我已核对插件中的自动运行脚本、命令和其他可运行内容。"), isOn: $acknowledgedExecutableRisk)
                         .toggleStyle(.checkbox).font(AppFont.secondary)
+                    if !acknowledgedExecutableRisk {
+                        Text(L10n.tr("请先核对并勾选上方说明，再预览安装或更新计划。"))
+                            .font(AppFont.secondary).foregroundStyle(.secondary)
+                    }
                 }
                 if !plugin.installed {
                     actionButton(plugin, action: .install, title: "生成安装计划", risk: true)

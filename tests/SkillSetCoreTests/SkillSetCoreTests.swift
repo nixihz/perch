@@ -37,7 +37,6 @@ struct SkillSetCoreTests {
                 bytes: 10,
                 integrity: "snapshotted",
                 issues: [],
-                licenseReview: "required",
                 excludedPaths: []
             ),
             SkillEntry(
@@ -54,7 +53,6 @@ struct SkillSetCoreTests {
                 bytes: 10,
                 integrity: "snapshotted",
                 issues: [],
-                licenseReview: "required",
                 excludedPaths: []
             )
         ]
@@ -81,7 +79,6 @@ struct SkillSetCoreTests {
                 bytes: 10,
                 integrity: "snapshotted",
                 issues: [],
-                licenseReview: "required",
                 excludedPaths: []
             )
         }
@@ -510,7 +507,7 @@ struct SkillSetCoreTests {
 
         let service = SourcePreviewService(previewsRoot: root.appendingPathComponent("previews"))
         let preview = try service.scan(checkout: root, inputURL: "https://example.test/repo", commit: "abc123")
-        #expect(preview.licenseEvidence == "MIT · 仍需逐 skill 审查")
+        #expect(preview.licenseEvidence == "MIT")
         #expect(preview.candidates.map(\.slug) == ["alpha", "old"])
         #expect(preview.candidates.first?.state == .promoted)
         #expect(preview.candidates.last?.state == .deprecated)
@@ -1455,7 +1452,6 @@ struct DeploymentFixture {
             bytes: skillData.count + scriptData.count,
             integrity: "snapshotted",
             issues: [],
-            licenseReview: "required",
             excludedPaths: []
         )
         catalog = CatalogDocument(schemaVersion: 1, hashAlgorithm: "test", entries: [entry])

@@ -29,10 +29,6 @@ public struct GlobalConfigurationLocations: Sendable {
         )
     }
 
-    public var libraryRoot: URL {
-        home.appendingPathComponent(".agents/skills")
-    }
-
     public func skillsRoot(_ host: MCPHost) -> URL {
         configuredSkillsRoot(host).resolvingSymlinksInPath().standardizedFileURL
     }
@@ -393,7 +389,7 @@ public struct GlobalConfigurationManager {
     func hash(_ url: URL) throws -> String? {
         if let hash = try ManagedSkillLink.hash(
             url, versionsRoot: paths.versionsRoot,
-            libraryRoot: locations.libraryRoot, sourcesRoot: paths.sourcesRoot
+            libraryRoot: paths.libraryDirectoryURL, sourcesRoot: paths.sourcesRoot
         ) { return hash }
         // 只在已配置的目录边界内检查，不能把 macOS 的 /var 系统别名误判为用户置换。
         let roots = [locations.home, locations.stateRoot, locations.codexRoot, locations.claudeRoot,
@@ -419,7 +415,7 @@ public struct GlobalConfigurationManager {
             if isLink(cursor) {
                 guard cursor == url, try ManagedSkillLink.hash(
                     cursor, versionsRoot: paths.versionsRoot,
-                    libraryRoot: locations.libraryRoot, sourcesRoot: paths.sourcesRoot
+                    libraryRoot: paths.libraryDirectoryURL, sourcesRoot: paths.sourcesRoot
                 ) != nil else {
                     throw DeploymentError.symlinkDetected(cursor.path)
                 }

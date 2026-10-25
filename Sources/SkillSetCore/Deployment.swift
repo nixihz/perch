@@ -677,7 +677,6 @@ public struct DeploymentPlanner {
                 sourcePath: entry.path,
                 declaredVersion: entry.declaredVersion,
                 contentHash: materialized.contentHash,
-                licenseReview: entry.licenseReview,
                 files: materialized.fileManifest
             ))
 
@@ -941,8 +940,7 @@ public struct DeploymentPlanner {
             createdAt: createdAt,
             digest: digest,
             changes: executableChanges,
-            warnings: selected.map { "\($0.id) 仍处于 \($0.integrity)；许可审查为 \($0.licenseReview)。" }
-                + selectionWarnings
+            warnings: selectionWarnings
                 + ["对象存储新增 \(objectCount) 个对象，共 \(objectBytes) 字节；项目锁绑定 manifest \(manifest.digest)。"],
             metadata: ["planType": "skill-deployment", "projectStateStorage": "application-v1"],
             ownershipReceipt: receipt,

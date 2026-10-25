@@ -68,7 +68,7 @@ final class SkillsShWorkflowTests: XCTestCase {
 
             XCTAssertEqual(
                 model.skillsShError,
-                L10n.tr("技能库中有多个已安装技能匹配这个目录条目，请先在技能库中核对再卸载。")
+                L10n.tr("技能库中有多个技能匹配这项结果，请到技能库核对后再移除。")
             )
             for entry in entries {
                 XCTAssertTrue(model.snapshot.catalog.entries.contains { $0.id == entry.id })
@@ -242,7 +242,7 @@ final class SkillsShWorkflowTests: XCTestCase {
             deployed = project.appendingPathComponent(".agents/skills/\(first.slug)")
         }
 
-        let store = paths.makeLibraryStore(home: root.appendingPathComponent("SKILLSET_HOME"))
+        let store = paths.makeLibraryStore()
         let packageURLs = entries.compactMap { try? store.sourceURLs()[$0.id] }
         let hit = SkillsShHit(
             id: "fixture/skills/\(packages[0].name)", source: "fixture/skills",

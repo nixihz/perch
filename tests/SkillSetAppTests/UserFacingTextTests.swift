@@ -5,6 +5,43 @@ import SkillSetCore
 @testable import SkillSetApp
 
 final class UserFacingTextTests: XCTestCase {
+    func testLinkedFolderErrorsNameTheAffectedToolAndKeepInternalPathsOutOfTheMessage() {
+        for (path, tool) in [("/local/project/.claude/skills", "Claude Code"), ("/local/project/.agents/skills", "Codex")] {
+            let message = UserFacingText.error(DeploymentError.symlinkDetected(path))
+            XCTAssertTrue(message.contains(tool))
+            XCTAssertTrue(message.contains("独立文件夹"))
+            XCTAssertFalse(message.contains("安全检查"))
+            XCTAssertFalse(message.contains(path))
+        }
+        XCTAssertTrue(UserFacingText.error(DeploymentError.symlinkDetected("/local/project/.agents/skills/demo"))
+            .contains("先移走这个链接"))
+        XCTAssertTrue(UserFacingText.isInformationalProjectNote(".claude/skills：父目录是软链，未扫描。"))
+        XCTAssertFalse(UserFacingText.isInformationalProjectNote(".claude/skills：读取失败。"))
+        XCTAssertTrue(UserFacingText.diagnostic(".claude/skills：父目录是软链，未扫描。", context: .project).contains("Claude Code"))
+    }
+
+    func testMissingPlanPointsBackToPreviewWithoutShowingInternalIdentifier() {
+        let error = DeploymentPlanStoreError.planNotFound("private-plan-123")
+        let message = UserFacingText.error(error)
+        XCTAssertTrue(message.contains("重新预览"))
+        XCTAssertFalse(message.contains("private-plan-123"))
+        XCTAssertFalse(message.contains("PLAN_NOT_FOUND"))
+    }
+
+    func testMissingOrCorruptSavedSkillOffersSourceRecoveryWithoutEchoingDetails() {
+        let errors: [SkillObjectStoreError] = [
+            .objectMissing("private-digest-123"),
+            .objectCorrupt("private-digest-123")
+        ]
+        for error in errors {
+            let message = UserFacingText.error(error)
+            XCTAssertTrue(message.contains("技能版本"))
+            XCTAssertTrue(message.contains("从来源重新加入"))
+            XCTAssertFalse(message.contains("private-digest-123"))
+            XCTAssertFalse(message.contains("OFFLINE_OBJECT"))
+        }
+    }
+
     @MainActor
     func testPlanSummariesExplainChangesWithoutRewritingActualDiffsOrPaths() {
         let previousLanguage = AppPreferences.shared.language
@@ -102,10 +139,21 @@ final class UserFacingTextTests: XCTestCase {
         XCTAssertFalse(UserFacingText.error(offline).contains("private-token"))
     }
 
+    func testOldLicenseNoticesDisappearWhileUnrelatedWarningsRemainVisible() {
+        XCTAssertTrue(UserFacingText.isInformationalPlanNote("demo 仍处于 snapshotted；许可审查为 required。"))
+        XCTAssertFalse(UserFacingText.isInformationalPlanNote("检测到受管技能已被删除，批准后将从技能库重新创建。"))
+        XCTAssertFalse(UserFacingText.isInformationalPlanNote("demo 仍处于 snapshotted；许可审查为 required。\n文件冲突"))
+        for evidence in ["MIT", "MIT · 仍需逐 skill 审查"] {
+            XCTAssertEqual(UserFacingText.licenseEvidence(evidence), "MIT")
+        }
+        XCTAssertEqual(UserFacingText.licenseEvidence("GPL 迹象 · 需合规审查"), "GPL")
+        XCTAssertEqual(UserFacingText.licenseEvidence("private-token"), "未记录许可信息")
+    }
+
     func testKnownMetadataHasChineseLabelsAndUnknownValuesNeverPassThrough() {
         let examples: [(UserFacingText.MetadataField, String)] = [
             (.sourceKind, "local-snapshot"), (.trust, "review-required"),
-            (.licenseReview, "required"), (.metadataReview, "not-schema-validated"),
+            (.metadataReview, "not-schema-validated"),
             (.integrity, "snapshotted"),
             (.presetStatus, "draft"), (.mergePolicy, "explicit-selection"),
             (.component, "hooks"), (.scope, "user")

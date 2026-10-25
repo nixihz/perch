@@ -26,7 +26,7 @@ struct PerchLibraryTests {
         _ = try service.approve(planID: plan.id, digest: plan.plan.digest)
         _ = try service.apply(planID: plan.id, digest: plan.plan.digest)
         let deployed = fixture.project.appendingPathComponent(".agents/skills/demo")
-        let librarySkill = fixture.root.appendingPathComponent("home/.agents/skills/demo").path
+        let librarySkill = fixture.paths.libraryDirectoryURL.appendingPathComponent("demo").path
         let link = try FileManager.default.destinationOfSymbolicLink(atPath: deployed.path)
         #expect(URL(fileURLWithPath: link).standardizedFileURL.path == librarySkill)
         #expect(try Data(contentsOf: deployed.appendingPathComponent("assets/data.bin")) == Data([0, 255, 128]))
@@ -92,9 +92,11 @@ struct PerchLibraryTests {
         defer { fixture.cleanup() }
         let home = fixture.root.appendingPathComponent("home")
         let deployed = home.appendingPathComponent(".codex/skills/demo")
+        // 先建服务：官方目录只在首次初始化收编一次，之后放进去的文件不会被自动收录。
+        let initial = try fixture.service()
         try FileManager.default.createDirectory(at: deployed.deletingLastPathComponent(), withIntermediateDirectories: true)
         try FileManager.default.copyItem(at: fixture.source.appendingPathComponent("demo"), to: deployed)
-        let preview = try fixture.service().previewSource(urlString: deployed.deletingLastPathComponent().path)
+        let preview = try initial.previewSource(urlString: deployed.deletingLastPathComponent().path)
         let entry = try fixture.importSkill(previewID: preview.id)
         let service = try fixture.service()
         let plan = try service.makeUserSkillPlan(skillIDs: [entry.id], agents: ["codex"], adoptExistingSkills: true, homeDirectory: home)

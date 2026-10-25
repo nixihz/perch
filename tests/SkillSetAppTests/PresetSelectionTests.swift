@@ -94,7 +94,7 @@ final class PresetSelectionTests: XCTestCase {
             missing.skills = ["workspace/stc"]
             missing.instructions = ["missing-rule"]
             XCTAssertFalse(model.savePreset(missing))
-            XCTAssertTrue(L10n.tr(try XCTUnwrap(model.presetError)).contains("规则不在片段库：missing-rule"))
+            XCTAssertTrue(L10n.tr(try XCTUnwrap(model.presetError)).contains("AGENTS 片段已不在库中，请从预设中移除这项引用。"))
 
             XCTAssertFalse(model.loadPreset(try makePreset(skills: ["missing/skill"]), into: projectID))
             XCTAssertTrue(model.lastAction.contains("技能「skill」不在技能库。请从预设中移除这项引用。"))

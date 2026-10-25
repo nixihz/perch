@@ -23,26 +23,31 @@ final class SourceImportWorkflowUITests: XCTestCase {
         try SourcePreviewStore(rootURL: previewRoot).save(preview)
         try world.launchNativeUI()
         let ui = try XCTUnwrap(world.nativeUI)
-        // 启动时同步来源库：候选直接进入技能库，不再需要逐项手动导入。
+        // 来源技能要显式加入技能库，加入后来源列表显示"在技能库查看"。
         try ui.selectSidebarItem("技能来源")
         try ui.pressButton(identifier: "sources.preview.\(previewID.uuidString)")
+        try ui.pressButton(identifier: "sources.import.skills/import-ui")
+        try ui.waitForButton("加入技能库")
+        try ui.pressButton(identifier: "sources.import.confirm")
         try ui.waitForButton("在技能库查看")
-        XCTAssertFalse(try ui.hasEnabledButton("加入技能库…"))
         try ui.captureWindowScreenshot(to: URL(fileURLWithPath: "/tmp/skillset-source-import-review.png"))
-        try ui.pressButton(identifier: "sources.view.skills/import-ui")
-        try ui.waitForStaticText(containing: "来源界面测试正文")
+        try ui.pressButton(identifier: "sources.import.projects")
         let library = SkillSetRuntimePaths(applicationSupportRoot: state, repositoryRoot: nil)
-            .makeLibraryStore(home: state.deletingLastPathComponent())
+            .makeLibraryStore()
         let importedID = try XCTUnwrap(
-            try library.sourceURLs().keys.first { $0.hasSuffix("/import-ui") },
-            "来源同步后应能在技能库找到 import-ui"
+            try library.sourceURLs().keys.first { $0 == "import-ui" },
+            "加入技能库后应能在技能库找到 import-ui"
         )
+        // 技能库里能搜到这条技能。
+        try ui.selectSidebarItem("技能库")
+        try ui.setText(fieldMatching: "skills.search", to: "import-ui")
+        try ui.waitForStaticText(containing: "import-ui")
         try ui.selectSidebarItem("技能来源")
         try ui.pressButton(identifier: "sources.preview.\(previewID.uuidString)")
         XCTAssertTrue(try ui.hasEnabledButton("在技能库查看"))
         XCTAssertFalse(try ui.hasEnabledButton("加入技能库…"))
         try ui.selectSidebarItem("项目")
-        try ui.setText(fieldMatching: "skills.search", to: "import-ui")
+        try ui.setText(fieldMatching: "projects.search", to: "import-ui")
         try ui.pressButton(identifier: "projects.skill.\(importedID).codex")
         try ui.previewDeploymentPlan()
         let plan = try ui.waitForSinglePlan()

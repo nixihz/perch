@@ -82,8 +82,8 @@ struct PresetDraftPreview {
                 reasons.append("技能「\(skill.declaredName)」暂不可用。来源：\(place)")
             }
         }
-        for id in unavailableInstructionIDs {
-            reasons.append("规则不在片段库：\(id)")
+        if !unavailableInstructionIDs.isEmpty {
+            reasons.append("AGENTS 片段已不在库中，请从预设中移除这项引用。")
         }
         let selected = snapshot.catalog.entries.filter { preset.skills.contains($0.id) && !$0.isBlocked }
         let conflicts = Dictionary(grouping: selected, by: \.slug).values.filter { $0.count > 1 }

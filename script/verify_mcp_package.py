@@ -24,7 +24,7 @@ def verify(executable):
         environment = os.environ.copy()
         for key in ("PACKAGE_RESOURCE_BUNDLE_PATH", "PACKAGE_RESOURCE_BUNDLE_URL", "SKILLSET_REPOSITORY_ROOT", "SKILLSET_REPOSITORY_LIBRARY"):
             environment.pop(key, None)
-        # 技能库在主目录的 .agents/skills。不隔离时会读到使用者的真实技能。
+        # 技能库在状态目录的 skills/library。不隔离时会读到使用者的真实技能。
         environment["SKILLSET_HOME"] = str(root / "home")
         messages = [
             {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {

@@ -25,7 +25,7 @@ struct ProjectPresetComponents: View {
                                 .disabled(!acknowledged.contains(reference.id) || model.isWorking)
                             }
                             if reference.scope == .user { globalScopeNote }
-                            Toggle(L10n.tr("我已核对完整插件包，包含自动运行脚本、命令及其他可运行组件。"), isOn: Binding(
+                            Toggle(L10n.tr("我已核对插件中的自动运行脚本、命令和其他可运行内容。"), isOn: Binding(
                                 get: { acknowledged.contains(reference.id) },
                                 set: { checked in
                                     if checked { acknowledged.insert(reference.id) } else { acknowledged.remove(reference.id) }

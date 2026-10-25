@@ -220,7 +220,7 @@ struct AIAccessView: View {
                     .font(AppFont.heading)
                 Text(L10n.tr("1. 预览并批准上方接入计划，将 perch 连接写入所选工具。"))
                 Text(L10n.tr("2. 重新加载 AI 工具，确认出现 perch 的工具，再试着询问："))
-                Text(L10n.tr("“列出栖集的预设，搜索代码审查技能，再把我选定的技能或预设安装到当前项目。”"))
+                Text(L10n.tr("「列出栖集的预设，搜索代码审查技能，再把我选定的技能或预设安装到当前项目。」"))
                     .textSelection(.enabled)
                     .foregroundStyle(AppColor.accentText)
                 Text(L10n.tr("3. 涉及项目写入时，先让 AI 生成计划，再回到本机审阅并批准。"))

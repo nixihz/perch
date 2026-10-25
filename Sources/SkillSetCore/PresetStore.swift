@@ -62,17 +62,17 @@ public struct PresetStore {
         let name = preset.name.trimmingCharacters(in: .whitespacesAndNewlines)
         if name.isEmpty { return "请填写预设名称。" }
         if name.count > 80 { return "预设名称最多 80 个字符。" }
-        if preset.componentCount == 0 { return "至少添加一个技能、插件、MCP 服务或 AGENTS.md 片段。" }
+        if preset.componentCount == 0 { return "请至少选择一项技能、AGENTS 片段、MCP 服务或插件。" }
         if Set(preset.skills).count != preset.skills.count || Set(preset.instructionFragments).count != preset.instructionFragments.count
             || Set(preset.plugins.map(\.id)).count != preset.plugins.count
             || Set(preset.mcpServers.map { $0.normalized().presetID }).count != preset.mcpServers.count {
-            return "同一组件不能重复添加，请核对宿主、作用域与名称。"
+            return "这项内容已添加，请核对 AI 工具、使用范围和名称。"
         }
         if preset.plugins.contains(where: { $0.manifestDigest.count != 64 || $0.manifestDigest.contains(where: { !$0.isHexDigit }) }) {
             return "插件缺少有效的内容指纹，请重新选择本机插件。"
         }
         if preset.plugins.contains(where: { $0.host == .codex && $0.scope != .user }) {
-            return "Codex 插件仅支持用户作用域。"
+            return "Codex 插件只支持全局配置，请选择「用户」范围。"
         }
         for server in preset.mcpServers {
             if let issue = server.validationIssues().first { return issue }
@@ -94,8 +94,8 @@ public struct PresetStore {
                                  revision: (old?.revision ?? 0) + 1, skills: preset.skills.sorted(),
                                  instructionFragments: preset.instructionFragments.sorted(), plugins: preset.plugins,
                                  mcpServers: preset.mcpServers.map { $0.normalized() })
-        records.removeAll { $0.id == saved.id }
-        records.append(saved)
+        if let index = records.firstIndex(where: { $0.id == saved.id }) { records[index] = saved }
+        else { records.append(saved) }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)

@@ -641,7 +641,7 @@ final class NativeUIHarness {
     }
 
     func previewDeploymentPlan() throws {
-        try pressButton(identifier: "projects.previewChanges")
+        try pressButton(identifier: "projects.preview.codex")
         try waitUntil("变更计划 sheet 出现") {
             try self.sheetPresent()
         }

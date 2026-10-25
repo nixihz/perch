@@ -16,7 +16,7 @@ struct SkillsShBrowserSheet: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(L10n.tr("浏览 skills.sh"))
                         .font(AppFont.title)
-                    Text(L10n.tr("从第三方目录发现技能。安装会回到原 GitHub 仓库，读取当前提交并复制完整包到本机技能库；不运行仓库脚本，也不自动启用到项目。"))
+                    Text(L10n.tr("搜索第三方技能，加入时从原 GitHub 仓库复制当前版本，不运行脚本。用于项目前还需选择并预览。"))
                         .font(AppFont.body)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -44,7 +44,7 @@ struct SkillsShBrowserSheet: View {
             }
             Text(trimmedQuery.count < 2
                 ? L10n.tr("至少输入 2 个字符。搜索结果来自第三方目录，安装前仍会核对来源仓库和内容指纹。")
-                : L10n.tr("安装到技能库后，可在「技能库」查看和编辑；启用到项目仍需生成计划并批准。"))
+                : L10n.tr("加入后可在「技能库」查看和编辑；用于项目前还需选择并预览。"))
                 .font(AppFont.secondary)
                 .foregroundStyle(.secondary)
 
@@ -81,7 +81,7 @@ struct SkillsShBrowserSheet: View {
         .frame(minWidth: 720, idealWidth: 820, minHeight: 560, idealHeight: 680)
         .interactiveDismissDisabled(model.isWorking)
         .confirmationDialog(
-            L10n.tr("从技能库卸载 \(pendingUninstall?.name ?? "")？"),
+            L10n.tr("从技能库移除 \(pendingUninstall?.name ?? "")？"),
             isPresented: Binding(
                 get: { pendingUninstall != nil },
                 set: { if !$0 { pendingUninstall = nil } }
@@ -89,13 +89,13 @@ struct SkillsShBrowserSheet: View {
             titleVisibility: .visible,
             presenting: pendingUninstall
         ) { hit in
-            Button(L10n.tr("卸载"), role: .destructive) {
+            Button(L10n.tr("移除"), role: .destructive) {
                 model.uninstallSkillsSh(hit)
                 pendingUninstall = nil
             }
-            Button(L10n.tr("取消"), role: .cancel) { pendingUninstall = nil }
+            Button(L10n.tr("先不移除"), role: .cancel) { pendingUninstall = nil }
         } message: { _ in
-            Text(L10n.tr("将删除技能库索引项；历史包、来源证据和项目已部署文件保留。"))
+            Text(L10n.tr("技能将从技能库移除；历史版本、来源记录和已写入项目的文件会保留。"))
         }
     }
 
@@ -183,7 +183,7 @@ struct SkillsShBrowserSheet: View {
                     model.showLibrarySkill(installed.id)
                 }
                 .disabled(model.isWorking)
-                Button(L10n.tr("卸载"), role: .destructive) {
+                Button(L10n.tr("移除"), role: .destructive) {
                     pendingUninstall = hit
                 }
                 .disabled(model.isWorking)
@@ -197,16 +197,16 @@ struct SkillsShBrowserSheet: View {
                     if model.installingSkillsShID == hit.id {
                         HStack(spacing: 6) {
                             ProgressView().controlSize(.small)
-                            Text(L10n.tr("正在安装…"))
+                            Text(L10n.tr("正在加入技能库…"))
                         }
                     } else {
-                        Label(L10n.tr("安装到技能库"), systemImage: "arrow.down.to.line")
+                        Label(L10n.tr("加入技能库"), systemImage: "arrow.down.to.line")
                     }
                 }
                 .buttonStyle(AppButtonStyle(kind: .primary))
                 .disabled(model.isWorking)
                 .accessibilityIdentifier("skills.sh.install.\(hit.id)")
-                Text(L10n.tr("固定当前提交并复制完整包"))
+                Text(L10n.tr("复制来源的当前版本"))
                     .font(AppFont.metadata)
                     .foregroundStyle(.secondary)
             }

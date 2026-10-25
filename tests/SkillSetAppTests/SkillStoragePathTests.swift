@@ -5,7 +5,7 @@ import SkillSetCore
 
 @MainActor
 final class SkillStoragePathTests: XCTestCase {
-    /// 技能实体放在 sources/custom，技能库目录只留软链。展示路径必须指向实体位置。
+    /// 技能实体放在 sources/custom，私有库存目录只留软链。展示路径必须指向实体位置。
     func testSavedSkillPointsAtSourceDirectoryInsteadOfLibraryDirectory() throws {
         let root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent("storage-\(UUID())")
         let variables = ["SKILLSET_HOME", "CODEX_HOME", "CFFIXED_USER_HOME"]
@@ -25,8 +25,8 @@ final class SkillStoragePathTests: XCTestCase {
         let expected = paths.sourcesRoot.appendingPathComponent("custom/demo-skill", isDirectory: true).standardizedFileURL
         XCTAssertEqual(model.skillStorageURLs["demo-skill"]?.standardizedFileURL, expected)
         XCTAssertTrue(FileManager.default.fileExists(atPath: expected.path))
-        // 库目录只保留软链，不存放实体。
-        let libraryEntry = model.globalConfiguration.locations.libraryRoot.appendingPathComponent("demo-skill")
+        // 私有库存只保留软链，不存放实体。
+        let libraryEntry = model.runtimePaths.libraryDirectoryURL.appendingPathComponent("demo-skill")
         XCTAssertEqual(
             URL(fileURLWithPath: try FileManager.default.destinationOfSymbolicLink(atPath: libraryEntry.path)).standardizedFileURL.path,
             expected.path

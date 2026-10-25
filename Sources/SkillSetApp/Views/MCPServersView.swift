@@ -66,7 +66,7 @@ struct MCPObservedServersView: View {
                     deletingServer = nil
                 }
             }
-            Button(L10n.tr("取消"), role: .cancel) { deletingServer = nil }
+            Button(L10n.tr("先不删"), role: .cancel) { deletingServer = nil }
         } message: {
             Text(L10n.tr("只移除选中的服务配置，不卸载程序。预览并批准计划后才会写入；用户级配置会影响该工具的全部项目。"))
         }
@@ -286,12 +286,12 @@ struct MCPConfigSheet: View {
                             .font(AppFont.secondary)
                     }
                     if existingServer == nil || replaceArguments {
-                        AppFormField(L10n.tr("参数（每行一个，保留参数内空格）")) {
+                        AppFormField(L10n.tr("启动参数（每行一项，保留项内空格）")) {
                             TextField("--option", text: Binding(
                                 get: { draft.args.joined(separator: "\n") },
                                 set: { draft.args = $0.components(separatedBy: "\n").filter { !$0.isEmpty } }
                             ), axis: .vertical)
-                            .accessibilityLabel(L10n.tr("参数（每行一个，保留参数内空格）"))
+                            .accessibilityLabel(L10n.tr("启动参数（每行一项，保留项内空格）"))
                         }
                     }
                     if existingServer == nil {

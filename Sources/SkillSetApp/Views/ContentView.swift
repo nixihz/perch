@@ -13,7 +13,7 @@ struct ContentView: View {
         .navigationSplitViewStyle(.balanced)
         .frame(minWidth: 1080, minHeight: 700)
         .sheet(isPresented: $model.planPresented) {
-            PlanSheet(model: model)
+            PlanSheet(model: model, savesFromPreview: model.section == .globalConfiguration || model.section == .projects)
         }
         .sheet(item: $model.templateUseRequest, onDismiss: model.presentTemplatePlanIfReady) { request in
             TemplateUseSheet(model: model, template: request.template)

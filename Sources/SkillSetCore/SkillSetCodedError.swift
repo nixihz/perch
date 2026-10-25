@@ -4,7 +4,17 @@ public protocol SkillSetCodedError: Error {
     var code: String { get }
 }
 
+/// 只携带稳定错误码的错误。批量结果里的失败原因用它交给界面层翻译。
+public struct SkillSetCodedFailure: Error, SkillSetCodedError, Sendable {
+    public let code: String
+
+    public init(code: String) {
+        self.code = code
+    }
+}
+
 extension DeploymentError: SkillSetCodedError {}
+extension SkillObjectStoreError: SkillSetCodedError {}
 extension ProjectLockError: SkillSetCodedError {}
 extension SkillAssetCopyError: SkillSetCodedError {
     public var code: String { "SKILL_ASSET_UNSAFE" }

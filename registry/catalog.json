@@ -16,7 +16,6 @@
       "bytes": 12099,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -33,7 +32,6 @@
       "bytes": 1424783,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -50,7 +48,6 @@
       "bytes": 12818,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": [
         "scripts/__pycache__"
       ]
@@ -69,7 +66,6 @@
       "bytes": 93833,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": [
         "scripts/__pycache__",
         "tests/__pycache__"
@@ -89,7 +85,6 @@
       "bytes": 118268,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -106,7 +101,6 @@
       "bytes": 62374,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -123,7 +117,6 @@
       "bytes": 37621,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -140,7 +133,6 @@
       "bytes": 15009,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -157,7 +149,6 @@
       "bytes": 1742,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -174,7 +165,6 @@
       "bytes": 1478860,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -191,7 +181,6 @@
       "bytes": 17064,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": [
         "assets"
       ]
@@ -210,7 +199,6 @@
       "bytes": 3673,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -227,7 +215,6 @@
       "bytes": 3217589,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -244,7 +231,6 @@
       "bytes": 3457,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -261,7 +247,6 @@
       "bytes": 3313,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -278,7 +263,6 @@
       "bytes": 19817,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -295,7 +279,6 @@
       "bytes": 34699,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -312,7 +295,6 @@
       "bytes": 13966,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -329,7 +311,6 @@
       "bytes": 13425,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -346,7 +327,6 @@
       "bytes": 2713,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -363,7 +343,6 @@
       "bytes": 29742,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -380,7 +359,6 @@
       "bytes": 23036,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -397,7 +375,6 @@
       "bytes": 8836,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -414,7 +391,6 @@
       "bytes": 16838,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -431,7 +407,6 @@
       "bytes": 11778,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -448,7 +423,6 @@
       "bytes": 1014,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -465,7 +439,6 @@
       "bytes": 22648,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -482,7 +455,6 @@
       "bytes": 15874,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -499,7 +471,6 @@
       "bytes": 6734,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -516,7 +487,6 @@
       "bytes": 11840,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -533,7 +503,6 @@
       "bytes": 13915,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -550,7 +519,6 @@
       "bytes": 2370753,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -567,7 +535,6 @@
       "bytes": 11970,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -584,7 +551,6 @@
       "bytes": 87253,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -601,7 +567,6 @@
       "bytes": 9949,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -618,7 +583,6 @@
       "bytes": 11480,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -635,7 +599,6 @@
       "bytes": 8480,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -652,7 +615,6 @@
       "bytes": 297805,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -669,7 +631,6 @@
       "bytes": 27123,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -686,7 +647,6 @@
       "bytes": 9808,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -703,7 +663,6 @@
       "bytes": 6326,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -720,7 +679,6 @@
       "bytes": 14610,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -737,7 +695,6 @@
       "bytes": 14894,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -754,7 +711,6 @@
       "bytes": 9087,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -771,7 +727,6 @@
       "bytes": 8692,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -788,7 +743,6 @@
       "bytes": 876,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -805,7 +759,6 @@
       "bytes": 51285,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -822,7 +775,6 @@
       "bytes": 294,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -839,7 +791,6 @@
       "bytes": 392,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -856,7 +807,6 @@
       "bytes": 2162,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -873,7 +823,6 @@
       "bytes": 25300,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -890,7 +839,6 @@
       "bytes": 1081,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -907,7 +855,6 @@
       "bytes": 155904,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -924,7 +871,6 @@
       "bytes": 1424783,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -941,7 +887,6 @@
       "bytes": 10665,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -958,7 +903,6 @@
       "bytes": 572,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -975,7 +919,6 @@
       "bytes": 2948,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -992,7 +935,6 @@
       "bytes": 18695,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1009,7 +951,6 @@
       "bytes": 12807,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1026,7 +967,6 @@
       "bytes": 16204,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1043,7 +983,6 @@
       "bytes": 5958,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1060,7 +999,6 @@
       "bytes": 107382,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1077,7 +1015,6 @@
       "bytes": 88837,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1094,7 +1031,6 @@
       "bytes": 1620,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1111,7 +1047,6 @@
       "bytes": 323292,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1128,7 +1063,6 @@
       "bytes": 65122,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1145,7 +1079,6 @@
       "bytes": 8645,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1162,7 +1095,6 @@
       "bytes": 142616,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1179,7 +1111,6 @@
       "bytes": 346143,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1196,7 +1127,6 @@
       "bytes": 28086,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1213,7 +1143,6 @@
       "bytes": 293080,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1230,7 +1159,6 @@
       "bytes": 284332,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1247,7 +1175,6 @@
       "bytes": 23328,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1264,7 +1191,6 @@
       "bytes": 52526,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1281,7 +1207,6 @@
       "bytes": 7990,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1298,7 +1223,6 @@
       "bytes": 104023,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1315,7 +1239,6 @@
       "bytes": 4927,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1332,7 +1255,6 @@
       "bytes": 19253,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1349,7 +1271,6 @@
       "bytes": 11933,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1366,7 +1287,6 @@
       "bytes": 295686,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1383,7 +1303,6 @@
       "bytes": 2460,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1400,7 +1319,6 @@
       "bytes": 1248102,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1417,7 +1335,6 @@
       "bytes": 39126,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1434,7 +1351,6 @@
       "bytes": 41582,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1451,7 +1367,6 @@
       "bytes": 61385,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1468,7 +1383,6 @@
       "bytes": 223086,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1485,7 +1399,6 @@
       "bytes": 58721,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1502,7 +1415,6 @@
       "bytes": 5898,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1519,7 +1431,6 @@
       "bytes": 4626,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1536,7 +1447,6 @@
       "bytes": 118268,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1553,7 +1463,6 @@
       "bytes": 59795,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1570,7 +1479,6 @@
       "bytes": 2662,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1587,7 +1495,6 @@
       "bytes": 3712,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1604,7 +1511,6 @@
       "bytes": 160982,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1621,7 +1527,6 @@
       "bytes": 196131,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1638,7 +1543,6 @@
       "bytes": 5298,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1655,7 +1559,6 @@
       "bytes": 62374,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1672,7 +1575,6 @@
       "bytes": 13035,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1689,7 +1591,6 @@
       "bytes": 16838,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1706,7 +1607,6 @@
       "bytes": 24028,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1723,7 +1623,6 @@
       "bytes": 86084,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1740,7 +1639,6 @@
       "bytes": 7834,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1757,7 +1655,6 @@
       "bytes": 7966,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1774,7 +1671,6 @@
       "bytes": 72975,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1791,7 +1687,6 @@
       "bytes": 4790,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1808,7 +1703,6 @@
       "bytes": 13295,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1825,7 +1719,6 @@
       "bytes": 6637,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1842,7 +1735,6 @@
       "bytes": 1652,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1859,7 +1751,6 @@
       "bytes": 1703,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1876,7 +1767,6 @@
       "bytes": 1973,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1893,7 +1783,6 @@
       "bytes": 2796,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1931,7 +1820,6 @@
           "reason": "broken-or-cyclic-link"
         }
       ],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1948,7 +1836,6 @@
       "bytes": 4866,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1965,7 +1852,6 @@
       "bytes": 20023,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1982,7 +1868,6 @@
       "bytes": 15009,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -1999,7 +1884,6 @@
       "bytes": 15378,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -2016,7 +1900,6 @@
       "bytes": 27205,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -2033,7 +1916,6 @@
       "bytes": 6953,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -2050,7 +1932,6 @@
       "bytes": 23440,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -2067,7 +1948,6 @@
       "bytes": 31100,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -2084,7 +1964,6 @@
       "bytes": 92413,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -2101,7 +1980,6 @@
       "bytes": 5822,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -2118,7 +1996,6 @@
       "bytes": 888,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -2135,7 +2012,6 @@
       "bytes": 8803,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -2152,7 +2028,6 @@
       "bytes": 18208,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -2169,7 +2044,6 @@
       "bytes": 127643,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -2186,7 +2060,6 @@
       "bytes": 19972,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -2203,7 +2076,6 @@
       "bytes": 6766,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -2220,7 +2092,6 @@
       "bytes": 1813,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -2237,7 +2108,6 @@
       "bytes": 1742,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -2254,7 +2124,6 @@
       "bytes": 5272,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -2271,7 +2140,6 @@
       "bytes": 11990,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -2288,7 +2156,6 @@
       "bytes": 7332,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -2305,7 +2172,6 @@
       "bytes": 18033,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -2322,7 +2188,6 @@
       "bytes": 10366,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -2339,7 +2204,6 @@
       "bytes": 4611,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -2356,7 +2220,6 @@
       "bytes": 3087,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -2373,7 +2236,6 @@
       "bytes": 3178,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -2390,7 +2252,6 @@
       "bytes": 5853,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -2407,7 +2268,6 @@
       "bytes": 17064,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -2424,7 +2284,6 @@
       "bytes": 12651,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -2441,7 +2300,6 @@
       "bytes": 19302,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -2458,7 +2316,6 @@
       "bytes": 1158,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -2475,7 +2332,6 @@
       "bytes": 554,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -2492,7 +2348,6 @@
       "bytes": 12031,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -2509,7 +2364,6 @@
       "bytes": 9091,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -2526,7 +2380,6 @@
       "bytes": 12855,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -2543,7 +2396,6 @@
       "bytes": 42445,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -2560,7 +2412,6 @@
       "bytes": 13719,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     },
     {
@@ -2577,7 +2428,6 @@
       "bytes": 3795,
       "integrity": "snapshotted",
       "issues": [],
-      "licenseReview": "required",
       "excludedPaths": []
     }
   ]

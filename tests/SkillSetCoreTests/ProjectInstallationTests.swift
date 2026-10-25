@@ -129,7 +129,7 @@ private struct InstallationFixture {
     }
 
     func saveSkill(_ slug: String) throws -> SkillEntry {
-        try paths.makeLibraryStore(home: root.appendingPathComponent("home")).save(
+        try paths.makeLibraryStore().save(
             SkillEditorDraft(slug: slug, document: "---\nname: \(slug)\ndescription: 用于验证项目安装\n---\n\n# \(slug)\n"), repositoryRoot: nil
         )
     }

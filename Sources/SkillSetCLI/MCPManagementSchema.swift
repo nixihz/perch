@@ -22,13 +22,13 @@ extension MCPStdioServer {
             ["type": "array", "maxItems": 200, "items": ["type": "object", "additionalProperties": false, "properties": fields, "required": required]]
         }
         var result: [[String: Any]] = []
-        func add(_ name: String, _ description: String, _ properties: [String: Any], _ required: [String], read: Bool = false, destructive: Bool = false, open: Bool = false) {
-            result.append(tool(name: name, description: description, properties: properties, required: required, readOnly: read, destructive: destructive, idempotent: read || destructive, openWorld: open))
+        func add(_ name: String, _ description: String, _ properties: [String: Any], _ required: [String], read: Bool = false, destructive: Bool = false, idempotent: Bool? = nil, open: Bool = false) {
+            result.append(tool(name: name, description: description, properties: properties, required: required, readOnly: read, destructive: destructive, idempotent: idempotent ?? (read || destructive), openWorld: open))
         }
         add("skills_get", "读取技能元数据与完整 SKILL.md。", ["skillId": text], ["skillId"], read: true)
-        add("skills_create", "新建个人技能，保存到本机技能库；不部署。", ["slug": text, "document": document], ["slug", "document"])
-        add("skills_update", "编辑个人技能完整 SKILL.md，保留附属文件并创建新版本；来源技能需创建个人副本。", ["skillId": text, "document": document], ["skillId", "document"])
-        add("skills_delete", "从技能库删除技能。custom 中的文件一并删除；跟随来源的技能只去掉库中的软链。不改已部署的项目文件。", ["skillId": text], ["skillId"], destructive: true)
+        add("skills_create", "新建技能；可用 sourceSkillId 复制已有技能的完整包和来源证据，再用 document 替换正文。slug 必须是未占用的新技能名；不主动部署。", ["slug": text, "document": document, "sourceSkillId": text], ["slug", "document"])
+        add("skills_update", "原地编辑 custom 技能的 SKILL.md 并保留附属文件。已软链部署的内容立即跟随；复制部署不变。来源技能需用 skills_create 的 sourceSkillId 复制完整包。", ["skillId": text, "document": document], ["skillId", "document"], destructive: true)
+        add("skills_delete", "从技能库删除技能；custom 文件一并删除，跟随来源的条目只移除库内软链。已软链部署的技能会失效，复制部署不变；不会移除项目中的链接或引用。", ["skillId": text], ["skillId"], destructive: true)
         add("templates_list", "列出或搜索 AGENTS.md / CLAUDE.md 规则片段及正文。", ["query": query], [], read: true)
         add("templates_get", "按标识读取规则片段。", ["templateId": text], ["templateId"], read: true)
         let template: [String: Any] = ["title": ["type": "string", "maxLength": 80], "purpose": ["type": "string", "maxLength": 500], "body": ["type": "string", "maxLength": 256 * 1_024]]
@@ -44,9 +44,9 @@ extension MCPStdioServer {
         add("presets_update", "更新指定预设字段，未提供的组件保留，保存时递增 revision。", merging(preset, ["presetId": text]), ["presetId"])
         add("presets_delete", "删除本机预设，不卸载已安装组件。", ["presetId": text], ["presetId"], destructive: true)
         add("sources_get", "读取来源预览及其全部候选技能、固定版本和许可线索。", ["previewId": uuid], ["previewId"], read: true)
-        add("sources_update", "重新同步并替换来源，失败保留旧记录；ref 空字符串表示使用默认版本。", ["previewId": uuid, "url": text, "ref": ["type": "string", "maxLength": 256]], ["previewId"], open: true)
-        add("sources_delete", "删除来源缓存与搜索索引；独立导入的个人技能、已部署版本保留。", ["previewId": uuid], ["previewId"], destructive: true)
-        add("sources_import_skill", "把来源中的一个技能加入技能库。mode 为 symlink 时跟随来源，为 copy 时复制实体；不启用。", ["previewId": uuid, "path": text, "slug": text, "mode": ["type": "string", "enum": ["symlink", "copy"]], "category": text], ["previewId", "path"])
+        add("sources_update", "重新同步并替换来源，失败保留旧记录；ref 空字符串表示使用默认版本。跟随来源的库条目和软链部署会同步变化，复制内容不变。", ["previewId": uuid, "url": text, "ref": ["type": "string", "maxLength": 256]], ["previewId"], destructive: true, idempotent: false, open: true)
+        add("sources_delete", "删除来源缓存；跟随该来源的技能库软链和对应软链部署会失效。复制到 custom 或部署目标的实体内容保留，项目链接与引用不自动移除。", ["previewId": uuid], ["previewId"], destructive: true)
+        add("sources_import_skill", "把来源中的一个完整技能包加入技能库。mode 默认 symlink，跟随来源更新和删除；copy 复制到 custom，不跟随来源。不主动部署。", ["previewId": uuid, "path": text, "slug": text, "mode": ["type": "string", "enum": ["symlink", "copy"]], "category": text], ["previewId", "path"])
         add("projects_create", "显式登记绝对路径项目，建立后续计划可选目标；不写项目或宿主文件。", ["projectPath": text, "name": text, "agents": agents], ["projectPath"])
         add("projects_update", "更新项目名称和登记宿主，不移动目录或修改已部署选择。", ["projectId": uuid, "name": text, "agents": agents], ["projectId"])
         add("projects_delete", "取消项目登记，不删除目录、不卸载技能或规则。", ["projectId": uuid], ["projectId"], destructive: true)

@@ -56,7 +56,8 @@ class CLIIntegrationTests(unittest.TestCase):
                 state, "projects", "add", str(project), "--name", "Fixture", "--json"
             ).stdout
         )
-        source = root / "home" / ".agents" / "skills" / "stc"
+        # 技能库放在栖集私有库存里，不再占用 ~/.agents/skills 这类通用目录。
+        source = state / "skills" / "library" / "stc"
         source.mkdir(parents=True)
         (source / "SKILL.md").write_text("---\nname: stc\ndescription: CLI installation fixture\n---\nComplete skill body\n", encoding="utf-8")
         self.skill_id = json.loads(self.run_cli(state, "skills", "search", "stc", "--json").stdout)["skills"][0]["id"]

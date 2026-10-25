@@ -82,6 +82,109 @@ class MCPManagementTests(unittest.TestCase):
         self.assertEqual(installed.read_text(), edited)
         self.assertFalse((self.state / "sources" / saved["path"]).exists())
 
+    def test_skill_mutations_report_effects_on_live_project_links(self):
+        skill = self.tool("skills_create", {"slug": "sample", "document": self.document()})["skill"]
+        project = self.tool("projects_create", {"projectPath": str(self.project)})["project"]
+        plan = self.tool("skills_install", {"projectId": project["id"], "skillIds": [skill["id"]]})
+        self.approve_apply(plan)
+        installed = self.project / ".agents/skills/sample/SKILL.md"
+        edited = self.document(body="软链立即跟随编辑。")
+        updated = self.rpc("tools/call", {"name": "skills_update", "arguments": {"skillId": skill["id"], "document": edited}})
+        self.assertFalse(updated["isError"])
+        self.assertEqual(installed.read_text(), edited)
+        self.assertIn("软链部署立即跟随", " ".join(updated["structuredContent"]["warnings"]))
+        deleted = self.rpc("tools/call", {"name": "skills_delete", "arguments": {"skillId": skill["id"]}})
+        self.assertFalse(deleted["isError"])
+        self.assertIn("软链部署会失效", " ".join(deleted["structuredContent"]["warnings"]))
+        self.assertTrue(installed.parent.is_symlink())
+        self.assertFalse(installed.exists())
+        self.assertNotIn("已部署内容和引用保留", deleted["content"][0]["text"])
+
+    def test_create_from_skill_copies_complete_package_and_rejects_overwrite(self):
+        source = self.root / "source"
+        (source / "scripts").mkdir(parents=True)
+        (source / "SKILL.md").write_text(self.document(body="运行 scripts/check.sh。"))
+        script = source / "scripts/check.sh"
+        script.write_text("#!/bin/sh\nexit 0\n")
+        script.chmod(0o755)
+        (source / "LICENSE").write_text("测试许可原文")
+        preview = self.tool("sources_preview", {"url": str(source)})
+        original = self.tool("sources_import_skill", {"previewId": preview["id"], "path": preview["candidates"][0]["path"], "slug": "sample", "mode": "symlink"})["skill"]
+        edited = self.document(body="复制后仍运行 scripts/check.sh。")
+        self.tool("skills_create", {"sourceSkillId": original["id"], "slug": "sample", "document": edited}, error="LIBRARY_DUPLICATE")
+        self.tool("skills_create", {"sourceSkillId": "missing", "slug": "new", "document": edited}, error="RESOURCE_NOT_FOUND")
+        copied = self.tool("skills_create", {"sourceSkillId": original["id"], "slug": "sample-copy", "document": edited})["skill"]
+        destination = self.state / "sources/custom/sample-copy"
+        self.assertEqual((destination / "scripts/check.sh").read_bytes(), script.read_bytes())
+        self.assertTrue((destination / "scripts/check.sh").stat().st_mode & 0o111)
+        self.assertEqual((destination / "LICENSE").read_text(), "测试许可原文")
+        self.assertEqual((destination / "SKILL.md").read_text(), edited)
+        metadata = json.loads((self.state / "skill-categories.json").read_text())
+        self.assertEqual(metadata["origins"][copied["id"]], metadata["origins"][original["id"]])
+        self.tool("skills_create", {"sourceSkillId": copied["id"], "slug": copied["id"], "document": self.document()}, error="LIBRARY_DUPLICATE")
+        self.assertEqual((destination / "SKILL.md").read_text(), edited)
+        self.assertNotEqual((source / "SKILL.md").read_text(), edited)
+        self.assertEqual(self.tool("skills_get", {"skillId": original["id"]})["document"], self.document(body="运行 scripts/check.sh。"))
+        self.tool("sources_delete", {"previewId": preview["id"]})
+        self.assertEqual(self.tool("skills_get", {"skillId": copied["id"]})["document"], edited)
+        self.assertTrue((destination / "scripts/check.sh").exists())
+
+    def test_cached_skill_package_detects_nested_edits_additions_removal_and_permissions(self):
+        self.tool("skills_create", {"slug": "sample", "document": self.document()})
+        package = self.state / "sources/custom/sample"
+        (package / "scripts").mkdir()
+        script = package / "scripts/check.sh"
+        script.write_text("exit 0\n")
+        previous = self.tool("skills_get", {"skillId": "sample"})["skill"]["contentHash"]
+        def edit_preserving_mtime():
+            before = script.stat()
+            script.write_text("exit 1\n")
+            os.utime(script, ns=(before.st_atime_ns, before.st_mtime_ns))
+        for change in [
+            edit_preserving_mtime,
+            lambda: script.chmod(0o755),
+            lambda: (package / "scripts/extra.txt").write_text("新文件"),
+            lambda: (package / "scripts/extra.txt").rename(package / "scripts/renamed.txt"),
+            lambda: (package / "scripts/renamed.txt").unlink(),
+        ]:
+            change()
+            current = self.tool("skills_search", {"query": "sample"})["skills"][0]["contentHash"]
+            self.assertNotEqual(current, previous)
+            previous = current
+        project = self.tool("projects_create", {"projectPath": str(self.project)})["project"]
+        plan = self.tool("deployment_plan", {"projectId": project["id"], "skillIds": ["sample"], "agents": ["codex"], "installMethod": "copy"})
+        self.approve_apply(plan)
+        self.assertEqual((self.project / ".agents/skills/sample/scripts/check.sh").read_text(), "exit 1\n")
+
+    def test_package_cache_handles_internal_links_and_rejects_escaping_and_cyclic_links(self):
+        self.tool("skills_create", {"slug": "sample", "document": self.document()})
+        package = self.state / "sources/custom/sample"
+        (package / "scripts").mkdir()
+        script = package / "scripts/check.sh"
+        script.write_text("exit 0\n")
+        (package / "alias").symlink_to("scripts", target_is_directory=True)
+        first = self.tool("skills_get", {"skillId": "sample"})["skill"]
+        script.write_text("exit 1\n")
+        self.assertNotEqual(self.tool("skills_get", {"skillId": "sample"})["skill"]["contentHash"], first["contentHash"])
+        unsafe = package / "unsafe"
+        for destination in [str(self.root), "."]:
+            unsafe.symlink_to(destination, target_is_directory=True)
+            self.assertEqual(self.tool("skills_search", {"query": "sample"})["skills"][0]["integrity"], "blocked")
+            unsafe.unlink()
+            self.assertEqual(self.tool("skills_get", {"skillId": "sample"})["skill"]["integrity"], "snapshotted")
+
+    def test_incomplete_package_scan_does_not_reuse_stale_cache(self):
+        self.tool("skills_create", {"slug": "sample", "document": self.document()})
+        directory = self.state / "sources/custom/sample"
+        for _ in range(66):
+            directory /= "d"
+        directory.mkdir(parents=True)
+        script = directory / "check.sh"
+        script.write_text("exit 0\n")
+        first = self.tool("skills_get", {"skillId": "sample"})["skill"]["contentHash"]
+        script.write_text("exit 1\n")
+        self.assertNotEqual(self.tool("skills_get", {"skillId": "sample"})["skill"]["contentHash"], first)
+
     def test_template_preset_crud_and_live_deployment(self):
         template = self.tool("templates_create", {"title": "协作", "body": "使用中文。", "purpose": "测试"})["template"]
         preset = self.tool("presets_create", {"name": "协作预设", "instructionIds": [template["id"]]})["preset"]
@@ -200,9 +303,16 @@ class MCPManagementTests(unittest.TestCase):
         self.assertTrue(manifest.exists())
 
     def test_schema_rejects_unknown_fields_bad_types_and_nested_fields(self):
+        def filesystem_snapshot():
+            return {
+                str(path.relative_to(self.root)): os.readlink(path) if path.is_symlink() else path.read_bytes() if path.is_file() else None
+                for path in self.root.rglob("*")
+            }
+        baseline = filesystem_snapshot()
         cases = [
             ("skills_delete", {"skillId": "personal/example", "confirmed": True}),
             ("skills_create", {"slug": 9, "document": self.document()}),
+            ("skills_create", {"slug": "new", "document": self.document(), "sourceSkillId": True}),
             ("skills_search", {"query": "", "limit": True}),
             ("skills_search", {"query": "", "limit": 201}),
             ("projects_create", {"projectPath": str(self.project), "agents": ["unknown"]}),
@@ -212,7 +322,21 @@ class MCPManagementTests(unittest.TestCase):
         for name, args in cases:
             with self.subTest(name=name, args=args):
                 self.tool(name, args, error="INVALID_ARGUMENTS")
-        self.assertFalse(self.state.exists())
+        self.assertEqual(filesystem_snapshot(), baseline)
+
+    def test_batch_annotations_cover_destructive_and_external_operations(self):
+        tools = {tool["name"]: tool for tool in self.rpc("tools/list")["tools"]}
+        self.assertTrue(tools["mcp_batch"]["annotations"]["destructiveHint"])
+        self.assertTrue(tools["mcp_batch"]["annotations"]["openWorldHint"])
+        self.assertTrue(tools["skills_update"]["annotations"]["destructiveHint"])
+        self.assertFalse(tools["sources_update"]["annotations"]["idempotentHint"])
+        self.tool("skills_create", {"slug": "sample", "document": self.document()})
+        batch = self.tool("mcp_batch", {"operations": [
+            {"name": "skills_delete", "arguments": {"skillId": "sample"}},
+            {"name": "skills_search", "arguments": {"query": "sample"}},
+        ]})
+        self.assertEqual(batch["succeeded"], 2)
+        self.assertEqual(batch["results"][1]["result"]["structuredContent"]["skills"], [])
 
     def test_mcp_batch_reuses_state_and_returns_partial_failures(self):
         response = self.rpc("tools/call", {"name": "mcp_batch", "arguments": {"operations": [

@@ -28,7 +28,7 @@ struct TemplateUseSheet: View {
                     ForEach(MCPHost.allCases) { Text($0.displayName).tag($0) }
                 }
                 .accessibilityIdentifier("templates.use.host")
-                Label(L10n.tr("影响当前用户在该 AI 工具中的全部项目。"), systemImage: "globe")
+                Label(L10n.tr("影响所选 AI 工具的全部项目。"), systemImage: "globe")
                     .font(AppFont.secondary).foregroundStyle(.orange)
             } else if model.projects.isEmpty {
                 Text(L10n.tr("请先添加项目目录，再使用片段。"))
@@ -60,7 +60,7 @@ struct TemplateUseSheet: View {
                         ForEach(preview.paths, id: \.self) { Text($0).font(AppFont.code).textSelection(.enabled) }
                         Text(L10n.tr("这份配置草稿包含 \(preview.skillCount) 个技能和 \(preview.instructionIDs.count) 个片段。"))
                             .font(AppFont.secondary).foregroundStyle(.secondary)
-                        Text(L10n.tr("预览会包含该草稿中所选技能和全部片段的变更；插件和 MCP 服务仍需分别预览。"))
+                        Text(L10n.tr("预览包含这份草稿所选技能和全部片段的变更；插件和 MCP 服务需分别预览。"))
                             .font(AppFont.secondary).foregroundStyle(.secondary)
                         Divider()
                         Text(L10n.tr("合成后的规则正文")).font(AppFont.heading)
@@ -74,7 +74,7 @@ struct TemplateUseSheet: View {
                 Text(L10n.text(error)).font(AppFont.secondary).foregroundStyle(.red).textSelection(.enabled)
                     .accessibilityIdentifier("templates.use.error")
             }
-            Text(L10n.tr("加入草稿后，下一步核对文件变更并批准。取消审批会保留草稿，不写入规则文件。"))
+            Text(L10n.tr("加入草稿后，核对变更并批准写入。关闭预览会保留草稿，规则文件保持不变。"))
                 .font(AppFont.secondary).foregroundStyle(.secondary)
             HStack {
                 Button(L10n.tr("取消")) { model.templateError = nil; dismiss() }.keyboardShortcut(.cancelAction)

@@ -60,7 +60,7 @@ struct TemplatesView: View {
             }
             if !model.lastTemplateWritePaths.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
-                    Label(L10n.tr("规则文件已写入并回读，AI 工具加载待验证。"), systemImage: "checkmark.circle")
+                    Label(L10n.tr("规则文件已写入并核对，请到 AI 工具中确认加载。"), systemImage: "checkmark.circle")
                         .foregroundStyle(AppColor.positive)
                     Text(model.lastTemplateWritePaths.joined(separator: "\n"))
                         .font(AppFont.code).textSelection(.enabled)
@@ -143,7 +143,7 @@ struct TemplatesView: View {
                 }
                 if referenceState.key == model.selectedTemplateID, referenceState.snapshot != nil,
                    references.isEmpty && !referenceState.isLoading && referenceError == nil {
-                    Text(L10n.tr("尚未被配置或预设引用。点击“用于配置…”开始使用。"))
+                    Text(L10n.tr("尚未被配置或预设引用。点击「用于配置…」开始使用。"))
                         .font(AppFont.secondary).foregroundStyle(.secondary)
                 } else if !references.isEmpty {
                     ForEach(references) { reference in
@@ -215,7 +215,7 @@ struct TemplatesView: View {
                         }
                         if matches.isEmpty {
                             Text(L10n.text(model.templateLibraryError != nil ? "片段列表暂不可用，请先修复文件并重新读取。"
-                                : query.isEmpty ? "还没有片段，点击“新增片段”开始。" : "没有匹配的片段，换个关键词或清空搜索。"))
+                                : query.isEmpty ? "还没有片段，点击「新增片段」开始。" : "没有匹配的片段，换个关键词或清空搜索。"))
                                 .font(AppFont.secondary).foregroundStyle(.secondary).padding(.vertical, 12)
                         }
                     }
@@ -334,9 +334,9 @@ struct TemplatesView: View {
         } else {
             if model.templateLibraryError != nil {
                 EmptyState(icon: "exclamationmark.triangle", title: L10n.tr("片段库暂不可用"),
-                           detail: L10n.tr("修复上方文件后点击“重新读取”，无需重启应用。"))
+                           detail: L10n.tr("修复上方文件后点击「重新读取」，无需重启应用。"))
             } else {
-                EmptyState(icon: "text.badge.checkmark", title: L10n.tr("选择一个 AGENTS 片段"), detail: L10n.tr("在左侧选择片段查看正文，或点击“新增片段”创建规则。"))
+                EmptyState(icon: "text.badge.checkmark", title: L10n.tr("选择一个 AGENTS 片段"), detail: L10n.tr("在左侧选择片段查看正文，或点击「新增片段」创建规则。"))
             }
         }
     }

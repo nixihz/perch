@@ -98,7 +98,7 @@ struct PluginsView: View {
                 do { try library.remove(source.id); deleting = nil; reload() }
                 catch { self.error = UserFacingText.error(error) }
             }
-            Button(L10n.tr("取消"), role: .cancel) { deleting = nil }
+            Button(L10n.tr("先不移除"), role: .cancel) { deleting = nil }
         } message: {
             Text(L10n.tr("移除来源及栖集中的隔离副本，保留原始目录和已有插件安装。"))
         }
@@ -140,7 +140,7 @@ struct PluginsView: View {
                                 Button(L10n.tr("重新读取")) { detailRevision += 1 }
                             }
                             if inventory?.records.isEmpty == true && !detailState.isLoading && detailError == nil {
-                                Text(L10n.tr("没有发现可识别的插件清单；该来源仍可保留，宿主兼容性需要另行核对。"))
+                                Text(L10n.tr("没有找到可识别的插件清单，请检查来源目录，并确认 AI 工具是否支持这个插件。"))
                                     .font(AppFont.secondary).foregroundStyle(.secondary)
                             }
                             ForEach(inventory?.records ?? []) { plugin in
@@ -181,7 +181,7 @@ struct PluginsView: View {
                     SurfaceCard {
                         VStack(alignment: .leading, spacing: 12) {
                             Text(L10n.tr("按需配置")).font(AppFont.heading)
-                            Text(L10n.tr("在全局配置或项目中选择 AI 工具，再打开插件配置。远程市场安装仍由宿主取得本机包后生成计划。"))
+                            Text(L10n.tr("到「全局配置」或「项目」选择插件并预览变更；请先在 AI 工具中下载所需插件包。"))
                                 .font(AppFont.secondary).foregroundStyle(.secondary)
                             HStack {
                                 Button(L10n.tr("前往全局配置")) { model.section = .globalConfiguration }
@@ -250,6 +250,10 @@ private struct PluginSourceEditor: View {
                 if panel.runModal() == .OK, let url = panel.url { address = url.path; ref = "" }
             }
             AppFormField(L10n.tr("分支、标签或提交（可选）")) { TextField("", text: $ref) }
+            if address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text(L10n.tr("请填写仓库链接，或选择本地目录。"))
+                    .font(AppFont.secondary).foregroundStyle(.secondary)
+            }
             if let error { Text(L10n.text(error)).font(AppFont.secondary).foregroundStyle(.red) }
             if busy { ProgressView().controlSize(.small) }
             HStack {

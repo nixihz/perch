@@ -76,7 +76,24 @@ enum UserFacingText {
         return message
     }
 
+    /// 批量结果里的失败原因只有稳定错误码，这里补成用户可读的原因。
+    static func message(forCode code: String) -> String {
+        errorMessage(SkillSetCodedFailure(code: code))
+    }
+
     private static func errorMessage(_ error: Error) -> String {
+        if case let DeploymentError.symlinkDetected(path) = error {
+            if path.hasSuffix("/.claude/skills") {
+                return "Claude Code 的技能文件夹链接到了其他位置，暂时无法保存。请改用独立文件夹。"
+            }
+            if path.hasSuffix("/.agents/skills") {
+                return "Codex 的技能文件夹链接到了其他位置，暂时无法保存。请改用独立文件夹。"
+            }
+            if URL(fileURLWithPath: path).deletingLastPathComponent().lastPathComponent == "skills" {
+                return "已有同名技能链接，无法替换。请先移走这个链接，再保存。"
+            }
+            return "要保存的位置链接到了其他位置，栖集没有修改它。请打开所在文件夹处理后再试。"
+        }
         // 只展示由 Core 定义的原因与文件路径，不回显解码器或外部进程的原始异常。
         if let globalError = error as? GlobalConfigurationError,
            case .verificationFailed = globalError {
@@ -89,7 +106,7 @@ enum UserFacingText {
         if let code {
             switch code {
             case "HARNESS_SCOPE_CONFLICT":
-                return "本次变化也会修改另一个 AI 工具，当前计划未生成。请核对共用技能、规则和安装方式；若需共同更新，可通过 CLI 或 MCP 明确选择多个工具生成计划。"
+                return "这些变更也会影响另一个 AI 工具，请返回配置页核对共用技能、规则和安装方式后重新预览。"
             case "PLUGIN_SOURCE_CHANGED":
                 return "插件内容在扫描后已改变，请重新扫描并选择后再收录。"
             case "PLUGIN_SOURCE_COLLECTED":
@@ -113,11 +130,11 @@ enum UserFacingText {
             case "SKILLS_SH_RESPONSE_INVALID":
                 return "skills.sh 返回了无法识别的响应，请稍后重试。"
             case "SKILLS_SH_SKILL_ID_INVALID":
-                return "这个目录条目缺少可用的技能标识，无法安装。"
+                return "这项结果缺少技能标识，请到 skills.sh 核对。"
             case "SKILLS_SH_INVALID_SOURCE":
                 return "这个目录条目没有可用的 GitHub 仓库，请到 skills.sh 查看安装说明。"
             case "SKILLS_SH_SKILL_NOT_FOUND":
-                return "在来源仓库的当前提交中找不到这个技能，请到 skills.sh 核对条目。"
+                return "来源仓库的当前版本里没有这个技能，请到 skills.sh 核对。"
             case "SKILLS_SH_AMBIGUOUS_SKILL":
                 return "来源仓库中有多个同名技能，无法确定要安装哪一个，请换一个目录条目。"
             case "SKILL_FILE_LIMIT_EXCEEDED":
@@ -131,13 +148,25 @@ enum UserFacingText {
             case "LIBRARY_STALE":
                 return "技能内容已改变。请先复制保留未保存的改动，再关闭并重新打开编辑器。"
             case "LIBRARY_CORRUPT":
-                return "本机技能库索引无法读取，请检查应用数据目录；已有版本仍保留在 packages 中。"
+                return "技能库记录无法读取，请检查栖集的数据目录；已有技能版本仍保留。"
+            case "PLAN_NOT_FOUND":
+                return "找不到这份计划，请返回配置页重新预览变更。"
+            case "PLAN_INVALID", "PLAN_INVALID_STATE", "PLUGIN_STAGED_COMMAND_INVALID":
+                return "这份计划无法使用，请重新预览并核对变更后再写入。"
+            case "OPERATION_NOT_FOUND", "PLUGIN_OPERATION_CORRUPT":
+                return "操作记录缺失或无法读取，请检查备份和目标文件后再试。"
+            case "OFFLINE_OBJECT_MISSING", "OFFLINE_OBJECT_CORRUPT", "OBJECT_STORE_UNSAFE", "OBJECT_DIGEST_INVALID":
+                return "本机保存的技能版本缺失或无法读取，请检查技能库并从来源重新加入。"
+            case "TEMPLATE_INVALID":
+                return "片段无法保存，请检查名称和规则正文后再试。"
+            case "PRESET_INVALID":
+                return "预设无法保存，请检查名称和所选内容后再试。"
             case "PLAN_EXPIRED", "PLAN_STALE", "PLAN_DIGEST_MISMATCH", "PLUGIN_STATE_STALE", "PROJECT_LOCK_STALE":
                 return "计划已过期或目标已改变，请重新生成计划并审阅。"
             case "APPROVAL_REQUIRED":
                 return "请先在本机审阅并批准这份计划。"
             case "PLAN_ALREADY_APPLIED":
-                return "这份计划已经执行，无需再次执行。"
+                return "这份计划已完成，请重新读取配置查看结果。"
             case "PLAN_NO_CHANGES":
                 return "没有需要写入的变更，请先调整项目草稿。"
             case "RECOVERY_REQUIRED", "ROLLBACK_CONFLICT", "PLUGIN_EXECUTION_UNCERTAIN":
@@ -161,7 +190,7 @@ enum UserFacingText {
             case "SKILL_BLOCKED", "SKILL_ASSET_UNSAFE":
                 return "技能未通过完整性检查，请先修复来源，再重新生成快照。"
             case "SKILL_TARGET_CONFLICT":
-                return "项目已有同名技能且内容不同，本应用不会覆盖。请先核对差异或取消该技能。"
+                return "目标目录已有同名技能且内容不同，请先核对差异，或取消选择这个技能。"
             case "RULE_TARGET_CONFLICT":
                 return "已有同标记规则不属于本应用，请核对规则来源和内容后再配置。"
             case "SKILL_MANAGED_DRIFT":
@@ -169,7 +198,7 @@ enum UserFacingText {
             case "RULE_MANAGED_DRIFT":
                 return "栖集写入的规则已被修改，请先核对并保留改动，再重新生成计划。"
             case "INSTRUCTION_NOT_FOUND":
-                return "找不到AGENTS 片段，请在草稿中重新选择。"
+                return "找不到 AGENTS 片段，请在草稿中重新选择。"
             case "SELECTION_LIMIT_EXCEEDED":
                 return "一次最多选择 200 个技能，请减少选择后重试。"
             case "SOURCE_INVALID_URL", "SOURCE_HOST_NOT_ALLOWED":
@@ -185,13 +214,13 @@ enum UserFacingText {
             case "SOURCE_PREVIEW_CORRUPT":
                 return "保存的来源预览无法读取，请重新预览仓库。"
             case "MCP_LIBRARY_DUPLICATE":
-                return "配置库或入库选择中存在同名服务，请调整名称或只选一个候选。"
+                return "配置库或所选结果中有同名服务，请修改名称或只保留一个。"
             case "MCP_LIBRARY_SELECTION_MISSING":
                 return "所选 MCP 服务已从配置库删除，请移除引用后重新预览。"
             case "MCP_LIBRARY_SCAN_CHANGED":
-                return "MCP 配置在扫描后已改变，请重新扫描并选择后再入库。"
+                return "MCP 配置在扫描后已改变，请重新扫描后再加入配置库。"
             case "MCP_LIBRARY_CONNECTION_MODIFIED":
-                return "配置库写入的 MCP 服务已被修改或移除，请在「已有连接」中核对并保留改动。"
+                return "栖集写入的 MCP 服务已被修改或移除，请到「MCP 服务 → AI 工具中的配置」核对改动。"
             case "MCP_CONFIG_CONFLICT", "MCP_CONFIG_NOT_OWNED":
                 return "已有同名 MCP 服务不属于本应用，请换一个名称，或先在原工具中处理。"
             case "MCP_CONFIG_CORRUPT", "MCP_CONFIG_ROOT_MISSING":
@@ -206,14 +235,18 @@ enum UserFacingText {
                 return "插件操作失败，请检查操作记录和插件状态后，再决定是否重试。"
             case "PLUGIN_NOT_FOUND", "PLUGIN_VERSION_NOT_FOUND", "PLUGIN_MANIFEST_UNREADABLE", "PLUGIN_INVENTORY_UNSAFE":
                 return "插件记录无法读取，请检查插件目录和访问权限后重新扫描。"
+            case "PLUGIN_ID_INVALID", "PLUGIN_MANIFEST_DIGEST_INVALID":
+                return "插件信息不完整，请重新扫描后选择插件。"
             case "PLUGIN_SCOPE_AMBIGUOUS", "PLUGIN_VERSION_AMBIGUOUS", "PLUGIN_SCOPE_UNSUPPORTED", "PLUGIN_PROJECT_REQUIRED":
                 return "无法确定插件的目标项目、安装范围或版本，请重新选择项目和插件。"
             case "PLUGIN_ACTION_UNSUPPORTED", "PLUGIN_ROLLBACK_UNSUPPORTED":
                 return "所属工具不支持这项插件操作，请到原工具中处理。"
             case "PLUGIN_NOT_INSTALLED", "PLUGIN_ALREADY_INSTALLED", "PLUGIN_ALREADY_ENABLED", "PLUGIN_ALREADY_DISABLED":
                 return "插件当前状态不适用这项操作，请重新扫描后选择。"
-            case "PATH_OUTSIDE_ROOT", "PATH_SYMLINK", "STAGING_INVALID":
-                return "目标路径未通过安全检查，请检查目录位置和符号链接，再重新生成计划。"
+            case "PATH_OUTSIDE_ROOT", "PATH_SYMLINK":
+                return "要保存的位置无法使用，请检查文件夹是否已被移动或替换。"
+            case "STAGING_INVALID":
+                return "保存准备失败，请重新预览后再试。"
             default:
                 if code.hasPrefix("MANAGED_BLOCK_") || code == "RULE_MARKER_INVALID" {
                     return "规则标记不完整或有冲突，请检查规则文件后重新生成计划。"
@@ -251,7 +284,7 @@ enum UserFacingText {
     }
 
     enum MetadataField: CaseIterable {
-        case sourceKind, trust, licenseReview, metadataReview, integrity, presetStatus, mergePolicy, component, scope
+        case sourceKind, trust, metadataReview, integrity, presetStatus, mergePolicy, component, scope
     }
 
     static func builtInDescription(_ value: String) -> String {
@@ -276,8 +309,6 @@ enum UserFacingText {
             labels = ["workspace": "本仓库", "local-snapshot": "本地快照", "git": "代码仓库"]
         case .trust:
             labels = ["local-owned": "本地自维护", "review-required": "待审查"]
-        case .licenseReview:
-            labels = ["required": "待审查", "per-skill": "需逐个技能审查"]
         case .metadataReview:
             labels = ["not-schema-validated": "格式尚未核验"]
         case .integrity:
@@ -306,16 +337,35 @@ enum UserFacingText {
         case project, plugin, source, plan, candidate
     }
 
+    static func isInformationalProjectNote(_ text: String) -> Bool {
+        let roots = [".agents/skills", ".claude/skills"]
+        let rules = ["AGENTS.md", "CLAUDE.md"]
+        return roots.contains { text == "\($0)：父目录是软链，未扫描。" }
+            || rules.contains { text == "\($0)：文件是软链，不读取受管块。" }
+    }
+
     // 只转换已知诊断；未知或夹带英文的外部文本不回显，也不据此推断成功状态。
     static func isInformationalPlanNote(_ text: String) -> Bool {
+        // 旧计划仍能打开，但已移除的逐技能许可提醒不再展示。
+        if text.range(of: #"^[^\r\n]+ 仍处于 [a-z-]+；许可审查为 [a-z-]+。$"#, options: .regularExpression) != nil {
+            return true
+        }
         // 仅识别核心生成的完整格式，未知或附带外部内容的提示仍保留给用户。
-        text.range(of: #"^对象存储新增 [0-9]+ 个对象，共 [0-9]+ 字节；项目锁绑定 manifest sha256:[0-9a-f]{64}。$"#, options: .regularExpression) != nil
+        return text.range(of: #"^对象存储新增 [0-9]+ 个对象，共 [0-9]+ 字节；项目锁绑定 manifest sha256:[0-9a-f]{64}。$"#, options: .regularExpression) != nil
     }
 
     static func diagnostic(_ text: String, context: DiagnosticContext) -> String {
         switch context {
         case .project:
-            if text.contains("软链") { return "项目中有符号链接，未将其视为本应用管理的内容，请检查链接目标。" }
+            if text == ".claude/skills：父目录是软链，未扫描。" {
+                return "Claude Code 的技能文件夹链接到了其他位置，未读取其中的技能。"
+            }
+            if text == ".agents/skills：父目录是软链，未扫描。" {
+                return "Codex 的技能文件夹链接到了其他位置，未读取其中的技能。"
+            }
+            if text.contains("软链") || text.contains("符号链接") {
+                return "项目中的文件链接保持原样，栖集没有修改它们。"
+            }
             if text.contains("没有来源") { return "项目中有来源不明的技能目录，请核对后重新选择技能。" }
             if text.contains("受管块") { return "项目规则无法读取，请检查规则标记是否完整。" }
             if text.contains("多个来源") { return "多个来源包含相同技能，请在草稿中明确选择来源。" }
@@ -327,21 +377,18 @@ enum UserFacingText {
             return "这个技能无法读取或未通过完整性检查，请修复来源后重新预览。"
         case .source:
             switch text {
-            case "内容指纹与许可提示不等于安全、合规或模型行为审核。":
-                return "内容指纹和许可提示不代表已完成安全、合规或行为审查。"
             case "预览只 clone 固定提交并读取文本，不执行仓库脚本、hooks、postinstall 或子模块。":
                 return "来源预览只读取固定版本的文本，不运行仓库脚本或读取子模块。"
             default:
-                return "来源包含无法识别的提示，请先核对仓库内容和许可，不要直接启用。"
+                return "来源包含无法识别的提示，请先核对仓库内容。"
             }
         case .plan:
             if isInformationalPlanNote(text) {
                 return "部署内容已保存到本机版本库，项目版本记录将随计划更新。"
             }
-            if text == "此操作影响当前用户在该 AI 工具中的全部项目。" { return "此操作影响当前用户在该 AI 工具中的全部项目。" }
+            if text == "此操作影响当前用户在该 AI 工具中的全部项目。" { return "影响所选 AI 工具的全部项目。" }
             if text.contains("保留原归属") { return "项目原有内容会保留，取消选择不会删除。" }
             if text.contains("缺少本机管理记录") { return "无法确认这些内容是否由栖集写入，会保留已有文件。请先核对来源和内容。" }
-            if text.contains("许可审查") { return "技能许可尚未完成审查，请核对许可后再批准。" }
             if text.hasPrefix("宿主：") { return "请核对上方的目标工具、安装范围和工作目录。" }
             if text.hasPrefix("目标配置：") { return "请核对上方列出的配置文件路径。" }
             if text.contains("白名单") { return "仅运行计划中列出的命令，不接受额外参数。" }
@@ -409,12 +456,12 @@ enum UserFacingText {
 
     static func licenseEvidence(_ evidence: String) -> String {
         switch evidence {
-        case "MIT · 仍需逐 skill 审查": "可能采用 MIT 许可，仍需逐个技能审查"
-        case "Apache-2.0 迹象 · 仍需逐 skill 审查": "可能采用 Apache-2.0 许可，仍需逐个技能审查"
-        case "GPL 迹象 · 需合规审查": "可能采用 GPL 许可，需合规审查"
-        case "检测到许可文件 · 未自动判定": "已找到许可文件，尚未确认许可类型"
-        case "未检测到根许可文件 · 禁止默认再分发": "未找到仓库许可文件，请勿直接再分发"
-        default: "许可尚未确认，请核对来源许可文件"
+        case "MIT", "MIT · 仍需逐 skill 审查": "MIT"
+        case "Apache-2.0", "Apache-2.0 迹象 · 仍需逐 skill 审查": "Apache-2.0"
+        case "GPL", "GPL 迹象 · 需合规审查": "GPL"
+        case "已找到许可文件", "检测到许可文件 · 未自动判定": "已找到许可文件"
+        case "未找到仓库许可文件", "未检测到根许可文件 · 禁止默认再分发": "未找到仓库许可文件"
+        default: "未记录许可信息"
         }
     }
 

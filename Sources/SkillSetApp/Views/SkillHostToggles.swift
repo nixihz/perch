@@ -47,19 +47,19 @@ struct SkillHostToggles: View {
         .buttonStyle(SkillHostButtonStyle(selected: selected))
         .disabled(!isEnabled(host))
         .accessibilityIdentifier("\(identifierPrefix).\(host.rawValue)")
-        .accessibilityLabel(L10n.tr("在 \(host.displayName) 中使用技能“\(skillName)”（草稿）"))
-        .accessibilityValue(selected ? L10n.tr("已开启") : L10n.tr("已关闭"))
+        .accessibilityLabel(L10n.tr("在 \(host.displayName) 草稿中选择「\(skillName)」"))
+        .accessibilityValue(selected ? L10n.tr("已选择") : L10n.tr("未选择"))
         .accessibilityAddTraits(selected ? [.isSelected] : [])
         .help(help(host, selected: selected))
     }
 
     private func help(_ host: MCPHost, selected: Bool) -> String {
         if !isEnabled(host) {
-            return L10n.tr("当前无法切换 \(host.displayName) 草稿中的技能“\(skillName)”。")
+            return L10n.tr("当前无法切换 \(host.displayName) 草稿中的「\(skillName)」。")
         }
         return selected
-            ? L10n.tr("从 \(host.displayName) 草稿中关闭“\(skillName)”；预览并批准后应用。")
-            : L10n.tr("在 \(host.displayName) 草稿中开启“\(skillName)”；预览并批准后应用。")
+            ? L10n.tr("从 \(host.displayName) 草稿中取消选择「\(skillName)」，预览后保存。")
+            : L10n.tr("在 \(host.displayName) 草稿中选择「\(skillName)」，预览后保存。")
     }
 }
 

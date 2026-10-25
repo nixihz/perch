@@ -58,7 +58,6 @@ public struct SkillEntry: Codable, Identifiable, Hashable, Sendable {
     public let bytes: Int
     public let integrity: String
     public let issues: [CatalogIssue]
-    public let licenseReview: String
     public let excludedPaths: [String]
 
     public var shortHash: String {
@@ -88,7 +87,6 @@ public struct SourceRecord: Codable, Identifiable, Hashable, Sendable {
     public let sourceDirty: Bool?
     public let snapshotPath: String?
     public let report: String?
-    public let licenseReview: String
     public let trust: String
 }
 

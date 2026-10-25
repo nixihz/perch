@@ -69,7 +69,7 @@ final class SkillEditorTests: XCTestCase {
             id: "workspace/external-demo", slug: "external-demo", declaredName: "external-demo",
             description: "外部来源测试条目", declaredVersion: nil, metadataReview: "reviewed",
             sourceId: "workspace", path: "skills/external-demo", contentHash: String(repeating: "a", count: 64),
-            fileCount: 1, bytes: 32, integrity: "snapshotted", issues: [], licenseReview: "ok", excludedPaths: []
+            fileCount: 1, bytes: 32, integrity: "snapshotted", issues: [], excludedPaths: []
         )
         let baseSnapshot = AppSnapshot.load().replacingCatalog(CatalogDocument(
             schemaVersion: 1, hashAlgorithm: "sha256:path-content-executable:v1", entries: [externalEntry]

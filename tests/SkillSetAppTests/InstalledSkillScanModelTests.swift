@@ -22,7 +22,7 @@ final class InstalledSkillScanModelTests: XCTestCase {
         try validIndex.write(to: indexURL)
         let model = InstalledSkillScanModel()
 
-        await model.scan(paths: paths, locations: locations, roots: [])
+        await model.scan(paths: paths, locations: locations, roots: [locations.skillsRoot(.codex)])
         XCTAssertNil(model.error)
         XCTAssertFalse(model.scanning)
         XCTAssertEqual(model.items.map(\.path), [original.path])
@@ -32,8 +32,8 @@ final class InstalledSkillScanModelTests: XCTestCase {
 
         // 真实索引读取失败必须保留用户正在处理的结果，不能静默清空勾选。
         try Data("BROKEN-INDEX-MARKER".utf8).write(to: indexURL)
-        await model.scan(paths: paths, locations: locations, roots: [])
-        XCTAssertEqual(model.error, "本机技能库索引无法读取，请检查应用数据目录；已有版本仍保留在 packages 中。")
+        await model.scan(paths: paths, locations: locations, roots: [locations.skillsRoot(.codex)])
+        XCTAssertEqual(model.error, "技能库记录无法读取，请检查栖集的数据目录；已有技能版本仍保留。")
         XCTAssertFalse(model.scanning)
         XCTAssertEqual(model.items.map(\.path), [original.path])
         XCTAssertEqual(model.items.first?.contentHash, observed.contentHash)
@@ -45,7 +45,7 @@ final class InstalledSkillScanModelTests: XCTestCase {
         try manager.createDirectory(at: added, withIntermediateDirectories: true)
         try Data("---\nname: added\ndescription: fixture\n---\nNew installation\n".utf8)
             .write(to: added.appendingPathComponent("SKILL.md"))
-        await model.scan(paths: paths, locations: locations, roots: [])
+        await model.scan(paths: paths, locations: locations, roots: [locations.skillsRoot(.codex)])
         XCTAssertNil(model.error)
         XCTAssertFalse(model.scanning)
         XCTAssertEqual(Set(model.items.map(\.path)), Set([original.path, added.path]))

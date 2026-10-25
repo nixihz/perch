@@ -141,7 +141,7 @@ public struct MCPConfigurationDraft: Codable, Hashable, Sendable {
         var issues: [String] = []
         let value = normalized()
         if value.name.range(of: #"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"#, options: .regularExpression) == nil {
-            issues.append("名称只能包含字母、数字、点、下划线或连字符。")
+            issues.append("名称最多 64 个字符，以字母或数字开头，只能包含字母、数字、点、下划线和连字符。")
         }
         if !["stdio", "streamable-http"].contains(value.transport) {
             issues.append("请选择 stdio 或 streamable-http 连接方式。")
@@ -224,7 +224,6 @@ public struct MCPConfigurationInspection: Codable, Identifiable, Hashable, Senda
     public let exists: Bool
     public let servers: [MCPObservedServer]
     public let issues: [String]
-
     public var id: String { "\(host.rawValue):\(scope.rawValue):\(configPath)" }
 
     public init(

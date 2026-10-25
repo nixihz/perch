@@ -8,13 +8,15 @@ struct SourcesView: View {
     @State private var deletingPreview: SourcePreviewRecord?
     @State private var importingSkill: SourceSkillImportDraft?
     @State private var browsingSkillsSh = false
+    @State private var checkedCandidatePaths: Set<String> = []
+    @State private var batchDraft: SourceSkillBatchDraft?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             PageActionHeader(
                 eyebrow: "SOURCE REGISTRY",
                 title: L10n.tr("技能来源"),
-                detail: L10n.tr("配置来源后同步到 ~/.perch，全部技能可在技能库搜索；也可浏览 skills.sh 目录，将技能安装到本机技能库。")
+                detail: L10n.tr("添加仓库或本地目录，同步后可在技能库搜索；也可从 skills.sh 选择技能加入。")
             ) {
                 Button {
                     browsingSkillsSh = true
@@ -58,6 +60,11 @@ struct SourcesView: View {
         .sheet(item: $importingSkill) { draft in
             SourceSkillImportSheet(model: model, initialDraft: draft)
         }
+        .sheet(item: $batchDraft) { draft in
+            SourceSkillBatchImportSheet(model: model, draft: draft) {
+                checkedCandidatePaths.subtract(draft.items.map(\.path))
+            }
+        }
         .sheet(isPresented: $browsingSkillsSh) {
             SkillsShBrowserSheet(model: model)
         }
@@ -74,12 +81,16 @@ struct SourcesView: View {
                 model.removeSourcePreview(preview.id)
                 deletingPreview = nil
             }
-            Button(L10n.tr("取消"), role: .cancel) { deletingPreview = nil }
+            Button(L10n.tr("先不删"), role: .cancel) { deletingPreview = nil }
         } message: { preview in
             Text(L10n.tr("将删除 \(preview.canonicalURL) 的来源配置、下载缓存和搜索条目。已部署的技能版本和项目配置保留。"))
         }
         .task {
             await model.reloadSourcePreviews()
+        }
+        .onChange(of: model.selectedPreviewID) { _, _ in
+            // 换来源后旧勾选不再对应当前列表。
+            checkedCandidatePaths.removeAll()
         }
     }
 
@@ -146,7 +157,7 @@ struct SourcesView: View {
         if let preview = model.selectedSourcePreview {
             sourcePreviewDetail(preview)
         } else {
-            EmptyState(icon: "arrow.down.doc", title: L10n.tr("选择一个来源"), detail: L10n.tr("选择左侧来源，查看路径、版本和许可审查状态。"))
+            EmptyState(icon: "arrow.down.doc", title: L10n.tr("选择一个来源"), detail: L10n.tr("选择左侧来源，查看技能、路径和版本。"))
         }
     }
 
@@ -240,7 +251,7 @@ struct SourcesView: View {
                                     .font(AppFont.secondary.monospaced())
                             }
                         }
-                        ForEach(preview.warnings, id: \.self) { warning in
+                        ForEach(preview.warnings.filter { $0 != "内容指纹与许可提示不等于安全、合规或模型行为审核。" }, id: \.self) { warning in
                             Text(L10n.text(UserFacingText.diagnostic(warning, context: .source)))
                                 .font(AppFont.secondary)
                                 .foregroundStyle(.secondary)
@@ -251,6 +262,7 @@ struct SourcesView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     Text(L10n.tr("发现的技能"))
                         .font(AppFont.heading)
+                    batchControls(preview: preview, candidates: candidates)
                     if candidates.isEmpty {
                         EmptyState(
                             icon: "doc.questionmark",
@@ -261,54 +273,150 @@ struct SourcesView: View {
                     }
                 }
                 ForEach(candidates, id: \.path) { candidate in
-                    VStack(alignment: .leading, spacing: 6) {
-                                    HStack(alignment: .firstTextBaseline) {
-                                        Text(candidate.declaredName)
-                                            .font(AppFont.body.weight(.semibold))
-                                        Spacer()
-                                        if let id = model.importedSkillID(preview: preview, candidate: candidate) {
-                                            Button(L10n.tr("在技能库查看")) { model.showLibrarySkill(id) }
-                                                .accessibilityIdentifier("sources.view.\(candidate.path)")
-                                        } else {
-                                            Button(L10n.tr("加入技能库…")) {
-                                                Task {
-                                                    importingSkill = await model.prepareSourceSkillImport(previewID: preview.id, path: candidate.path)
-                                                }
-                                            }
-                                            .disabled(model.isWorking || !candidate.issues.isEmpty || candidate.contentHash.isEmpty)
-                                            .accessibilityIdentifier("sources.import.\(candidate.path)")
-                                        }
-                                    }
-                                    Text(candidate.path)
-                                        .font(AppFont.secondary.monospaced())
-                                        .foregroundStyle(.secondary)
-                                        .textSelection(.enabled)
-                                    if !candidate.description.isEmpty {
-                                        Text(candidate.description)
-                                            .font(AppFont.secondary)
-                                            .foregroundStyle(.secondary)
-                                            .lineLimit(3)
-                                    }
-                                    HStack {
-                                        Text(candidate.contentHash.isEmpty ? L10n.tr("无内容指纹") : String(candidate.contentHash.prefix(16)) + "…")
-                                            .font(AppFont.metadata.monospaced())
-                                        Text(L10n.tr("· \(candidate.fileCount) 文件 · \(candidate.bytes) 字节"))
-                                            .font(AppFont.metadata)
-                                        Spacer()
-                                    }
-                                    .foregroundStyle(.secondary)
-                                    ForEach(candidate.issues, id: \.self) { issue in
-                                        Text(L10n.text(UserFacingText.diagnostic(issue, context: .candidate)))
-                                            .font(AppFont.secondary)
-                                            .foregroundStyle(.red)
-                                    }
-                    }
-                    .padding(11)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 9))
+                    candidateRow(preview: preview, candidate: candidate)
                 }
             }
         }
+    }
+
+    /// 未导入且内容完整的候选才能勾选；有完整性问题或没有指纹的条目保持单项导入的禁用状态。
+    private func isSelectable(preview: SourcePreviewRecord, candidate: SourceSkillCandidate) -> Bool {
+        model.importedSkillID(preview: preview, candidate: candidate) == nil
+            && candidate.issues.isEmpty && !candidate.contentHash.isEmpty
+    }
+
+    private func candidateRow(preview: SourcePreviewRecord, candidate: SourceSkillCandidate) -> some View {
+        let imported = model.importedSkillID(preview: preview, candidate: candidate)
+        let selectable = isSelectable(preview: preview, candidate: candidate)
+        return HStack(alignment: .top, spacing: 10) {
+            if selectable {
+                Toggle(isOn: Binding(
+                    get: { checkedCandidatePaths.contains(candidate.path) },
+                    set: { checked in
+                        if checked { checkedCandidatePaths.insert(candidate.path) }
+                        else { checkedCandidatePaths.remove(candidate.path) }
+                    }
+                )) {
+                    Text(L10n.tr("勾选技能") + " " + candidate.declaredName)
+                }
+                .labelsHidden()
+                .toggleStyle(.checkbox)
+                .accessibilityIdentifier("sources.check.\(candidate.path)")
+                .padding(.top, 2)
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(candidate.declaredName)
+                        .font(AppFont.body.weight(.semibold))
+                    Spacer()
+                    if let id = imported {
+                        Button(L10n.tr("在技能库查看")) { model.showLibrarySkill(id) }
+                            .accessibilityIdentifier("sources.view.\(candidate.path)")
+                    } else {
+                        Button(L10n.tr("加入技能库…")) {
+                            Task {
+                                importingSkill = await model.prepareSourceSkillImport(previewID: preview.id, path: candidate.path)
+                            }
+                        }
+                        .disabled(model.isWorking || !candidate.issues.isEmpty || candidate.contentHash.isEmpty)
+                        .accessibilityIdentifier("sources.import.\(candidate.path)")
+                    }
+                }
+                Text(candidate.path)
+                    .font(AppFont.secondary.monospaced())
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                if !candidate.description.isEmpty {
+                    Text(candidate.description)
+                        .font(AppFont.secondary)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(3)
+                }
+                HStack {
+                    Text(candidate.contentHash.isEmpty ? L10n.tr("无内容指纹") : String(candidate.contentHash.prefix(16)) + "…")
+                        .font(AppFont.metadata.monospaced())
+                    Text(L10n.tr("· \(candidate.fileCount) 文件 · \(candidate.bytes) 字节"))
+                        .font(AppFont.metadata)
+                    Spacer()
+                }
+                .foregroundStyle(.secondary)
+                ForEach(candidate.issues, id: \.self) { issue in
+                    Text(L10n.text(UserFacingText.diagnostic(issue, context: .candidate)))
+                        .font(AppFont.secondary)
+                        .foregroundStyle(.red)
+                }
+            }
+        }
+        .padding(11)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 9))
+    }
+
+    /// 批量入口：勾选后一次加入。已在技能库里的技能不参与勾选。
+    @ViewBuilder
+    private func batchControls(preview: SourcePreviewRecord, candidates: [SourceSkillCandidate]) -> some View {
+        let selectable = candidates.filter { isSelectable(preview: preview, candidate: $0) }
+        if !selectable.isEmpty {
+            // 计数与操作分开两行；窄栏下按钮换行，文字不被压缩也不被裁掉。
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    StatusBadge(text: L10n.tr("可加入 \(selectable.count) 个"), tone: .accent)
+                        .fixedSize(horizontal: true, vertical: false)
+                    StatusBadge(text: L10n.tr("已选 \(checkedCandidatePaths.count) 个"), tone: checkedCandidatePaths.isEmpty ? .neutral : .positive)
+                        .fixedSize(horizontal: true, vertical: false)
+                    Spacer(minLength: 0)
+                }
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 10) {
+                        selectAllButton(selectable: selectable)
+                        clearSelectionButton
+                        importSelectedButton(preview: preview, candidates: candidates)
+                    }
+                    VStack(alignment: .trailing, spacing: 8) {
+                        HStack(spacing: 10) {
+                            selectAllButton(selectable: selectable)
+                            clearSelectionButton
+                        }
+                        importSelectedButton(preview: preview, candidates: candidates)
+                    }
+                }
+            }
+        }
+    }
+
+    private func selectAllButton(selectable: [SourceSkillCandidate]) -> some View {
+        Button(L10n.tr("全选")) {
+            checkedCandidatePaths = Set(selectable.map(\.path))
+        }
+        .disabled(checkedCandidatePaths.count == selectable.count)
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private var clearSelectionButton: some View {
+        Button(L10n.tr("清空勾选")) { checkedCandidatePaths.removeAll() }
+            .disabled(checkedCandidatePaths.isEmpty)
+            .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private func importSelectedButton(preview: SourcePreviewRecord, candidates: [SourceSkillCandidate]) -> some View {
+        Button(L10n.tr("加入所选技能（\(checkedCandidatePaths.count)）")) {
+            openBatch(preview: preview, candidates: candidates)
+        }
+        .buttonStyle(AppButtonStyle(kind: .primary))
+        .disabled(checkedCandidatePaths.isEmpty || model.isWorking)
+        .fixedSize(horizontal: true, vertical: false)
+        .accessibilityIdentifier("sources.importBatch")
+    }
+
+    private func openBatch(preview: SourcePreviewRecord, candidates: [SourceSkillCandidate]) {
+        let chosen = candidates.filter { checkedCandidatePaths.contains($0.path) }
+        guard !chosen.isEmpty else { return }
+        batchDraft = SourceSkillBatchDraft(
+            preview: preview,
+            items: chosen.map { candidate in
+                SourceSkillBatchItem(path: candidate.path, slug: SourceSkillSlug.normalized(candidate.slug))
+            }
+        )
     }
 
     @ViewBuilder
@@ -395,7 +503,7 @@ struct SourceEditorSheet: View {
             HStack(spacing: 12) {
                 if model.isWorking {
                     ProgressView().controlSize(.small)
-                    Text(L10n.tr("正在下载并扫描技能，不会修改项目。"))
+                    Text(L10n.tr("正在读取来源并扫描技能，项目文件保持不变。"))
                         .font(AppFont.secondary)
                         .foregroundStyle(.secondary)
                 }

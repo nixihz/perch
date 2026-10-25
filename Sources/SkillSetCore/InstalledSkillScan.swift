@@ -22,19 +22,74 @@ extension SkillSetService {
     }
 
     /// 不组装完整服务快照。界面重扫只需要安装根和技能库指纹。
+    /// 官方技能目录只在首次初始化读取；之后只扫描调用方追加的目录。
     public static func scanInstalledSkills(
         paths: SkillSetRuntimePaths,
         locations: GlobalConfigurationLocations,
         additionalRoots: [URL] = []
     ) throws -> [InstalledSkillObservation] {
+        try scanInstalledSkills(paths: paths, locations: locations, additionalRoots: additionalRoots, includeOfficialPaths: false)
+    }
+
+    /// 首次初始化把已安装、且不是跟随技能来源的技能放进 custom。官方目录之后不再扫描。
+    static func adoptInstalledSkillsIfNeeded(paths: SkillSetRuntimePaths, locations: GlobalConfigurationLocations) throws {
+        let fm = FileManager.default
+        let marker = paths.sourcesRoot.appendingPathComponent(".adopted-installed-skills")
+        if fm.fileExists(atPath: marker.path) { return }
+        let store = paths.makeLibraryStore()
+        if fm.fileExists(atPath: store.libraryURL.path),
+           (try? fm.destinationOfSymbolicLink(atPath: store.libraryURL.path)) != nil { return }
+        _ = try store.loadLibrary()
+        try store.absorbExternalLibraryEntries(cacheSourcesRoot: paths.previewsRoot)
+        let observations = try scanInstalledSkills(
+            paths: paths, locations: locations, additionalRoots: [], includeOfficialPaths: true
+        )
+        let selected = observations.filter { item in
+            item.canImport && !resolvesInsideSkillSource(item.resolvedPath, paths: paths)
+        }
+        if !selected.isEmpty {
+            try importInstalledCopies(selected, store: store)
+        }
+        try store.linkUnreferencedCustomSkills()
+        try fm.createDirectory(at: marker.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data().write(to: marker)
+    }
+
+    static func officialInstalledSkillRoots(_ locations: GlobalConfigurationLocations) -> [URL] {
+        [
+            locations.configuredSkillsRoot(.codex),
+            locations.codexRoot.appendingPathComponent("skills"),
+            locations.configuredSkillsRoot(.claudeCode),
+        ]
+    }
+
+    /// 跟随技能来源的目录留在来源检出里，不复制进 custom。
+    static func resolvesInsideSkillSource(_ path: String, paths: SkillSetRuntimePaths) -> Bool {
+        let resolved = URL(fileURLWithPath: path).standardizedFileURL.path
+        let sources = paths.sourcesRoot.standardizedFileURL.path
+        let custom = paths.sourcesRoot.appendingPathComponent("custom").standardizedFileURL.path
+        let localImports = paths.sourcesRoot.appendingPathComponent("local-imports").standardizedFileURL.path
+        if resolved == custom || resolved.hasPrefix(custom + "/") { return false }
+        if resolved == localImports || resolved.hasPrefix(localImports + "/") { return false }
+        let cache = paths.previewsRoot.standardizedFileURL.path
+        if resolved == sources || resolved.hasPrefix(sources + "/") { return true }
+        if resolved == cache || resolved.hasPrefix(cache + "/") { return true }
+        return false
+    }
+
+    private static func scanInstalledSkills(
+        paths: SkillSetRuntimePaths,
+        locations: GlobalConfigurationLocations,
+        additionalRoots: [URL],
+        includeOfficialPaths: Bool
+    ) throws -> [InstalledSkillObservation] {
         try paths.migrateLegacyState()
-        let roots = [locations.libraryRoot, locations.configuredSkillsRoot(.codex), locations.codexRoot.appendingPathComponent("skills"),
-                     locations.configuredSkillsRoot(.claudeCode)] + additionalRoots
+        let roots = (includeOfficialPaths ? officialInstalledSkillRoots(locations) : []) + additionalRoots
         var seen = Set<String>()
         var seenEntries = Set<String>()
         var result: [InstalledSkillObservation] = []
         let fm = FileManager.default
-        let library = try paths.makeLibraryStore(home: locations.home).loadLibrary()
+        let library = try paths.makeLibraryStore().loadLibrary()
         // 已经在库里的技能不再当作可收录。指纹来自目录本身，不要求另写一份来源记录。
         let known = Set(library.origins.values.map(\.contentHash))
             .union(library.records.map(\.entry.contentHash).filter { !$0.isEmpty })
@@ -49,7 +104,7 @@ extension SkillSetService {
                     ? [root] : try fm.contentsOfDirectory(at: resolvedRoot, includingPropertiesForKeys: nil)
             } catch {
                 result.append(.init(path: root.path, resolvedPath: resolvedRoot.path, contentHash: nil,
-                                    managed: false, collected: false, issue: "目录无法读取，请重新选择此目录。"))
+                                    managed: false, collected: false, issue: "目录无法读取，请重新选择目录并检查访问权限。"))
                 continue
             }
             var jobs: [InstalledScanJob] = []
@@ -78,10 +133,13 @@ extension SkillSetService {
 
     /// 扫描到的技能直接复制进 custom，并在技能库留下同名软链。不另建 local-imports，也不改原安装。
     public func importInstalledSkills(_ selection: [InstalledSkillObservation]) throws {
+        try Self.importInstalledCopies(selection, store: libraryStore())
+    }
+
+    private static func importInstalledCopies(_ selection: [InstalledSkillObservation], store: SkillLibraryStore) throws {
         guard !selection.isEmpty, selection.allSatisfy(\.canImport), Set(selection.map(\.path)).count == selection.count else {
             throw SourceSkillImportError.changed
         }
-        let store = libraryStore()
         if FileManager.default.fileExists(atPath: store.libraryURL.path),
            (try? FileManager.default.destinationOfSymbolicLink(atPath: store.libraryURL.path)) != nil {
             throw SkillLibraryError.unsafePath
@@ -111,7 +169,7 @@ extension SkillSetService {
     static func absorbLocalImports(paths: SkillSetRuntimePaths, home: URL) throws {
         let fm = FileManager.default
         let root = paths.applicationSupportRoot.appendingPathComponent("sources/local-imports", isDirectory: true)
-        let store = paths.makeLibraryStore(home: home)
+        let store = paths.makeLibraryStore()
         if fm.fileExists(atPath: store.libraryURL.path),
            (try? fm.destinationOfSymbolicLink(atPath: store.libraryURL.path)) != nil { return }
         if fm.fileExists(atPath: root.path) {
@@ -175,8 +233,7 @@ extension SkillSetService {
               source.analysis.contentHash == contentHash else {
             throw SourceSkillImportError.changed
         }
-        let roots = [globalConfiguration.locations.libraryRoot,
-                     globalConfiguration.locations.configuredSkillsRoot(.codex),
+        let roots = [globalConfiguration.locations.configuredSkillsRoot(.codex),
                      globalConfiguration.locations.codexRoot.appendingPathComponent("skills"),
                      globalConfiguration.locations.configuredSkillsRoot(.claudeCode)]
         guard !roots.contains(where: { $0.standardizedFileURL.path == original.standardizedFileURL.path }) else {

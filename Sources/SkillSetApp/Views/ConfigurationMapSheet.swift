@@ -8,8 +8,8 @@ struct ConfigurationMapSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack(alignment: .top) {
-                PageHeader(eyebrow: "YOUR CONFIGURATION", title: L10n.tr("每一份配置，都有来处与去处"),
-                    detail: L10n.tr("从内容来源，到 AI 工具读取的文件。点击任意入口，继续完成你的配置。"))
+                PageHeader(eyebrow: "YOUR CONFIGURATION", title: L10n.tr("配置关系图"),
+                    detail: L10n.tr("查看内容从哪里来、用在哪里，点击入口开始配置。"))
                 Spacer(minLength: 0)
                 Button(L10n.tr("完成")) { dismiss() }
                     .keyboardShortcut(.cancelAction)
@@ -59,7 +59,7 @@ struct ConfigurationMapSheet: View {
                             }
                         }.font(AppFont.secondary)
                     }
-                    Text(L10n.tr("插件是组合包，可包含技能、MCP、命令、Agent 和自动运行脚本；在目标配置中单独审阅。"))
+                    Text(L10n.tr("插件可包含技能、MCP 服务、命令、智能体和自动运行脚本，使用前需单独审阅。"))
                         .font(AppFont.metadata).foregroundStyle(.secondary).padding(.horizontal, 20)
                 }
                 .padding(2)
