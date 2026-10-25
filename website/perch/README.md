@@ -43,8 +43,8 @@ CLI 的 `--data` 默认为当前目录下的 `data`；不同工作目录会读�
 
 2026-10-23 已更新至 `0.0.1 (7)`，平台 release ID 为 `7735e864-a8ff-4983-b310-552f2deaae0d`。正式 DMG 通过 Apple 公证并装订，公网首页、品牌图、appcast 和 DMG 匿名下载逐字节核验，Sparkle 官方验签通过；平台 `visibility` 与清单 `access` 均为 `public`。完整公证 ID、SHA-256、测试及未完成的跨版本安装验收见 [build 7 发布记录](../../docs/releases/perch-0.0.1-7.md)。
 
-2026-10-23 已更新至 `0.0.1 (8)`，当前平台 release ID 为 `c46352b8-933c-44b7-a648-ad00417aab37`。平台包来自干净 main 提交 `0bebe357854e5c9e1ffd2acaaa10763cb22e9a0f`，共五个来源文件及唯一生成元数据，ZIP 为 23,823,798 字节。隔离预览与匿名公网文件核验、官方 Sparkle 验签通过；`visibility` 与 `access` 均为 `public`。最新发布目录为 `dist/perch-app-platform-v0.0.1-8/`，产物和报告为 `dist/release-v0.0.1-8/`，详见 [build 8 发布记录](../../docs/releases/perch-0.0.1-8.md)。
+2026-10-23 已更新至 `0.0.1 (8)`，当次平台 release ID 为 `c46352b8-933c-44b7-a648-ad00417aab37`。平台包来自干净 main 提交 `0bebe357854e5c9e1ffd2acaaa10763cb22e9a0f`，共五个来源文件及唯一生成元数据，ZIP 为 23,823,798 字节。隔离预览与匿名公网文件核验、官方 Sparkle 验签通过；`visibility` 与 `access` 均为 `public`。最新发布目录为 `dist/perch-app-platform-v0.0.1-8/`，产物和报告为 `dist/release-v0.0.1-8/`，详见 [build 8 发布记录](../../docs/releases/perch-0.0.1-8.md)。
 
 2026-10-23 正在准备 build 9，源码 `599117ba8f81ef4915c4bae25fac39316c7bac75` 与标签已推送；本目录首页模板已指向 build 9，但原生验收、公证及正式发布尚未完成，不得单独部署该模板。线上仍为 build 8，release ID 保持不变。解锁本机并通过全部发布门禁后，再将首页与已公证 DMG、签名清单一同发布；当前结果见 [build 9 准备记录](../../docs/releases/perch-0.0.1-9.md)。
 
-2026-10-26 build 10 已提交推送并安装本机，首页模板已指向 build 10。Apple 公证与线上发布仍未完成，不得单独部署首页模板；线上仍为 build 8。详见 [build 10 准备与安装记录](../../docs/releases/perch-0.0.1-10.md)。
+2026-10-26 已更新至 `0.0.1 (10)`，当前平台 release ID 为 `c8c17552-c8b4-4232-8b61-9409af5689eb`。来源为 build 10 标签对应的干净检出，五个来源文件及生成元数据逐字节核验通过；平台 ZIP 为 24,450,946 字节。App 与 DMG 已公证装订，匿名公网文件核验和官方 Sparkle 验签通过，本机已安装并验证真实更新检查。产物、测试与安装证据见 [build 10 发布记录](../../docs/releases/perch-0.0.1-10.md)。

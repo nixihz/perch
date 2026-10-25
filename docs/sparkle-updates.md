@@ -20,7 +20,7 @@
 
 ## 配置与构建
 
-公开配置放在 `config/updates.json`。当前线上构建为 `0.0.1 (8)`；源码、签名产物、公证和平台发布均已完成。发布仍保留原 Bundle ID 与 Sparkle 公钥，使用新平台清单地址重新签名、公证；每次正式发包都递增 `build`，同一个构建号不能重发不同内容。此版本是桌面整包版本，与 skill revision、项目锁版本无关。
+公开配置放在 `config/updates.json`。当前线上构建为 `0.0.1 (10)`；源码、签名产物、公证和平台发布均已完成。发布仍保留原 Bundle ID 与 Sparkle 公钥，使用新平台清单地址重新签名、公证；每次正式发包都递增 `build`，同一个构建号不能重发不同内容。此版本是桌面整包版本，与 skill revision、项目锁版本无关。
 
 可直接修改该 JSON，或通过以下环境变量覆盖：
 
@@ -136,4 +136,4 @@ python3 -m unittest tests.test_update_packaging tests.test_ui_localization -v
 
 2026-10-23 build 9 已完成源码提交、标签推送和 Developer ID 通用构建，尚未公证或发布。Mac 锁屏导致原生 BDD 无法读取侧栏；当前命令行亦无法读取已有 `APP-Notary-2026`，原因尚未确认，待本机解锁后复核。线上仍为 build 8。测试结果、产物与续发边界见 [build 9 准备记录](releases/perch-0.0.1-9.md)。
 
-2026-10-26 build 10：私有技能库存、批量来源导入与配置体验已完成审查修复，源码及 `perch-v0.0.1-build.10` 已推送。Developer ID 通用 App 已安装本机，101 个技能与本机数据哈希核验通过。正式公证提交仍无法读取 `APP-Notary-2026`，原生验收受锁屏阻塞；线上清单仍为 build 8，尚未发布新 appcast。详见 [build 10 准备与安装记录](releases/perch-0.0.1-10.md)。
+2026-10-26 build 10 已发布并安装本机。解锁后恢复公证凭据读取，App 与 DMG 公证、装订和 Gatekeeper 检查通过；修正旧测试流程后完整 Swift 与原生 BDD 回归全绿。官网、Sparkle 清单及公网完整 DMG 字节与官方验签通过，平台 release ID 为 `c8c17552-c8b4-4232-8b61-9409af5689eb`；本机界面确认 101 个技能、0 个不可用，真实更新检查显示当前为最新版。详见 [build 10 发布记录](releases/perch-0.0.1-10.md)。
