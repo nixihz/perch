@@ -135,3 +135,5 @@ python3 -m unittest tests.test_update_packaging tests.test_ui_localization -v
 2026-10-23 build 8 已发布：独立宿主草稿开关与扫描体验改进，修复保存失败无反馈及扫描失败丢失结果的问题。源码 `0bebe357854e5c9e1ffd2acaaa10763cb22e9a0f`、标签 `perch-v0.0.1-build.8` 已推送；完整 Swift、原生 UI 与 Cucumber 回归均通过。App 与 DMG 经 `APP-Notary-2026` 公证并装订，平台 release ID 为 `c46352b8-933c-44b7-a648-ad00417aab37`。匿名公网字节与官方 Sparkle 验签通过；正式包校验值、公证 ID、测试明细及待完成的 build 7 → 8 安装验收见 [build 8 记录](releases/perch-0.0.1-8.md)。
 
 2026-10-23 build 9 已完成源码提交、标签推送和 Developer ID 通用构建，尚未公证或发布。Mac 锁屏导致原生 BDD 无法读取侧栏；当前命令行亦无法读取已有 `APP-Notary-2026`，原因尚未确认，待本机解锁后复核。线上仍为 build 8。测试结果、产物与续发边界见 [build 9 准备记录](releases/perch-0.0.1-9.md)。
+
+2026-10-26 build 10：私有技能库存、批量来源导入与配置体验已完成审查修复，源码及 `perch-v0.0.1-build.10` 已推送。Developer ID 通用 App 已安装本机，101 个技能与本机数据哈希核验通过。正式公证提交仍无法读取 `APP-Notary-2026`，原生验收受锁屏阻塞；线上清单仍为 build 8，尚未发布新 appcast。详见 [build 10 准备与安装记录](releases/perch-0.0.1-10.md)。
