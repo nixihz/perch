@@ -82,6 +82,27 @@ public struct SkillObjectStore {
         self.fileManager = fileManager
     }
 
+    func materialize(_ snapshot: SkillAssetSnapshot) throws -> ObjectMaterializationResult {
+        try ensureSafeRoot()
+        guard snapshot.files.count == snapshot.result.fileManifest.count else {
+            throw SkillObjectStoreError.objectCorrupt(snapshot.result.contentHash)
+        }
+        var written = 0
+        for (file, item) in zip(snapshot.files, snapshot.result.fileManifest) {
+            guard file.path == item.path, file.data.count == item.bytes else {
+                throw SkillObjectStoreError.objectCorrupt(snapshot.result.contentHash)
+            }
+            written += try writeObject(file.data, digest: item.sha256)
+        }
+        written += try writeManifest(SkillObjectManifest(contentHash: snapshot.result.contentHash, files: snapshot.result.fileManifest))
+        return ObjectMaterializationResult(
+            fileManifest: snapshot.result.fileManifest,
+            contentHash: snapshot.result.contentHash,
+            objectsWritten: written,
+            bytes: snapshot.result.bytes
+        )
+    }
+
     public func materializeSkill(source: URL) throws -> ObjectMaterializationResult {
         try ensureSafeRoot()
         let files = try SkillAssetCopier.collectFiles(from: source, fileManager: fileManager)

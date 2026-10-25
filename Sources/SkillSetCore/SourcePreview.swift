@@ -161,7 +161,7 @@ public struct SourcePreviewStore {
         let url = rootURL.appendingPathComponent(id.uuidString, isDirectory: true)
             .appendingPathComponent("preview.json")
         do {
-            let data = try Data(contentsOf: url)
+            let data = try Data(contentsOf: url, options: .mappedIfSafe)
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
             return try decoder.decode(SourcePreviewRecord.self, from: data)
@@ -371,7 +371,7 @@ public struct SourcePreviewService {
             )
         }
 
-        var candidates: [SourceSkillCandidate] = []
+        var pending: [PendingSourceSkill] = []
         var queue: [(URL, String)] = [(root, "")]
         var visitedDirectories = Set<String>()
         while let (directory, relative) = queue.popLast() {
@@ -389,36 +389,11 @@ public struct SourcePreviewService {
                 let relativePath = relative.isEmpty ? "." : relative
                 let (category, state) = classify(relativePath)
                 let metadata = readMetadata(directory.appendingPathComponent("SKILL.md"))
-                do {
-                    let analysis = try SkillAssetCopier.analyze(from: directory, fileManager: fileManager)
-                    candidates.append(SourceSkillCandidate(
-                        id: "\(parsed.namespace)/\(slug)",
-                        path: relativePath,
-                        slug: slug,
-                        declaredName: metadata.name,
-                        description: metadata.description,
-                        category: category,
-                        state: state,
-                        contentHash: analysis.contentHash,
-                        fileCount: analysis.files.count,
-                        bytes: analysis.bytes,
-                        issues: []
-                    ))
-                } catch {
-                    candidates.append(SourceSkillCandidate(
-                        id: "\(parsed.namespace)/\(slug)",
-                        path: relativePath,
-                        slug: slug,
-                        declaredName: metadata.name,
-                        description: metadata.description,
-                        category: category,
-                        state: state,
-                        contentHash: "",
-                        fileCount: 0,
-                        bytes: 0,
-                        issues: [error.localizedDescription]
-                    ))
-                }
+                pending.append(PendingSourceSkill(
+                    directory: directory, slug: slug, relativePath: relativePath,
+                    category: category, state: state, declaredName: metadata.name,
+                    summary: metadata.description, namespace: parsed.namespace
+                ))
             }
 
             for child in children where child.lastPathComponent != ".git" {
@@ -434,6 +409,8 @@ public struct SourcePreviewService {
             }
         }
 
+        // 目录遍历保持顺序和边界检查；各技能包的指纹互不依赖，算完再按原规则排序。
+        var candidates = Self.candidates(from: pending, fileManager: fileManager)
         candidates.sort {
             let left = candidateRank($0.state)
             let right = candidateRank($1.state)
@@ -661,8 +638,56 @@ public struct SourcePreviewService {
         )
     }
 
+    private static func candidates(from pending: [PendingSourceSkill], fileManager: FileManager) -> [SourceSkillCandidate] {
+        guard !pending.isEmpty else { return [] }
+        if pending.count == 1 { return [candidate(pending[0], fileManager: fileManager)] }
+        let slots = pending.map { _ in SourceCandidateSlot() }
+        // FileManager 的读取可以跨线程；类型本身未声明 Sendable。
+        nonisolated(unsafe) let manager = fileManager
+        DispatchQueue.concurrentPerform(iterations: pending.count) { index in
+            slots[index].candidate = candidate(pending[index], fileManager: manager)
+        }
+        return slots.map { slot in
+            guard let candidate = slot.candidate else { preconditionFailure("来源技能指纹未写回") }
+            return candidate
+        }
+    }
+
+    private static func candidate(_ item: PendingSourceSkill, fileManager: FileManager) -> SourceSkillCandidate {
+        let id = "\(item.namespace)/\(item.slug)"
+        do {
+            let analysis = try SkillAssetCopier.analyze(from: item.directory, fileManager: fileManager)
+            return SourceSkillCandidate(
+                id: id, path: item.relativePath, slug: item.slug, declaredName: item.declaredName,
+                description: item.summary, category: item.category, state: item.state,
+                contentHash: analysis.contentHash, fileCount: analysis.files.count, bytes: analysis.bytes, issues: []
+            )
+        } catch {
+            return SourceSkillCandidate(
+                id: id, path: item.relativePath, slug: item.slug, declaredName: item.declaredName,
+                description: item.summary, category: item.category, state: item.state,
+                contentHash: "", fileCount: 0, bytes: 0, issues: [error.localizedDescription]
+            )
+        }
+    }
+
     private func trimmedGitMessage(_ output: String) -> String {
         let lines = output.split(separator: "\n").map(String.init)
         return lines.suffix(8).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
     }
+}
+
+private struct PendingSourceSkill: Sendable {
+    let directory: URL
+    let slug: String
+    let relativePath: String
+    let category: String
+    let state: SourceCandidateState
+    let declaredName: String
+    let summary: String
+    let namespace: String
+}
+
+private final class SourceCandidateSlot: @unchecked Sendable {
+    var candidate: SourceSkillCandidate?
 }

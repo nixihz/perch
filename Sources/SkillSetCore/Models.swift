@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 public struct CatalogDocument: Codable, Sendable {
@@ -463,19 +464,32 @@ public struct AppSnapshot: Sendable {
     public let templates: [TemplateRecord]
     public let matt: MattSnapshot
 
-    public static func load(repositoryRoot: URL? = nil) -> AppSnapshot {
+    /// `includeBundledLibrary` 为 false 时不读取仓库或资源包里的技能目录、预设和片段。
+    /// 正常运行会丢弃这些内容，跳过解析可避免每次启动服务都读完整份 catalog。
+    public static func load(repositoryRoot: URL? = nil, includeBundledLibrary: Bool = true) -> AppSnapshot {
         let decoder = JSONDecoder()
-        let catalog = decodeRepository(
-            repositoryRoot?.appendingPathComponent("registry/catalog.json"),
-            as: CatalogDocument.self,
-            decoder: decoder
-        ) ?? decode("catalog.json", as: CatalogDocument.self, decoder: decoder)
         let sources = decodeRepository(
             repositoryRoot?.appendingPathComponent("registry/sources.json"),
             as: SourceDocument.self,
             decoder: decoder
         ) ?? decode("sources.json", as: SourceDocument.self, decoder: decoder)
         let matt = decode("matt.json", as: MattSnapshot.self, decoder: decoder)
+        let resolvedSources = sources ?? SourceDocument(schemaVersion: 1, capturedOn: "", sources: [], researchOnly: [])
+        let resolvedMatt = matt ?? MattSnapshot(url: "", commit: "", version: "", license: "", capturedOn: "", network: false, candidates: [], excluded: MattExcluded(misc: 0, inProgress: 0, deprecated: 0))
+        guard includeBundledLibrary else {
+            return AppSnapshot(
+                catalog: CatalogDocument(schemaVersion: 1, hashAlgorithm: "sha256:path-content-executable:v1", entries: []),
+                sources: resolvedSources,
+                presets: [],
+                templates: [],
+                matt: resolvedMatt
+            )
+        }
+        let catalog = decodeRepository(
+            repositoryRoot?.appendingPathComponent("registry/catalog.json"),
+            as: CatalogDocument.self,
+            decoder: decoder
+        ) ?? decode("catalog.json", as: CatalogDocument.self, decoder: decoder)
         let presets = ["personal-base", "frontend-workbench", "research-first"].compactMap {
             decodeRepository(
                 repositoryRoot?.appendingPathComponent("presets/\($0).json"),
@@ -498,10 +512,10 @@ public struct AppSnapshot: Sendable {
         }
         return AppSnapshot(
             catalog: catalog ?? CatalogDocument(schemaVersion: 1, hashAlgorithm: "", entries: []),
-            sources: sources ?? SourceDocument(schemaVersion: 1, capturedOn: "", sources: [], researchOnly: []),
+            sources: resolvedSources,
             presets: presets,
             templates: templates,
-            matt: matt ?? MattSnapshot(url: "", commit: "", version: "", license: "", capturedOn: "", network: false, candidates: [], excluded: MattExcluded(misc: 0, inProgress: 0, deprecated: 0))
+            matt: resolvedMatt
         )
     }
 
@@ -589,14 +603,68 @@ public struct MCPConfigDraft: Hashable, Sendable {
     }
 }
 
-public func matchingSkills(_ entries: [SkillEntry], query: String, sourceID: String? = nil, sourceOrigins: [String: SourceSkillOrigin] = [:]) -> [SkillEntry] {
-    let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines).localizedLowercase
-    if normalized.isEmpty && sourceID == nil { return entries }
-    return entries.filter { entry in
-        guard sourceID == nil || entry.sourceId == sourceID else { return false }
-        // 空搜索直接返回，避免切页与选择时反复拼接并转换整个目录的文本。
-        guard !normalized.isEmpty else { return true }
-        let searchable = "\(entry.id) \(entry.slug) \(entry.path) \(entry.description) \(entry.declaredName) \(sourceOrigins[entry.id]?.url ?? "") \(sourceOrigins[entry.id]?.path ?? "")".localizedLowercase
-        return searchable.contains(normalized)
+func skillLookup(_ entries: [SkillEntry]) -> [String: SkillEntry] {
+    var lookup: [String: SkillEntry] = [:]
+    lookup.reserveCapacity(entries.count)
+    for entry in entries where lookup[entry.id] == nil {
+        lookup[entry.id] = entry
     }
+    return lookup
+}
+
+/// 技能库文本只折叠一次。之后的搜索在 UTF-8 字节上查找，避免每次按键重新拼接、做本地化大小写转换，或走 Swift 字符串的字素比较。
+public struct SkillSearchIndex: Sendable {
+    public let entries: [SkillEntry]
+    private let folded: Data
+    private let ranges: [Range<Int>]
+
+    public init(entries: [SkillEntry], sourceOrigins: [String: SourceSkillOrigin] = [:]) {
+        self.entries = entries
+        var bytes = Data()
+        var ranges: [Range<Int>] = []
+        ranges.reserveCapacity(entries.count)
+        bytes.reserveCapacity(entries.count * 96)
+        for entry in entries {
+            let origin = sourceOrigins[entry.id]
+            let text = "\(entry.id) \(entry.slug) \(entry.path) \(entry.description) \(entry.declaredName) \(origin?.url ?? "") \(origin?.path ?? "")"
+                .localizedLowercase
+            let start = bytes.count
+            bytes.append(contentsOf: text.utf8)
+            ranges.append(start..<bytes.count)
+        }
+        folded = bytes
+        self.ranges = ranges
+    }
+
+    public func matching(query: String, sourceID: String? = nil) -> [SkillEntry] {
+        let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines).localizedLowercase
+        if normalized.isEmpty && sourceID == nil { return entries }
+        let needle = Array(normalized.utf8)
+        var matched: [SkillEntry] = []
+        matched.reserveCapacity(entries.count)
+        if needle.isEmpty {
+            for entry in entries where sourceID == nil || entry.sourceId == sourceID {
+                matched.append(entry)
+            }
+            return matched
+        }
+        needle.withUnsafeBufferPointer { needleBuffer in
+            guard let needleBase = needleBuffer.baseAddress else { return }
+            folded.withUnsafeBytes { raw in
+                guard let base = raw.bindMemory(to: UInt8.self).baseAddress else { return }
+                for index in entries.indices {
+                    let entry = entries[index]
+                    if let sourceID, entry.sourceId != sourceID { continue }
+                    let range = ranges[index]
+                    guard memmem(base + range.lowerBound, range.count, needleBase, needle.count) != nil else { continue }
+                    matched.append(entry)
+                }
+            }
+        }
+        return matched
+    }
+}
+
+public func matchingSkills(_ entries: [SkillEntry], query: String, sourceID: String? = nil, sourceOrigins: [String: SourceSkillOrigin] = [:]) -> [SkillEntry] {
+    SkillSearchIndex(entries: entries, sourceOrigins: sourceOrigins).matching(query: query, sourceID: sourceID)
 }

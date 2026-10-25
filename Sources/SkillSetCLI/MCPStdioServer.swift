@@ -2,10 +2,18 @@ import Foundation
 import SkillSetCore
 
 final class MCPStdioServer {
-    private let service: SkillSetService
+    private var libraryCache: MCPServiceCache
+    /// 工具定义只依赖服务类型，不随本机状态变化；缓存后避免每次 tools/list 和参数校验重复组装 60 个 schema。
+    private lazy var cachedTools: [[String: Any]] = makeTools()
+    lazy var cachedToolByName: [String: [String: Any]] = Dictionary(
+        uniqueKeysWithValues: cachedTools.compactMap { definition in
+            guard let name = definition["name"] as? String else { return nil }
+            return (name, definition)
+        }
+    )
 
     init(service: SkillSetService) {
-        self.service = service
+        libraryCache = MCPServiceCache(service: service)
     }
 
     func run() {
@@ -18,57 +26,91 @@ final class MCPStdioServer {
 
     private func handle(line: String) {
         guard let data = line.data(using: .utf8),
-              let request = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+              let object = try? JSONSerialization.jsonObject(with: data) else {
             write(errorResponse(id: NSNull(), code: -32700, message: "JSON-RPC 消息无法解析"))
             return
         }
+        if let batch = object as? [Any] {
+            if batch.isEmpty {
+                write(errorResponse(id: NSNull(), code: -32600, message: "空的 JSON-RPC 批量请求"))
+                return
+            }
+            var responses: [[String: Any]] = []
+            responses.reserveCapacity(batch.count)
+            for item in batch {
+                guard let request = item as? [String: Any] else {
+                    responses.append(errorResponse(id: NSNull(), code: -32600, message: "无效的 JSON-RPC 批量项"))
+                    continue
+                }
+                if let response = handleRequest(request) { responses.append(response) }
+            }
+            if !responses.isEmpty { writeJSON(responses) }
+            return
+        }
+        guard let request = object as? [String: Any] else {
+            write(errorResponse(id: NSNull(), code: -32600, message: "无效的 JSON-RPC 请求"))
+            return
+        }
+        if let response = handleRequest(request) { write(response) }
+    }
+
+    private func handleRequest(_ request: [String: Any]) -> [String: Any]? {
         let id = request["id"]
         guard request["jsonrpc"] as? String == "2.0",
               let method = request["method"] as? String else {
-            if let id { write(errorResponse(id: id, code: -32600, message: "无效的 JSON-RPC 请求")) }
-            return
+            return id.map { errorResponse(id: $0, code: -32600, message: "无效的 JSON-RPC 请求") }
         }
 
         switch method {
         case "initialize":
-            guard let id else { return }
-            write(resultResponse(id: id, result: [
+            guard let id else { return nil }
+            return resultResponse(id: id, result: [
                 "protocolVersion": "2025-11-25",
                 "capabilities": ["tools": ["listChanged": false]],
                 "serverInfo": ["name": "perch", "version": "0.1.0"],
-                "instructions": "Perch：支持技能库、来源、片段、预设、项目和 MCP 配置库的增删改查；库删除不卸载已部署内容。用 templates_list 读取规则片段，用 global_config_plan 或 deployment_plan 生成应用/移除计划。用 presets_list 列出预设、skills_search 搜索技能；用 skills_install 或 presets_install 为明确的已登记项目生成追加安装计划。projectPath 必须是调用方当前项目的绝对路径，不能猜测服务工作目录。用户在本机 UI 或 CLI 批准后，再调用 deployment_apply 完成安装。"
-            ]))
+                "instructions": "Perch：支持技能库、来源、片段、预设、项目和 MCP 配置库的增删改查；库删除不卸载已部署内容。用 templates_list 读取规则片段，用 global_config_plan 或 deployment_plan 生成应用/移除计划。用 presets_list 列出预设、skills_search 搜索技能；用 skills_install 或 presets_install 为明确的已登记项目生成追加安装计划。mcp_batch 可在单请求内顺序处理最多 50 项工具调用。projectPath 必须是调用方当前项目的绝对路径，不能猜测服务工作目录。用户在本机 UI 或 CLI 批准后，再调用 deployment_apply 完成安装。"
+            ])
         case "notifications/initialized", "notifications/cancelled":
-            return
+            return nil
         case "ping":
-            if let id { write(resultResponse(id: id, result: [:])) }
+            return id.map { resultResponse(id: $0, result: [:]) }
         case "tools/list":
-            if let id { write(resultResponse(id: id, result: ["tools": tools])) }
+            return id.map { resultResponse(id: $0, result: ["tools": tools]) }
         case "tools/call":
-            guard let id else { return }
+            guard let id else { return nil }
             let params = request["params"] as? [String: Any] ?? [:]
             guard let name = params["name"] as? String else {
-                write(errorResponse(id: id, code: -32602, message: "tools/call 缺少 name"))
-                return
+                return errorResponse(id: id, code: -32602, message: "tools/call 缺少 name")
             }
             if let arguments = params["arguments"], !(arguments is [String: Any]) {
-                write(errorResponse(id: id, code: -32602, message: "arguments 必须是对象"))
-                return
+                return errorResponse(id: id, code: -32602, message: "arguments 必须是对象")
             }
             let arguments = params["arguments"] as? [String: Any] ?? [:]
-            write(resultResponse(id: id, result: callTool(name: name, arguments: arguments)))
+            return resultResponse(id: id, result: callTool(name: name, arguments: arguments))
         default:
-            if let id {
-                write(errorResponse(id: id, code: -32601, message: "不支持的 method：\(method)"))
-            }
+            return id.map { errorResponse(id: $0, code: -32601, message: "不支持的 method：\(method)") }
         }
     }
 
     private func callTool(name: String, arguments: [String: Any]) -> [String: Any] {
+        callTool(name: name, arguments: arguments, serviceOverride: nil)
+    }
+
+    private func callTool(
+        name: String, arguments: [String: Any], serviceOverride: SkillSetService?
+    ) -> [String: Any] {
         do {
             try validateToolArguments(name: name, arguments: arguments)
-            // 每次调用读取最新本机状态，库删除、编辑与计划使用同一视图。
-            let current = try SkillSetService(paths: service.paths)
+            // 技能索引、片段和预设未变化时复用已解析快照；变化后重新加载。项目和计划仍按调用读盘。
+            let current: SkillSetService
+            if let serviceOverride {
+                current = serviceOverride
+            } else {
+                current = try libraryCache.current()
+            }
+            if name == "mcp_batch" {
+                return try callBatch(arguments: arguments, service: current)
+            }
             if let result = try callManagementTool(name: name, arguments: arguments, current: current) { return result }
             let service = current
             switch name {
@@ -336,8 +378,93 @@ final class MCPStdioServer {
         }
     }
 
-    var tools: [[String: Any]] {
+    /// 在一个 MCP 调用内顺序处理多项操作。读操作共享服务快照；技能索引、片段或预设一旦变化就刷新，
+    /// 使本批后续项看到刚才的写入。单项失败不会吞掉同批其它结果。
+    private func callBatch(arguments: [String: Any], service initial: SkillSetService) throws -> [String: Any] {
+        guard let operations = arguments["operations"] as? [[String: Any]],
+              !operations.isEmpty, operations.count <= 50 else {
+            throw MCPToolError(code: "INVALID_ARGUMENTS", message: "mcp_batch 需要非空 operations。")
+        }
+        var current = initial
+        var generation = libraryCache.generation
+        var results: [[String: Any]] = []
+        results.reserveCapacity(operations.count)
+        var succeeded = 0
+        for (index, operation) in operations.enumerated() {
+            guard let name = operation["name"] as? String, !name.isEmpty,
+                  name != "mcp_batch" else {
+                let result = toolResult(isError: true, text: "INVALID_ARGUMENTS：批量项必须包含 name 和对象 arguments。",
+                                        structured: ["code": "INVALID_ARGUMENTS", "message": "第 \(index) 项格式无效。"])
+                results.append(["index": index, "name": operation["name"] as? String ?? "", "result": result])
+                continue
+            }
+            guard operation["arguments"] == nil || operation["arguments"] is [String: Any] else {
+                let result = toolResult(isError: true, text: "INVALID_ARGUMENTS：批量项 arguments 必须是对象。",
+                                        structured: ["code": "INVALID_ARGUMENTS", "message": "第 \(index) 项 arguments 格式无效。"])
+                results.append(["index": index, "name": name, "result": result])
+                continue
+            }
+            let args = operation["arguments"] as? [String: Any] ?? [:]
+            let result = callTool(name: name, arguments: args, serviceOverride: current)
+            if result["isError"] as? Bool != true { succeeded += 1 }
+            results.append(["index": index, "name": name, "result": result])
+            let now = MCPLibraryGeneration.capture(paths: libraryCache.paths)
+            guard now != generation else { continue }
+            do {
+                current = try libraryCache.reload()
+                generation = libraryCache.generation
+            } catch {
+                let message = error.localizedDescription
+                for remaining in operations.indices.dropFirst(index + 1) {
+                    let remainingName = operations[remaining]["name"] as? String ?? ""
+                    let failed = toolResult(
+                        isError: true,
+                        text: "TOOL_EXECUTION_FAILED：\(message)",
+                        structured: ["code": "TOOL_EXECUTION_FAILED", "message": message]
+                    )
+                    results.append(["index": remaining, "name": remainingName, "result": failed])
+                }
+                break
+            }
+        }
+        return toolResult(
+            isError: succeeded != operations.count,
+            text: "批量处理完成：成功 \(succeeded) 项，失败 \(operations.count - succeeded) 项。",
+            structured: [
+                "count": operations.count,
+                "succeeded": succeeded,
+                "failed": operations.count - succeeded,
+                "results": results
+            ]
+        )
+    }
+
+    private func makeTools() -> [[String: Any]] {
         [
+            tool(
+                name: "mcp_batch",
+                description: "在一个请求中顺序处理最多 50 项 MCP 工具调用。读操作共享已加载的技能库快照；技能索引、片段或预设写入后刷新，后续项能看到新内容。单项失败会保留并返回其它结果。",
+                properties: [
+                    "operations": [
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 50,
+                        "items": [
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": [
+                                "name": ["type": "string", "minLength": 1],
+                                "arguments": ["type": "object"]
+                            ],
+                            "required": ["name"]
+                        ]
+                    ]
+                ],
+                required: ["operations"],
+                readOnly: false,
+                destructive: false,
+                idempotent: false
+            ),
             tool(name: "presets_list", description: "列出或搜索可安装的预设，返回标识、版本、技能、规则、插件与 MCP 组件。",
                  properties: ["query": ["type": "string", "maxLength": 200]], required: [], readOnly: true),
             tool(name: "skills_install", description: "将所选技能追加安装到当前项目：必须提供已登记项目的 projectId 或绝对路径 projectPath（二选一）。返回待本机批准的安装计划，批准后调用 deployment_apply；保留原有受管技能和规则。",
@@ -502,6 +629,8 @@ final class MCPStdioServer {
         ] + managementTools
     }
 
+    var tools: [[String: Any]] { cachedTools }
+
     func tool(
         name: String,
         description: String,
@@ -592,8 +721,12 @@ final class MCPStdioServer {
     }
 
     private func write(_ object: [String: Any]) {
-        guard JSONSerialization.isValidJSONObject(object),
-              let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes]) else {
+        writeJSON(object)
+    }
+
+    private func writeJSON(_ value: Any) {
+        guard JSONSerialization.isValidJSONObject(value),
+              let data = try? JSONSerialization.data(withJSONObject: value, options: [.withoutEscapingSlashes]) else {
             return
         }
         FileHandle.standardOutput.write(data)

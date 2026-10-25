@@ -5,7 +5,7 @@ import SkillSetCore
 extension MCPStdioServer {
     // 所有入口共享 schema 和运行时校验，避免无效字段被静默忽略。
     func validateToolArguments(name: String, arguments: [String: Any]) throws {
-        guard let definition = tools.first(where: { $0["name"] as? String == name }),
+        guard let definition = cachedToolByName[name],
               let schema = definition["inputSchema"] as? [String: Any] else {
             throw MCPToolError(code: "TOOL_NOT_FOUND", message: "未知工具：\(name)")
         }
@@ -51,7 +51,7 @@ extension MCPStdioServer {
     func callManagementTool(name: String, arguments a: [String: Any], current: SkillSetService) throws -> [String: Any]? {
         let paths = current.paths
         let root = paths.applicationSupportRoot
-        let library = SkillLibraryStore(rootURL: paths.libraryRoot)
+        let library = current.libraryStore()
         let templates = TemplateStore(rootURL: root)
         let presets = PresetStore(rootURL: root)
         let connections = MCPLibraryStore(rootURL: root)
@@ -88,7 +88,7 @@ extension MCPStdioServer {
         case "skills_create", "skills_update":
             let original = name == "skills_update" ? try skill() : nil
             // 外部来源不可原地修改；必须显式创建个人副本。
-            if let original, original.sourceId != SkillLibraryStore.sourceID {
+            if let original, original.sourceId != SkillLibraryStore.sourceID, original.sourceId != SkillLibraryStore.copiedSourceID {
                 throw MCPToolError(code: "LIBRARY_READ_ONLY_SOURCE", message: "来源技能不可原地编辑，请使用 skills_create 创建个人技能。")
             }
             return try result("skill", library.save(SkillEditorDraft(slug: original?.slug ?? string("slug"), document: string("document"), original: original), repositoryRoot: paths.repositoryRoot))
@@ -147,6 +147,8 @@ extension MCPStdioServer {
         case "sources_import_skill":
             var draft = try current.sourceSkillImportDraft(previewID: requiredUUID(a, key: "previewId"), path: string("path"))
             if let slug = a["slug"] as? String { draft.slug = slug }
+            if let mode = a["mode"] as? String, let install = SkillInstallMethod(rawValue: mode) { draft.mode = install }
+            if let category = a["category"] as? String { draft.category = category }
             return try result("skill", current.importSourceSkill(draft))
         case "projects_create":
             guard string("projectPath").hasPrefix("/") else { throw MCPToolError(code: "INVALID_ARGUMENTS", message: "projectPath 必须是绝对路径。") }

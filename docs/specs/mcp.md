@@ -6,6 +6,8 @@
 
 - 产品入口是原生 macOS `.app`、`skillset` CLI 和 stdio MCP，不启动 HTTP server。
 - stdio 的 stdout 只写 JSON-RPC 消息，诊断应在 stderr；当前集成测试会解析每一行 stdout。
+- 每行可发送单个 JSON-RPC 请求或 JSON-RPC 2.0 数组；数组请求返回一个数组响应，通知项不产生响应。业务层的 `mcp_batch` 适用于需要共享服务快照的多项工具调用。
+- 同一进程里，技能索引、片段和预设文件的身份未变化时复用已解析服务；这些文件变化后的下一次调用重新加载。项目、计划、MCP 配置和插件盘点仍在每次调用时读盘。未启用仓库技能库时，不解析将被丢弃的 catalog。
 - 首版实现 legacy initialize 生命周期。modern MCP 需要独立完成每请求版本元数据和真实客户端验证，不能靠修改协议字符串宣称兼容。
 - 服务在收到 EOF 后退出；不常驻后台，不自动重连宿主。
 
@@ -15,6 +17,7 @@
 
 | 工具 | 关键输入 | 行为 | readOnly / destructive / openWorld |
 | --- | --- | --- | --- |
+| `mcp_batch` | `operations`（1–50 项，含工具名与参数对象） | 顺序处理批量工具调用；读操作复用快照，技能索引、片段或预设变化后刷新，逐项返回结果 | false / false / false |
 | `projects_list` | 无 | 列出注册项目、desired、observed 和问题 | true / false / false |
 | `presets_list` | `query?` | 列出或搜索内置与本机预设，返回完整组件和 revision | true / false / false |
 | `skills_install` | `projectId` 或 `projectPath`、`skillIds`、`agents?` | 为已登记项目追加技能，返回待批准安装计划；批准后用 `deployment_apply` 写入 | false / false / false |
@@ -33,7 +36,7 @@
 | `plugins_list` | `projectId?` | 读取插件缓存、安装索引、组件和 hooks 风险；不执行代码 | true / false / false |
 | `plugin_lifecycle_plan` | `host`、`pluginId`、`action`、`projectId?`、`scope?`、`manifestDigest?`、`keepData?` | 为已发现的本机插件生成固定宿主命令计划；风险和批准仍留在本机 | false / false / false |
 
-本轮新增 42 个管理与应用工具，原有 17 个名称保持兼容：
+本轮新增 43 个管理与应用工具，原有 17 个名称保持兼容：
 
 | 主题 | 新增工具 | 操作边界 |
 | --- | --- | --- |
@@ -59,7 +62,7 @@ CRUD 的 create 自动生成记录标识，技能使用 `personal/<slug>`；upda
 工具数量与名称由 `tools/list` 决定，文档不替代运行时 schema。`sources_preview` 的幂等提示为 false，因为远端 ref 可能移动；保存的记录仍固定 resolved commit。
 
 项目摘要新增 `skillObservations`，逐项记录宿主、项目相对路径、可确定的技能 ID、`managed` / `existing` 归属及内容状态。观察不代表宿主已加载；旧锁缺少本机归属记录时按已有内容处理。`deployment_plan` 会生成取消选择后的受管移除步骤，未受管同路径冲突与受管漂移会阻塞；`SKILL_TARGET_CONFLICT`、`SKILL_MANAGED_DRIFT`、`RULE_TARGET_CONFLICT`、`RULE_MANAGED_DRIFT` 在 CLI 返回退出码 3。升级前缺少归属及读取依赖的待执行技能部署计划须重新生成。
-当前共 59 个工具，服务握手名称与新接入配置名称均为 `perch`；CLI 可执行文件仍为 `skillset`。`plugin_lifecycle_plan` 不提供“风险确认”参数；安装或更新可能由宿主解析新包，因此 MCP 调用会返回 `PLUGIN_RISK_APPROVAL_REQUIRED`，必须转由本机 UI/CLI 生成计划。
+当前共 60 个工具，服务握手名称与新接入配置名称均为 `perch`；CLI 可执行文件仍为 `skillset`。`mcp_batch` 一次接收 1–50 项工具调用，读操作共享一个服务快照；技能索引、片段或预设文件变化后，本批后续项和之后的调用重新加载。每项独立返回结果，批量结果会标记成功数和失败数。stdio 同时支持 JSON-RPC 2.0 数组请求并返回一个数组响应。`plugin_lifecycle_plan` 不提供“风险确认”参数；安装或更新可能由宿主解析新包，因此 MCP 调用会返回 `PLUGIN_RISK_APPROVAL_REQUIRED`，必须转由本机 UI/CLI 生成计划。
 
 同一 `pluginId` 和 scope 有多个缓存版本时，AI 应先调用 `plugins_list`，再把目标记录的 `manifestDigest` 传给计划工具。缺失摘要返回 `PLUGIN_VERSION_AMBIGUOUS`，不会按目录顺序猜测。
 
@@ -67,13 +70,13 @@ CRUD 的 create 自动生成记录标识，技能使用 `personal/<slug>`；upda
 
 项目安装工作流：`presets_list` / `skills_search` → `presets_install` / `skills_install` → 本机批准 → `deployment_apply`。安装参数必须提供已登记项目的 `projectId` 或绝对路径 `projectPath`，二选一；路径匹配 canonical realpath，不使用 MCP 服务工作目录推断当前项目。未登记返回 `PROJECT_NOT_REGISTERED` 并给出 App / CLI 登记入口，调用方可用 `projects_create` 显式登记绝对路径；安装工具本身不会隐式添加写入根。两个安装工具将选定组件追加到应用数据目录内已落盘的项目安装选择，保留原有技能、规则、ruleBlockID 和宿主，不载入未部署草稿。结果包含 `status: awaiting-approval`、完整 digest 和 `nextTool` / `nextArguments`，不得据此报告已经安装。
 
-服务 `initialize.serverInfo.name` 和 AI 接入向导的新配置键均为 `perch`。已有旧名称配置保留，避免擅自覆盖外部配置；使用向导前应在 MCP 服务页审阅旧连接并通过计划移除，然后生成 `perch` 接入计划。宿主重新加载后才可确认发现 59 个工具。
+服务 `initialize.serverInfo.name` 和 AI 接入向导的新配置键均为 `perch`。已有旧名称配置保留，避免擅自覆盖外部配置；使用向导前应在 MCP 服务页审阅旧连接并通过计划移除，然后生成 `perch` 接入计划。宿主重新加载后才可确认发现 60 个工具。
 
 AGENTS 片段的新建、编辑和删除开放在本机 UI 与 MCP，保存到本机 `templates.json`；正常启动不提供程序自带片段或预设，仅加载用户本机保存的条目；旧版用户修改过的同标识条目保留，删除记录在重启后继续生效。App、CLI 和 MCP 的部署计划共用合并后的片段库，stdio 服务每次工具调用重新读取本机库。本机 UI 的所有片段均可删除，引用和盘点失败不锁定删除操作；确认时说明引用将显示为不可用，需移除或替换后再部署。删除本身不修改项目文件，也不静默移除引用；旧版本或外部操作留下的失效引用在下次计划时仍拒绝。已经生成的计划保留生成时的内容和 digest，库编辑不改写既有计划；写项目仍需逐份预览和批准。本机片段页可以选择项目或全局目标，查看合成正文并生成正式计划；审批页展示规则前后内容和差异，复用同一事务与回读，MCP 可通过 `templates_apply_plan` 生成同一审批链路的计划。
 
 预设的新建、编辑与删除开放在本机 UI 和 MCP。MCP 的 `presets_list` 每次合并内置与本机预设，按标识使用本机覆盖；`presets_install` 为技能与规则生成追加安装计划。包含插件或 MCP 的混合预设返回 `PRESET_REQUIRES_LOCAL_PLAN`，不生成部分计划，转本机完整载入并分别审阅组件计划。插件与 MCP 组件仍分别通过既有计划工具和本机审批处理。
 
-技能库的新增、编辑与移除开放在本机 UI 和 MCP，复用 `SkillLibraryStore`。来源条目只能隐藏或创建个人副本，不能直接修改来源。`skills_search`、`skills_install` 与 `presets_install` 每次读取最新本机技能索引；不要求重启服务才能查询和安装新技能。所有工具在调用时重新载入技能、片段和预设，查询和计划使用最新库内容。技能保存不授予项目写入权限，部署仍须经过下述审批流程。
+技能库的新增、编辑与移除开放在本机 UI 和 MCP，复用 `SkillLibraryStore`。来源条目只能隐藏或创建个人副本，不能直接修改来源。`skills_search`、`skills_install` 与 `presets_install` 在技能索引变化后的下一次调用读取最新本机技能索引；不要求重启服务才能查询和安装新技能。查询和计划使用该次加载的库内容。外部进程改写技能索引、片段或预设后，下一次调用会看到新文件。技能保存不授予项目写入权限，部署仍须经过下述审批流程。
 
 ```text
 AI 调用 deployment_plan / mcp_config_plan / plugin_lifecycle_plan

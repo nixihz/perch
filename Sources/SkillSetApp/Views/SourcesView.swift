@@ -79,7 +79,7 @@ struct SourcesView: View {
             Text(L10n.tr("将删除 \(preview.canonicalURL) 的来源配置、下载缓存和搜索条目。已部署的技能版本和项目配置保留。"))
         }
         .task {
-            model.refreshSourcePreviews()
+            await model.reloadSourcePreviews()
         }
     }
 
@@ -113,7 +113,7 @@ struct SourcesView: View {
                                     Image(systemName: preview.id == model.selectedPreviewID ? "checkmark.circle.fill" : "circle")
                                         .foregroundStyle(preview.id == model.selectedPreviewID ? AppColor.accentText : .secondary)
                                     VStack(alignment: .leading, spacing: 3) {
-                                        Text(SkillSourceLabel.repository(preview.canonicalURL))
+                                        Text(model.sourceListTitle(preview))
                                             .font(AppFont.body.weight(.semibold))
                                             .foregroundStyle(.primary)
                                             .lineLimit(1)
@@ -151,8 +151,10 @@ struct SourcesView: View {
     }
 
     private func sourcePreviewDetail(_ preview: SourcePreviewRecord) -> some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
+        let folders = model.sourceFolders(for: preview)
+        let candidates = model.sourceCandidates(for: preview)
+        return ScrollView {
+            LazyVStack(alignment: .leading, spacing: 16) {
                 SurfaceCard(emphasis: true) {
                     VStack(alignment: .leading, spacing: 9) {
                         HStack(alignment: .top) {
@@ -229,19 +231,13 @@ struct SourcesView: View {
                                 .font(AppFont.secondary)
                                 .foregroundStyle(.secondary)
                         }
-                        ForEach(
-                            Dictionary(grouping: preview.candidates) { candidate in
-                                let folder = (candidate.path as NSString).deletingLastPathComponent
-                                return folder.isEmpty ? "." : folder
-                            }.sorted(by: { $0.key < $1.key }),
-                            id: \.key
-                        ) { folder, candidates in
+                        ForEach(folders, id: \.0) { folder, count in
                             HStack {
                                 Text(verbatim: folder)
                                     .font(AppFont.secondary.monospaced())
                                     .textSelection(.enabled)
                                 Spacer()
-                                Text("\(candidates.count)")
+                                Text("\(count)")
                                     .font(AppFont.secondary.monospaced())
                             }
                         }
@@ -253,20 +249,20 @@ struct SourcesView: View {
                     }
                 }
 
-                SurfaceCard {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text(L10n.tr("发现的技能"))
-                            .font(AppFont.heading)
-                        if preview.candidates.isEmpty {
-                            EmptyState(
-                                icon: "doc.questionmark",
-                                title: L10n.tr("没有找到 SKILL.md"),
-                                detail: L10n.tr("请检查仓库链接、分支或标签，再重新预览。技能库未改变。")
-                            )
-                            .frame(minHeight: 180)
-                        } else {
-                            ForEach(preview.candidates.sorted { $0.path < $1.path }, id: \.path) { candidate in
-                                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(L10n.tr("发现的技能"))
+                        .font(AppFont.heading)
+                    if candidates.isEmpty {
+                        EmptyState(
+                            icon: "doc.questionmark",
+                            title: L10n.tr("没有找到 SKILL.md"),
+                            detail: L10n.tr("请检查仓库链接、分支或标签，再重新预览。技能库未改变。")
+                        )
+                        .frame(minHeight: 180)
+                    }
+                }
+                ForEach(candidates, id: \.path) { candidate in
+                    VStack(alignment: .leading, spacing: 6) {
                                     HStack(alignment: .firstTextBaseline) {
                                         Text(candidate.declaredName)
                                             .font(AppFont.body.weight(.semibold))
@@ -310,13 +306,10 @@ struct SourcesView: View {
                                             .font(AppFont.secondary)
                                             .foregroundStyle(.red)
                                     }
-                                }
-                                .padding(11)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 9))
-                            }
-                        }
                     }
+                    .padding(11)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 9))
                 }
             }
         }
