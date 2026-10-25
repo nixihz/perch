@@ -16,9 +16,9 @@ final class InstalledSkillScanModelTests: XCTestCase {
         try manager.createDirectory(at: original, withIntermediateDirectories: true)
         let document = Data("---\nname: existing\ndescription: fixture\n---\nOriginal installation\n".utf8)
         try document.write(to: original.appendingPathComponent("SKILL.md"))
-        try manager.createDirectory(at: paths.libraryRoot, withIntermediateDirectories: true)
-        let indexURL = paths.libraryRoot.appendingPathComponent("index.json")
-        let validIndex = Data(#"{"schemaVersion":1,"records":[],"hiddenIDs":[]}"#.utf8)
+        try manager.createDirectory(at: paths.applicationSupportRoot, withIntermediateDirectories: true)
+        let indexURL = paths.applicationSupportRoot.appendingPathComponent("skill-categories.json")
+        let validIndex = Data(#"{"categories":{},"origins":{},"hiddenIDs":[]}"#.utf8)
         try validIndex.write(to: indexURL)
         let model = InstalledSkillScanModel()
 

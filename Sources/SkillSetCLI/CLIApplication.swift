@@ -154,7 +154,7 @@ struct CLIInvocation {
 
     private static func sources(arguments: [String], paths: SkillSetRuntimePaths, json: inout Bool) throws {
         guard let subcommand = arguments.first else {
-            throw CLIError("用法：skillset sources preview <url> [--ref ...] | sources list | sources show <id>", exitCode: 2)
+            throw CLIError("用法：skillset sources preview <url> [--ref ...] | sources list | sources show <id> | sources consolidate-local-imports", exitCode: 2)
         }
         var rest = Array(arguments.dropFirst())
         let service = try SkillSetService(paths: paths)
@@ -204,6 +204,15 @@ struct CLIInvocation {
                 for candidate in preview.candidates {
                     print("  \(candidate.state.rawValue)\t\(candidate.id)\t\(candidate.description)")
                 }
+            }
+        case "consolidate-local-imports":
+            let removed = try service.consolidateInstalledSkillSources()
+            if json {
+                emitJSON(["removed": removed])
+            } else if removed {
+                print("已将 local-imports 中的技能放入 custom，并删除该目录。")
+            } else {
+                print("没有 local-imports 目录。")
             }
         default:
             throw CLIError("未知 sources 子命令：\(subcommand)", exitCode: 2)
@@ -647,11 +656,18 @@ func emitJSON(_ object: Any) {
 }
 
 func jsonValue<T: Encodable>(_ value: T) throws -> Any {
-    let encoder = JSONEncoder()
-    encoder.dateEncodingStrategy = .iso8601
-    encoder.outputFormatting = [.withoutEscapingSlashes]
-    let data = try encoder.encode(value)
+    let data = try JSONValueEncoder.shared.encode(value)
     return try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
+}
+
+/// 工具响应会反复编码领域对象。编码器只配置一次，避免每次调用重新分配策略。
+private enum JSONValueEncoder {
+    static let shared: JSONEncoder = {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.withoutEscapingSlashes]
+        return encoder
+    }()
 }
 
 private func jsonValue(_ value: Any) throws -> Any {

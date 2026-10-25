@@ -17,7 +17,7 @@ final class InstalledSkillScanModel {
         defer { scanning = false }
         do {
             let result = try await Task.detached(priority: .userInitiated) {
-                try SkillSetService(paths: paths, globalLocations: locations).scanInstalledSkills(additionalRoots: roots)
+                try SkillSetService.scanInstalledSkills(paths: paths, locations: locations, additionalRoots: roots)
             }.value
             items = result
             selected.formIntersection(result.filter(\.canImport).map(\.id))

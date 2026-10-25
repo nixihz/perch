@@ -12,6 +12,8 @@ struct InstalledSkillScanSheet: View {
     @State private var query = ""
     @State private var showAll = false
     @State private var authorizedURLs: [URL] = []
+    @State private var deleting: InstalledSkillObservation?
+    @State private var deletingAll = false
 
     private var items: [InstalledSkillObservation] { scanModel.items }
     private var available: [InstalledSkillObservation] { items.filter(\.canImport) }
@@ -19,7 +21,8 @@ struct InstalledSkillScanSheet: View {
         items.filter { (showAll || $0.canImport || $0.issue != nil) &&
             (query.isEmpty || $0.path.localizedCaseInsensitiveContains(query)) }
     }
-    private var busy: Bool { scanModel.scanning || importing }
+    private var collectedItems: [InstalledSkillObservation] { items.filter { $0.collected && !$0.managed } }
+    private var busy: Bool { scanModel.scanning || importing || model.isWorking }
     private var displayedError: String? { error ?? scanModel.error }
 
     var body: some View {
@@ -27,7 +30,7 @@ struct InstalledSkillScanSheet: View {
             HStack {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(L10n.tr("扫描已安装技能")).font(AppFont.title)
-                    Label(L10n.tr("复制到技能库，保留原安装"), systemImage: "square.on.square")
+                    Label(L10n.tr("收录后建议删除原安装，由技能库统一管理"), systemImage: "square.on.square")
                         .font(AppFont.secondary).foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -42,6 +45,11 @@ struct InstalledSkillScanSheet: View {
                 Text(L10n.tr("可收录 \(available.count) 项")).font(AppFont.heading)
                 Spacer()
                 Toggle(L10n.tr("显示已收录"), isOn: $showAll).toggleStyle(.checkbox)
+                if !collectedItems.isEmpty {
+                    Button(L10n.tr("批量删除所有已收录原安装（推荐）"), role: .destructive) {
+                        deletingAll = true
+                    }.disabled(busy)
+                }
                 Button(L10n.tr(scanModel.selected.isEmpty ? "全选可收录项" : "清空勾选")) {
                     scanModel.selected = scanModel.selected.isEmpty ? Set(available.map(\.id)) : []
                 }.disabled(busy || available.isEmpty)
@@ -72,6 +80,10 @@ struct InstalledSkillScanSheet: View {
                 Label(L10n.text(error), systemImage: "exclamationmark.triangle")
                     .font(AppFont.secondary).foregroundStyle(.red).textSelection(.enabled)
             }
+            if let error = model.installedSkillRemovalError {
+                Label(L10n.text(error), systemImage: "exclamationmark.triangle")
+                    .font(AppFont.secondary).foregroundStyle(.red).textSelection(.enabled)
+            }
             if displayedError != nil || items.contains(where: { $0.issue != nil }) {
                 HStack {
                     Label(L10n.tr("部分位置无法读取"), systemImage: "folder.badge.questionmark")
@@ -95,6 +107,31 @@ struct InstalledSkillScanSheet: View {
             .onAppear { scan() }
             .onDisappear { for url in authorizedURLs { url.stopAccessingSecurityScopedResource() } }
             .interactiveDismissDisabled(busy)
+            .confirmationDialog(L10n.tr("删除原安装？"), isPresented: Binding(
+                get: { deleting != nil }, set: { if !$0 { deleting = nil } }
+            ), titleVisibility: .visible) {
+                Button(L10n.tr("删除原安装（推荐）"), role: .destructive) {
+                    guard let item = deleting else { return }
+                    deleting = nil
+                    Task {
+                        if await model.removeInstalledSkill(item) { scan() }
+                    }
+                }
+                Button(L10n.tr("取消"), role: .cancel) { deleting = nil }
+            } message: {
+                Text(L10n.tr("删除原来的 Claude Code 或 Codex 安装入口，技能库中的收录副本会保留。"))
+            }
+            .confirmationDialog(L10n.tr("批量删除所有已收录原安装？"), isPresented: $deletingAll, titleVisibility: .visible) {
+                Button(L10n.tr("批量删除原安装（推荐）"), role: .destructive) {
+                    deletingAll = false
+                    Task {
+                        if await model.removeInstalledSkills(collectedItems) { scan() }
+                    }
+                }
+                Button(L10n.tr("取消"), role: .cancel) { deletingAll = false }
+            } message: {
+                Text(L10n.tr("将删除 \(collectedItems.count) 个原安装入口，技能库中的收录副本会保留。"))
+            }
     }
 
     private func skillRow(_ item: InstalledSkillObservation) -> some View {
@@ -121,6 +158,13 @@ struct InstalledSkillScanSheet: View {
                         if let issue = item.issue { Text(L10n.text(issue)).foregroundStyle(.orange) }
                     }.frame(maxWidth: .infinity, alignment: .leading).padding(.top, 4)
                 }.font(AppFont.secondary).foregroundStyle(.secondary)
+                if item.collected {
+                    Button(role: .destructive) { deleting = item } label: {
+                        Label(L10n.tr("删除原安装"), systemImage: "trash")
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(busy)
+                }
             }
         }.padding(14)
     }
@@ -129,8 +173,12 @@ struct InstalledSkillScanSheet: View {
         importing = true
         error = nil
         Task {
-            if await model.importInstalledSkills(items.filter { scanModel.selected.contains($0.id) }) { dismiss() }
-            else { error = model.installedSkillImportError ?? "收录失败，请重新扫描后重试；原安装未改变。" }
+            if await model.importInstalledSkills(items.filter { scanModel.selected.contains($0.id) }) {
+                showAll = true
+                scan()
+            } else {
+                error = model.installedSkillImportError ?? "收录失败，请重新扫描后重试；原安装未改变。"
+            }
             importing = false
         }
     }
