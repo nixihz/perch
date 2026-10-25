@@ -6,9 +6,10 @@ struct SourceSkillImportTests {
     @Test func importsCompletePackageAndLicensesSurvivesPreviewDeletionAndDeploysWithApproval() throws {
         let fixture = try SourceImportFixture()
         defer { fixture.cleanup() }
-        let draft = try fixture.draft()
+        var draft = try fixture.draft()
+        draft.mode = .copy
         let entry = try fixture.service().importSourceSkill(draft)
-        let store = SkillLibraryStore(rootURL: fixture.paths.libraryRoot)
+        let store = fixture.paths.makeLibraryStore(home: fixture.root.appendingPathComponent("home"))
         let package = try #require(store.sourceURLs()[entry.id])
         #expect(try Data(contentsOf: package.appendingPathComponent("assets/data.bin")) == Data([0, 255, 1, 128]))
         #expect(try String(contentsOf: package.appendingPathComponent("_source_licenses/LICENSE"), encoding: .utf8) == "MIT fixture notice\n")
@@ -49,7 +50,7 @@ struct SourceSkillImportTests {
         #expect(throws: SkillLibraryError.duplicate) { try fixture.service().importSourceSkill(draft) }
         draft.slug = "another-name"
         let second = try fixture.service().importSourceSkill(draft)
-        let store = SkillLibraryStore(rootURL: fixture.paths.libraryRoot)
+        let store = fixture.paths.makeLibraryStore(home: fixture.root.appendingPathComponent("home"))
         let edited = try store.save(SkillEditorDraft(slug: second.slug, document: fixture.document + "\n本机修改\n", original: second), repositoryRoot: nil)
         #expect(try store.sourceOrigins()[edited.id]?.path == "custom/import-demo")
         #expect(try store.document(for: first, repositoryRoot: nil) == fixture.document)
@@ -91,25 +92,28 @@ struct SourceSkillImportTests {
         let fixture = try SourceImportFixture()
         defer { fixture.cleanup() }
         let draft = try fixture.draft()
-        let index = fixture.paths.libraryRoot.appendingPathComponent("index.json")
-        try FileManager.default.createDirectory(at: index, withIntermediateDirectories: true)
-        // 可读取的旧索引在提交前不能变成目录；损坏的索引必须被保留。
+        let categories = fixture.paths.applicationSupportRoot.appendingPathComponent("skill-categories.json")
+        try FileManager.default.createDirectory(at: categories.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let broken = Data("not-json".utf8)
+        try broken.write(to: categories)
         #expect(throws: SkillLibraryError.corrupt) { try fixture.service().importSourceSkill(draft) }
-        try FileManager.default.removeItem(at: fixture.paths.libraryRoot)
+        #expect(try Data(contentsOf: categories) == broken)
+        try FileManager.default.removeItem(at: categories)
         try "---\nname: missing-description\n---\nbody".write(to: fixture.checkout.appendingPathComponent("custom/import-demo/SKILL.md"), atomically: true, encoding: .utf8)
         try fixture.savePreview()
         let invalid = try fixture.draft()
         #expect(throws: SkillLibraryError.invalidDocument) { try fixture.service().importSourceSkill(invalid) }
-        #expect(!FileManager.default.fileExists(atPath: index.path))
-        #expect(try FileManager.default.contentsOfDirectory(atPath: fixture.paths.libraryRoot.appendingPathComponent("packages").path).isEmpty)
+        let libraryEntry = fixture.root.appendingPathComponent("home/.agents/skills/import-demo")
+        #expect(!FileManager.default.fileExists(atPath: libraryEntry.path))
     }
 
     @Test func rootSkillImportsWithoutGitMetadataAndNeverTrustsWorkspacePath() throws {
         let fixture = try SourceImportFixture(path: ".")
         defer { fixture.cleanup() }
-        let draft = try fixture.service().sourceSkillImportDraft(previewID: fixture.previewID, path: ".")
+        var draft = try fixture.service().sourceSkillImportDraft(previewID: fixture.previewID, path: ".")
+        draft.mode = .copy
         let entry = try fixture.service().importSourceSkill(draft)
-        let store = SkillLibraryStore(rootURL: fixture.paths.libraryRoot)
+        let store = fixture.paths.makeLibraryStore(home: fixture.root.appendingPathComponent("home"))
         let package = try #require(store.sourceURLs()[entry.id])
         #expect(!FileManager.default.fileExists(atPath: package.appendingPathComponent(".git").path))
         #expect(try String(contentsOf: package.appendingPathComponent("SKILL.md"), encoding: .utf8) == fixture.document)
@@ -146,7 +150,9 @@ private struct SourceImportFixture {
         try savePreview(path: path)
     }
 
-    func service() throws -> SkillSetService { try SkillSetService(paths: paths) }
+    func service() throws -> SkillSetService {
+        try SkillSetService(paths: paths, globalLocations: .init(home: root.appendingPathComponent("home"), stateRoot: paths.applicationSupportRoot))
+    }
     func draft() throws -> SourceSkillImportDraft { try service().sourceSkillImportDraft(previewID: previewID, path: "custom/import-demo") }
     func cleanup() { try? FileManager.default.removeItem(at: root) }
 

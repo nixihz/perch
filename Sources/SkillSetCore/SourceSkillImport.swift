@@ -32,6 +32,9 @@ public struct SourceSkillImportDraft: Identifiable, Sendable {
     public let document: String
     public let files: [SkillAssetFile]
     public var slug: String
+    /// 同一次导入只用一种方式。软链表示跟随来源，复制表示留下实体。
+    public var mode: SkillInstallMethod = .symlink
+    public var category: String = ""
 }
 
 extension SkillSetService {
@@ -55,7 +58,7 @@ extension SkillSetService {
     public func importSourceSkill(_ draft: SourceSkillImportDraft) throws -> SkillEntry {
         let validated = try sourceForImport(previewID: draft.previewID, path: draft.origin.path)
         guard validated.origin == draft.origin else { throw SourceSkillImportError.changed }
-        return try SkillLibraryStore(rootURL: paths.libraryRoot).importSource(
+        return try libraryStore().importSource(
             draft, source: validated.source, licenses: validated.licenses
         )
     }

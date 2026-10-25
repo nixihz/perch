@@ -12,6 +12,15 @@ struct SkillSetCoreTests {
     }
 
     @Test
+    func userBaselineSkipsBundledCatalog() {
+        let snapshot = AppSnapshot.load(includeBundledLibrary: false)
+        #expect(snapshot.catalog.entries.isEmpty)
+        #expect(snapshot.presets.isEmpty)
+        #expect(snapshot.templates.isEmpty)
+        #expect(snapshot.sources.sources.contains { $0.id == "workspace" })
+    }
+
+    @Test
     func searchMatchesNamespaceAndDescriptionWithoutChangingTheCatalog() {
         let entries = [
             SkillEntry(
@@ -52,6 +61,43 @@ struct SkillSetCoreTests {
         #expect(matchingSkills(entries, query: "LOCAL-BRIAN").map(\.id) == ["local-brian/stc"])
         #expect(matchingSkills(entries, query: "中文").map(\.id) == ["workspace/stc"])
         #expect(matchingSkills(entries, query: "").count == 2)
+        #expect(SkillAssetCopier.sha256(Data("abc".utf8)) == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+    }
+
+    @Test
+    func repeatedLocalSearchKeepsThePlantedSkillInsideTheBudget() {
+        let entries = (0..<1_000).map { index in
+            SkillEntry(
+                id: "bench/skill-\(index)",
+                slug: "skill-\(index)",
+                declaredName: "Skill \(index)",
+                description: index == 778 ? "唯一标记 token-778" : "普通技能说明 \(index)",
+                declaredVersion: nil,
+                metadataReview: "reviewed",
+                sourceId: "bench",
+                path: "packages/\(index)",
+                contentHash: "hash-\(index)",
+                fileCount: 1,
+                bytes: 10,
+                integrity: "snapshotted",
+                issues: [],
+                licenseReview: "required",
+                excludedPaths: []
+            )
+        }
+        let index = SkillSearchIndex(entries: entries)
+        #expect(index.matching(query: "token-778").map(\.id) == ["bench/skill-778"])
+        let elapsed = ContinuousClock().measure {
+            for query in 0..<1_000 {
+                _ = index.matching(query: query.isMultiple(of: 2) ? "token-778" : "skill-\(query)")
+            }
+        }
+        // release 下 1,000 条 × 1,000 次检索应落在规格预算内；debug 保留更宽上限，避免未优化构建误报。
+        #if DEBUG
+        #expect(elapsed < .seconds(2))
+        #else
+        #expect(elapsed < .milliseconds(150))
+        #endif
     }
 
     @Test

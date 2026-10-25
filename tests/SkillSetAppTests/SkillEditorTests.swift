@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 import XCTest
-import SkillSetCore
+@testable import SkillSetCore
 @testable import SkillSetApp
 
 @MainActor
@@ -47,24 +47,34 @@ final class SkillEditorTests: XCTestCase {
         draft.document = "---\nname: ui-demo\ndescription: 界面验证\n---\n\n# 测试\n完整正文\n"
         XCTAssertTrue(model.saveSkill(draft))
         XCTAssertNil(model.libraryError)
-        XCTAssertEqual(model.selectedSkill?.id, "personal/ui-demo")
+        XCTAssertEqual(model.selectedSkill?.id, "ui-demo")
         XCTAssertTrue(model.selectedSkillDocument.contains("完整正文"))
         model.updateQuery("界面验证")
-        XCTAssertEqual(model.filteredSkills.map(\.id), ["personal/ui-demo"])
+        XCTAssertEqual(model.filteredSkills.map(\.id), ["ui-demo"])
         var editing = try XCTUnwrap(model.editorDraft(for: try XCTUnwrap(model.selectedSkill)))
         editing.document += "\n新增约束\n"
         XCTAssertTrue(model.saveSkill(editing))
         XCTAssertTrue(model.selectedSkillDocument.contains("新增约束"))
         model.removeSkill(try XCTUnwrap(model.selectedSkill))
         XCTAssertEqual(model.snapshot.catalog.entries.count, originalCount)
-        XCTAssertFalse(model.snapshot.catalog.entries.contains { $0.id == "personal/ui-demo" })
+        XCTAssertFalse(model.snapshot.catalog.entries.contains { $0.id == "ui-demo" })
     }
 
     func testBatchRemovalStopsAtStaleEntryAndKeepsRemainingSkillsForRetry() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("batch-removal-\(UUID())")
         defer { try? FileManager.default.removeItem(at: root) }
-        let paths = SkillSetRuntimePaths(applicationSupportRoot: root, repositoryRoot: nil)
-        let model = AppModel(snapshot: AppSnapshot.load(), runtimePaths: paths)
+        let paths = SkillSetRuntimePaths(applicationSupportRoot: root.appendingPathComponent("state"), repositoryRoot: nil)
+        let locations = GlobalConfigurationLocations(home: root.appendingPathComponent("home"), stateRoot: paths.applicationSupportRoot)
+        let externalEntry = SkillEntry(
+            id: "workspace/external-demo", slug: "external-demo", declaredName: "external-demo",
+            description: "外部来源测试条目", declaredVersion: nil, metadataReview: "reviewed",
+            sourceId: "workspace", path: "skills/external-demo", contentHash: String(repeating: "a", count: 64),
+            fileCount: 1, bytes: 32, integrity: "snapshotted", issues: [], licenseReview: "ok", excludedPaths: []
+        )
+        let baseSnapshot = AppSnapshot.load().replacingCatalog(CatalogDocument(
+            schemaVersion: 1, hashAlgorithm: "sha256:path-content-executable:v1", entries: [externalEntry]
+        ))
+        let model = AppModel(snapshot: baseSnapshot, runtimePaths: paths, globalLocations: locations)
         for slug in ["batch-first", "batch-stale", "batch-last"] {
             XCTAssertTrue(model.saveSkill(SkillEditorDraft(
                 slug: slug, document: "---\nname: \(slug)\ndescription: 批量移除验证\n---\n正文\n"
@@ -87,7 +97,9 @@ final class SkillEditorTests: XCTestCase {
         XCTAssertEqual(model.removeSkills([updated, last, last, source]), [updated.id, last.id, source.id])
         XCTAssertNil(model.skillRemovalError)
         XCTAssertEqual(model.hiddenSkillCount, hiddenCount + 1)
-        let restarted = AppModel(snapshot: AppSnapshot.load(), runtimePaths: paths)
+        XCTAssertEqual(model.hiddenSkills.map(\.id), [source.id])
+        XCTAssertFalse(model.snapshot.catalog.entries.contains { $0.id == source.id })
+        let restarted = AppModel(snapshot: baseSnapshot, runtimePaths: paths, globalLocations: locations)
         XCTAssertFalse(restarted.snapshot.catalog.entries.contains { [first.id, stale.id, last.id, source.id].contains($0.id) })
         restarted.restoreHiddenSkills()
         XCTAssertTrue(restarted.snapshot.catalog.entries.contains { $0.id == source.id })

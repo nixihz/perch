@@ -14,18 +14,31 @@ public struct GlobalConfigurationLocations: Sendable {
     }
 
     public static func detect(stateRoot: URL, environment: [String: String] = ProcessInfo.processInfo.environment) -> Self {
-        Self(home: environment["SKILLSET_HOME"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) }
-                ?? FileManager.default.homeDirectoryForCurrentUser, stateRoot: stateRoot,
-             codexRoot: environment["CODEX_HOME"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) },
-             claudeRoot: environment["CLAUDE_CONFIG_DIR"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) })
+        let resolvedState = stateRoot.resolvingSymlinksInPath().standardizedFileURL
+        let defaultRoot = ProjectStore.defaultRootURL.resolvingSymlinksInPath().standardizedFileURL
+        let fallbackHome = resolvedState == defaultRoot
+            ? FileManager.default.homeDirectoryForCurrentUser
+            : (resolvedState.lastPathComponent == "state"
+                ? resolvedState.deletingLastPathComponent().appendingPathComponent("home")
+                : resolvedState.appendingPathComponent("home"))
+        return Self(
+            home: environment["SKILLSET_HOME"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) } ?? fallbackHome,
+            stateRoot: stateRoot,
+            codexRoot: environment["CODEX_HOME"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) },
+            claudeRoot: environment["CLAUDE_CONFIG_DIR"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) }
+        )
+    }
+
+    public var libraryRoot: URL {
+        home.appendingPathComponent(".agents/skills")
     }
 
     public func skillsRoot(_ host: MCPHost) -> URL {
         configuredSkillsRoot(host).resolvingSymlinksInPath().standardizedFileURL
     }
 
-    func configuredSkillsRoot(_ host: MCPHost) -> URL {
-        host == .codex ? home.appendingPathComponent(".agents/skills") : claudeRoot.appendingPathComponent("skills")
+    public func configuredSkillsRoot(_ host: MCPHost) -> URL {
+        (host == .codex ? codexRoot : claudeRoot).appendingPathComponent("skills")
     }
 
     public func rulesURL(_ host: MCPHost) -> URL {
@@ -378,7 +391,10 @@ public struct GlobalConfigurationManager {
     }
 
     func hash(_ url: URL) throws -> String? {
-        if let hash = try ManagedSkillLink.hash(url, versionsRoot: paths.versionsRoot) { return hash }
+        if let hash = try ManagedSkillLink.hash(
+            url, versionsRoot: paths.versionsRoot,
+            libraryRoot: locations.libraryRoot, sourcesRoot: paths.sourcesRoot
+        ) { return hash }
         // 只在已配置的目录边界内检查，不能把 macOS 的 /var 系统别名误判为用户置换。
         let roots = [locations.home, locations.stateRoot, locations.codexRoot, locations.claudeRoot,
                      locations.skillsRoot(.codex), locations.skillsRoot(.claudeCode)]
@@ -401,7 +417,10 @@ public struct GlobalConfigurationManager {
         var cursor = url
         while cursor.path != root.path {
             if isLink(cursor) {
-                guard cursor == url, try ManagedSkillLink.hash(cursor, versionsRoot: paths.versionsRoot) != nil else {
+                guard cursor == url, try ManagedSkillLink.hash(
+                    cursor, versionsRoot: paths.versionsRoot,
+                    libraryRoot: locations.libraryRoot, sourcesRoot: paths.sourcesRoot
+                ) != nil else {
                     throw DeploymentError.symlinkDetected(cursor.path)
                 }
             }

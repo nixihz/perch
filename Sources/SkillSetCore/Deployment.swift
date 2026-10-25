@@ -134,6 +134,18 @@ public struct SkillAssetCopyResult: Hashable, Sendable {
     }
 }
 
+struct SkillAssetSnapshot {
+    struct File {
+        let path: String
+        let data: Data
+        let permissions: UInt16
+    }
+
+    let directories: [String]
+    let files: [File]
+    let result: SkillAssetCopyResult
+}
+
 public enum SkillAssetCopier {
     public static func copy(from source: URL, to destination: URL, fileManager: FileManager = .default) throws -> SkillAssetCopyResult {
         let canonicalSource = source.resolvingSymlinksInPath().standardizedFileURL
@@ -153,7 +165,7 @@ public enum SkillAssetCopier {
         }
         try fileManager.createDirectory(at: destinationRoot, withIntermediateDirectories: true)
 
-        var files: [(String, UInt16, String)] = []
+        var files: [(String, UInt16, String, Int)] = []
         var totalBytes = 0
 
         try walkDirectory(
@@ -173,24 +185,22 @@ public enum SkillAssetCopier {
                 try fileManager.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
                 try data.write(to: target, options: .atomic)
                 try fileManager.setAttributes([.posixPermissions: NSNumber(value: permissions)], ofItemAtPath: target.path)
-                files.append((relative, permissions, sha256(data)))
+                files.append((relative, permissions, sha256(data), data.count))
                 totalBytes += data.count
             }
         )
         files.sort { $0.0 < $1.0 }
         let fileManifest = files.map {
-            let path = destinationRoot.appendingPathComponent($0.0).path
-            let size = ((try? fileManager.attributesOfItem(atPath: path))?[.size] as? NSNumber)?.intValue ?? 0
-            return SkillAssetFile(
+            SkillAssetFile(
                 path: $0.0,
                 sha256: $0.2,
                 executable: $0.1 & 0o111 != 0,
-                bytes: size
+                bytes: $0.3
             )
         }
         return SkillAssetCopyResult(
             fileManifest: fileManifest,
-            contentHash: hashManifest(files),
+            contentHash: hashManifest(files.map { ($0.0, $0.1, $0.2) }),
             bytes: totalBytes
         )
     }
@@ -202,7 +212,7 @@ public enum SkillAssetCopier {
         guard fileManager.fileExists(atPath: sourceRoot.path, isDirectory: &isDirectory), isDirectory.boolValue else {
             throw DeploymentError.skillSourceMissing(sourceRoot.path)
         }
-        var files: [(String, UInt16, String)] = []
+        var files: [(String, UInt16, String, Int)] = []
         var totalBytes = 0
         try walkDirectory(
             at: sourceRoot,
@@ -212,26 +222,87 @@ public enum SkillAssetCopier {
             fileManager: fileManager,
             onDirectory: { _ in },
             onFile: { relative, data, permissions in
-                files.append((relative, permissions, sha256(data)))
+                files.append((relative, permissions, sha256(data), data.count))
                 totalBytes += data.count
             }
         )
         files.sort { $0.0 < $1.0 }
         let fileManifest = files.map {
-            let path = sourceRoot.appendingPathComponent($0.0).path
-            let size = ((try? fileManager.attributesOfItem(atPath: path))?[.size] as? NSNumber)?.intValue ?? 0
-            return SkillAssetFile(
+            SkillAssetFile(
                 path: $0.0,
                 sha256: $0.2,
                 executable: $0.1 & 0o111 != 0,
-                bytes: size
+                bytes: $0.3
             )
         }
         return SkillAssetCopyResult(
             fileManifest: fileManifest,
-            contentHash: hashManifest(files),
+            contentHash: hashManifest(files.map { ($0.0, $0.1, $0.2) }),
             bytes: totalBytes
         )
+    }
+
+    /// 一次读完技能包。计划生成据此写入对象和暂存目录，不再为核对指纹把同一批文件再读一遍。
+    static func readAsset(from source: URL, fileManager: FileManager = .default) throws -> SkillAssetSnapshot {
+        let sourceRoot = source.resolvingSymlinksInPath().standardizedFileURL
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(atPath: sourceRoot.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+            throw DeploymentError.skillSourceMissing(sourceRoot.path)
+        }
+        var directories: [String] = []
+        var files: [SkillAssetSnapshot.File] = []
+        var hashed: [(String, UInt16, String)] = []
+        var totalBytes = 0
+        try walkDirectory(
+            at: sourceRoot,
+            relativePath: "",
+            sourceRoot: sourceRoot,
+            ancestors: [],
+            fileManager: fileManager,
+            onDirectory: { directories.append($0) },
+            onFile: { relative, data, permissions in
+                let digest = sha256(data)
+                files.append(SkillAssetSnapshot.File(path: relative, data: data, permissions: permissions))
+                hashed.append((relative, permissions, digest))
+                totalBytes += data.count
+            }
+        )
+        files.sort { $0.path < $1.path }
+        hashed.sort { $0.0 < $1.0 }
+        let manifest = zip(files, hashed).map { file, hash in
+            SkillAssetFile(
+                path: file.path,
+                sha256: hash.2,
+                executable: file.permissions & 0o111 != 0,
+                bytes: file.data.count
+            )
+        }
+        return SkillAssetSnapshot(
+            directories: directories,
+            files: files,
+            result: SkillAssetCopyResult(fileManifest: manifest, contentHash: hashManifest(hashed), bytes: totalBytes)
+        )
+    }
+
+    /// 把已经读入内存的技能包写到目标目录，保留空目录和原始权限位。
+    static func write(_ snapshot: SkillAssetSnapshot, to destinationRoot: URL, fileManager: FileManager = .default) throws -> SkillAssetCopyResult {
+        if fileManager.fileExists(atPath: destinationRoot.path) {
+            try fileManager.removeItem(at: destinationRoot)
+        }
+        try fileManager.createDirectory(at: destinationRoot, withIntermediateDirectories: true)
+        for directory in snapshot.directories {
+            try fileManager.createDirectory(
+                at: destinationRoot.appendingPathComponent(directory, isDirectory: true),
+                withIntermediateDirectories: true
+            )
+        }
+        for file in snapshot.files {
+            let target = destinationRoot.appendingPathComponent(file.path)
+            try fileManager.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try file.data.write(to: target, options: .atomic)
+            try fileManager.setAttributes([.posixPermissions: NSNumber(value: file.permissions)], ofItemAtPath: target.path)
+        }
+        return snapshot.result
     }
 
     static func collectFiles(from source: URL, fileManager: FileManager = .default) throws -> [(String, Data, UInt16)] {
@@ -327,8 +398,17 @@ public enum SkillAssetCopier {
     }
 
     public static func sha256(_ data: Data) -> String {
-        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        var encoded = [UInt8](repeating: 0, count: 64)
+        var cursor = 0
+        for byte in SHA256.hash(data: data) {
+            encoded[cursor] = hexDigits[Int(byte >> 4)]
+            encoded[cursor + 1] = hexDigits[Int(byte & 0x0F)]
+            cursor += 2
+        }
+        return String(decoding: encoded, as: UTF8.self)
     }
+
+    private static let hexDigits = Array("0123456789abcdef".utf8)
 
     public static func sha256(fileAt url: URL) throws -> String {
         let data = try Data(contentsOf: url, options: .mappedIfSafe)
@@ -426,6 +506,8 @@ public struct DeploymentPlanner {
     public let stagingRoot: URL
     public let operationsRoot: URL?
     private let versionsRoot: URL?
+    private let libraryRoot: URL?
+    private let sourcesRoot: URL?
     private let skillSourceURLs: [String: URL]
 
     private let fileManager: FileManager
@@ -439,6 +521,8 @@ public struct DeploymentPlanner {
         operationsRoot: URL? = nil,
         skillSourceURLs: [String: URL] = [:],
         versionsRoot: URL? = nil,
+        libraryRoot: URL? = nil,
+        sourcesRoot: URL? = nil,
         fileManager: FileManager = .default,
         clock: @escaping () -> Date = Date.init,
         idGenerator: @escaping () -> UUID = UUID.init
@@ -448,6 +532,8 @@ public struct DeploymentPlanner {
         self.stagingRoot = stagingRoot
         self.operationsRoot = operationsRoot
         self.versionsRoot = versionsRoot
+        self.libraryRoot = libraryRoot
+        self.sourcesRoot = sourcesRoot
         self.skillSourceURLs = skillSourceURLs
         self.fileManager = fileManager
         self.clock = clock
@@ -500,8 +586,9 @@ public struct DeploymentPlanner {
         var keepStage = false
         defer { if !keepStage { try? fileManager.removeItem(at: stage) } }
 
+        let skillsByID = skillLookup(catalog.entries)
         let selected = try manifest.skills.map { id -> SkillEntry in
-            guard let entry = catalog.entries.first(where: { $0.id == id }) else {
+            guard let entry = skillsByID[id] else {
                 throw DeploymentError.skillNotFound(id)
             }
             guard !entry.isBlocked else {
@@ -548,9 +635,10 @@ public struct DeploymentPlanner {
         for entry in selected {
             let catalogSource = skillSourceURLs[entry.id] ?? repositoryRoot.appendingPathComponent(entry.path)
             var source = catalogSource
-            let sourceHash = try? SkillAssetCopier.analyze(from: catalogSource, fileManager: fileManager).contentHash
+            let asset = try? SkillAssetCopier.readAsset(from: catalogSource, fileManager: fileManager)
+            let reusable = asset?.result.contentHash == entry.contentHash ? asset : nil
             var restoredSource: URL?
-            if sourceHash != entry.contentHash {
+            if reusable == nil {
                 let temporarySource = stage
                     .appendingPathComponent(".skillset-object-sources", isDirectory: true)
                     .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -570,7 +658,11 @@ public struct DeploymentPlanner {
                     throw DeploymentError.skillSourceMissing(catalogSource.path)
                 }
             }
-            let materialized = try objectStore.materializeSkill(source: source)
+            let materialized = if let reusable {
+                try objectStore.materialize(reusable)
+            } else {
+                try objectStore.materializeSkill(source: source)
+            }
             guard materialized.contentHash == entry.contentHash else {
                 throw SkillAssetCopyError(
                     path: entry.path,
@@ -594,11 +686,36 @@ public struct DeploymentPlanner {
                 let destination = stage.appendingPathComponent(relativePath, isDirectory: true)
                 let afterHash: String
                 if request.installMethod == .symlink {
-                    guard let versionsRoot else { throw DeploymentError.invalidPlan }
-                    let version = try ManagedSkillLink.prepare(source: source, contentHash: materialized.contentHash, root: versionsRoot)
                     try fileManager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
-                    try fileManager.createSymbolicLink(at: destination, withDestinationURL: version)
-                    afterHash = try ManagedSkillLink.hash(destination, versionsRoot: versionsRoot)!
+                    if let libraryRoot {
+                        let linkTarget = libraryRoot.appendingPathComponent(entry.slug, isDirectory: true)
+                        if fileManager.fileExists(atPath: linkTarget.path)
+                            || (try? fileManager.destinationOfSymbolicLink(atPath: linkTarget.path)) != nil {
+                            try fileManager.createSymbolicLink(at: destination, withDestinationURL: linkTarget)
+                        } else if let versionsRoot {
+                            let version = if let reusable {
+                                try ManagedSkillLink.prepare(snapshot: reusable, contentHash: materialized.contentHash, root: versionsRoot)
+                            } else {
+                                try ManagedSkillLink.prepare(source: source, contentHash: materialized.contentHash, root: versionsRoot)
+                            }
+                            try fileManager.createSymbolicLink(at: destination, withDestinationURL: version)
+                        } else {
+                            throw DeploymentError.skillSourceMissing(linkTarget.path)
+                        }
+                    } else {
+                        guard let versionsRoot else { throw DeploymentError.invalidPlan }
+                        let version = if let reusable {
+                            try ManagedSkillLink.prepare(snapshot: reusable, contentHash: materialized.contentHash, root: versionsRoot)
+                        } else {
+                            try ManagedSkillLink.prepare(source: source, contentHash: materialized.contentHash, root: versionsRoot)
+                        }
+                        try fileManager.createSymbolicLink(at: destination, withDestinationURL: version)
+                    }
+                    afterHash = try ManagedSkillLink.hash(destination, versionsRoot: versionsRoot, libraryRoot: libraryRoot, sourcesRoot: sourcesRoot)!
+                } else if let reusable {
+                    let copy = try SkillAssetCopier.write(reusable, to: destination, fileManager: fileManager)
+                    guard copy.contentHash == materialized.contentHash else { throw DeploymentError.invalidPlan }
+                    afterHash = copy.contentHash
                 } else {
                     let copy = try SkillAssetCopier.copy(from: source, to: destination, fileManager: fileManager)
                     guard copy.contentHash == materialized.contentHash else { throw DeploymentError.invalidPlan }
@@ -609,7 +726,17 @@ public struct DeploymentPlanner {
                 let beforeHash = try directoryDigest(observedTarget)
                 observations.append(PlannedObservation(relativePath: relativePath, contentHash: beforeHash))
                 if let expected = ownedSkills[relativePath], let beforeHash, beforeHash != expected {
-                    throw DeploymentError.managedSkillDrift(relativePath)
+                    let linkTarget = libraryRoot?.appendingPathComponent(entry.slug, isDirectory: true)
+                    let followedLibraryUpdate = if let linkTarget,
+                       let previousContentHash = currentLock?.skills.first(where: { $0.id == entry.id })?.contentHash {
+                        expected == ManagedSkillLink.expectedHash(destination: linkTarget, contentHash: previousContentHash)
+                            && beforeHash == ManagedSkillLink.expectedHash(destination: linkTarget, contentHash: materialized.contentHash)
+                    } else {
+                        false
+                    }
+                    if !followedLibraryUpdate {
+                        throw DeploymentError.managedSkillDrift(relativePath)
+                    }
                 }
                 if let beforeHash, ownedSkills[relativePath] == nil {
                     guard beforeHash == materialized.contentHash else {
@@ -873,7 +1000,7 @@ public struct DeploymentPlanner {
             throw DeploymentError.pathOutsideRoot(target.path)
         }
         if (try? fileManager.destinationOfSymbolicLink(atPath: target.path)) != nil {
-            guard allowManagedLink, try ManagedSkillLink.hash(target, versionsRoot: versionsRoot) != nil else {
+            guard allowManagedLink, try ManagedSkillLink.hash(target, versionsRoot: versionsRoot, libraryRoot: libraryRoot, sourcesRoot: sourcesRoot) != nil else {
                 throw DeploymentError.symlinkDetected(target.path)
             }
         }
@@ -893,7 +1020,7 @@ public struct DeploymentPlanner {
     }
 
     private func directoryDigest(_ url: URL) throws -> String? {
-        if let hash = try ManagedSkillLink.hash(url, versionsRoot: versionsRoot) { return hash }
+        if let hash = try ManagedSkillLink.hash(url, versionsRoot: versionsRoot, libraryRoot: libraryRoot, sourcesRoot: sourcesRoot) { return hash }
         var isDirectory: ObjCBool = false
         guard fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
             return nil

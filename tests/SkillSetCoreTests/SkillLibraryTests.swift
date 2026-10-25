@@ -7,21 +7,61 @@ struct SkillLibraryTests {
         let fixture = try LibraryFixture()
         defer { fixture.cleanup() }
         let original = try fixture.store.save(fixture.draft(), repositoryRoot: nil)
-        let restarted = SkillLibraryStore(rootURL: fixture.store.rootURL)
-        #expect(try restarted.catalog(merging: fixture.emptyCatalog).entries.map(\.id) == ["personal/demo"])
+        let restarted = SkillLibraryStore(libraryURL: fixture.store.libraryURL, sourcesURL: fixture.store.sourcesURL, categoriesURL: fixture.store.categoriesURL)
+        #expect(try restarted.catalog(merging: fixture.emptyCatalog).entries.map(\.id) == ["demo"])
         #expect(try restarted.document(for: original, repositoryRoot: nil).contains("第一版"))
 
         let updated = try restarted.save(fixture.draft(body: "第二版", original: original), repositoryRoot: nil)
         #expect(updated.contentHash != original.contentHash)
-        #expect(updated.path != original.path)
+        #expect(updated.path == original.path)
         #expect(updated.declaredVersion == "1.0")
         #expect(updated.description == "用于验证保存和检索")
-        #expect(try restarted.document(for: original, repositoryRoot: nil).contains("第一版"))
+        #expect(try restarted.document(for: updated, repositoryRoot: nil).contains("第二版"))
         #expect(try restarted.catalog(merging: fixture.emptyCatalog).entries.count == 1)
         #expect(try matchingSkills(restarted.catalog(merging: fixture.emptyCatalog).entries, query: "验证").map(\.id) == [updated.id])
         try restarted.remove(updated)
+        #expect(!FileManager.default.fileExists(atPath: restarted.customURL.appendingPathComponent(updated.slug).path))
         #expect(try restarted.catalog(merging: fixture.emptyCatalog).entries.isEmpty)
-        #expect(try restarted.document(for: updated, repositoryRoot: nil).contains("第二版"))
+        #expect(throws: (any Error).self) { try restarted.document(for: updated, repositoryRoot: nil) }
+    }
+
+    @Test func ownedLibraryDirectoryMovesIntoCustom() throws {
+        let fixture = try LibraryFixture()
+        defer { fixture.cleanup() }
+        let fm = FileManager.default
+        let libraryEntry = fixture.store.libraryURL.appendingPathComponent("local-demo")
+        try fm.createDirectory(at: libraryEntry, withIntermediateDirectories: true)
+        try Data("---\nname: local-demo\ndescription: imported\n---\nbody\n".utf8)
+            .write(to: libraryEntry.appendingPathComponent("SKILL.md"))
+        let loaded = try fixture.store.loadLibrary()
+        let custom = fixture.store.customURL.appendingPathComponent("local-demo")
+        #expect(fm.fileExists(atPath: custom.appendingPathComponent("SKILL.md").path))
+        #expect(try fm.destinationOfSymbolicLink(atPath: libraryEntry.path) == custom.path)
+        #expect(loaded.records.first { $0.entry.slug == "local-demo" }?.entry.sourceId == SkillLibraryStore.sourceID)
+    }
+
+    @Test func removingLinkedSkillDropsLibraryEntryAndKeepsSource() throws {
+        let fixture = try LibraryFixture()
+        defer { fixture.cleanup() }
+        let fm = FileManager.default
+        let source = fixture.root.appendingPathComponent("checkout/demo")
+        try fm.createDirectory(at: source, withIntermediateDirectories: true)
+        let document = "---\nname: demo\ndescription: 来源技能\n---\n\n# Demo\n"
+        try document.write(to: source.appendingPathComponent("SKILL.md"), atomically: true, encoding: .utf8)
+        let analysis = try SkillAssetCopier.analyze(from: source)
+        let origin = SourceSkillOrigin(
+            url: "https://github.com/example/skills", commit: String(repeating: "a", count: 40),
+            path: "demo", contentHash: analysis.contentHash, licenseEvidence: "", licenseHashes: [:], declaredName: "demo"
+        )
+        var draft = SourceSkillImportDraft(
+            previewID: UUID(), origin: origin, document: document, files: [], slug: "demo"
+        )
+        draft.mode = .symlink
+        let entry = try fixture.store.importSource(draft, source: source, licenses: [:])
+        try fixture.store.remove(entry)
+        #expect(try fixture.store.catalog(merging: fixture.emptyCatalog).entries.isEmpty)
+        #expect(!fm.fileExists(atPath: fixture.store.libraryURL.appendingPathComponent("demo").path))
+        #expect(try String(contentsOf: source.appendingPathComponent("SKILL.md"), encoding: .utf8) == document)
     }
 
     @Test func forksPreserveAssetsPermissionsAndUnknownFrontmatterWithoutTouchingSource() throws {
@@ -30,7 +70,7 @@ struct SkillLibraryTests {
         let source = try fixture.makeRepositorySkill()
         let before = try Data(contentsOf: fixture.repository.appendingPathComponent("skills/demo/SKILL.md"))
         let copy = try fixture.store.save(fixture.draft(body: "修改副本", original: source), repositoryRoot: fixture.repository)
-        #expect(copy.id == "personal/demo")
+        #expect(copy.id == "demo")
         #expect(copy.fileCount == 2)
         #expect(copy.licenseReview == "required")
         #expect(try Data(contentsOf: fixture.repository.appendingPathComponent("skills/demo/SKILL.md")) == before)
@@ -65,11 +105,11 @@ struct SkillLibraryTests {
         let source = try #require(fixture.store.sourceURLs()[entry.id])
         try "外部修改".write(to: source.appendingPathComponent("SKILL.md"), atomically: true, encoding: .utf8)
         #expect(throws: SkillLibraryError.stale) { try fixture.store.save(fixture.draft(original: entry), repositoryRoot: nil) }
-        let packages = fixture.store.rootURL.appendingPathComponent("packages")
-        try FileManager.default.removeItem(at: packages)
+        let custom = fixture.store.customURL
+        try FileManager.default.removeItem(at: custom)
         let outside = fixture.root.appendingPathComponent("outside")
         try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
-        try FileManager.default.createSymbolicLink(at: packages, withDestinationURL: outside)
+        try FileManager.default.createSymbolicLink(at: custom, withDestinationURL: outside)
         #expect(throws: SkillLibraryError.unsafePath) { try fixture.store.save(fixture.draft(slug: "escaped"), repositoryRoot: nil) }
         #expect(try FileManager.default.contentsOfDirectory(atPath: outside.path).isEmpty)
     }
@@ -91,7 +131,7 @@ struct SkillLibraryTests {
         let fixture = try LibraryFixture()
         defer { fixture.cleanup() }
         _ = try fixture.store.save(fixture.draft(), repositoryRoot: nil)
-        let url = fixture.store.rootURL.appendingPathComponent("index.json")
+        let url = fixture.store.categoriesURL
         let broken = Data("not-json".utf8)
         try broken.write(to: url)
         #expect(throws: SkillLibraryError.corrupt) { try fixture.store.save(fixture.draft(slug: "next"), repositoryRoot: nil) }
@@ -105,8 +145,11 @@ struct SkillLibraryTests {
         let project = fixture.root.appendingPathComponent("project")
         try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
         let registration = try ProjectStore(rootURL: fixture.paths.applicationSupportRoot).register(path: project)
-        let service = try SkillSetService(paths: fixture.paths)
-        #expect(service.skills(query: "personal").map(\.id) == [entry.id])
+        let service = try SkillSetService(
+            paths: fixture.paths,
+            globalLocations: .init(home: fixture.root.appendingPathComponent("home"), stateRoot: fixture.paths.applicationSupportRoot)
+        )
+        #expect(service.skills(query: "验证").map(\.id) == [entry.id])
         let record = try service.makePlan(projectID: registration.id, skillIDs: [entry.id], instructionIDs: [])
         #expect(throws: DeploymentPlanStoreError.self) { try service.apply(planID: record.id, digest: record.plan.digest) }
         _ = try service.approve(planID: record.id, digest: record.plan.digest)
@@ -117,7 +160,7 @@ struct SkillLibraryTests {
         #expect(lock.skills.first?.contentHash == entry.contentHash)
         #expect(try SkillObjectStore(repositoryRoot: fixture.paths.applicationSupportRoot).verify(lock: lock).checkedObjects > 0)
         try fixture.store.remove(entry)
-        #expect(try String(contentsOf: installed, encoding: .utf8).contains("第一版"))
+        #expect(throws: (any Error).self) { try String(contentsOf: installed, encoding: .utf8) }
     }
 }
 
@@ -132,7 +175,7 @@ private struct LibraryFixture {
         root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent("library-tests-\(UUID())")
         repository = root.appendingPathComponent("repo")
         paths = SkillSetRuntimePaths(applicationSupportRoot: root.appendingPathComponent("state"), repositoryRoot: repository)
-        store = SkillLibraryStore(rootURL: paths.libraryRoot)
+        store = paths.makeLibraryStore(home: root.appendingPathComponent("home"))
         try FileManager.default.createDirectory(at: repository.appendingPathComponent("registry"), withIntermediateDirectories: true)
         try JSONEncoder().encode(emptyCatalog).write(to: repository.appendingPathComponent("registry/catalog.json"))
     }

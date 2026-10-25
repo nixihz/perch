@@ -24,6 +24,8 @@ def verify(executable):
         environment = os.environ.copy()
         for key in ("PACKAGE_RESOURCE_BUNDLE_PATH", "PACKAGE_RESOURCE_BUNDLE_URL", "SKILLSET_REPOSITORY_ROOT", "SKILLSET_REPOSITORY_LIBRARY"):
             environment.pop(key, None)
+        # 技能库在主目录的 .agents/skills。不隔离时会读到使用者的真实技能。
+        environment["SKILLSET_HOME"] = str(root / "home")
         messages = [
             {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
                 "protocolVersion": "2025-11-25", "capabilities": {},
@@ -80,8 +82,12 @@ def verify(executable):
         project = root / 'project'
         project.mkdir()
         registration = cli('projects', 'add', str(project))['project']
-        # 新本机库从空开始；在隔离 state 显式同步可信快照，不能靠收录隐式启用。
-        cli('sources', 'preview', str(packaged / 'SkillSetLibrary/skills/stc'))
+        # 新本机库从空开始；配置来源不会自动入库，这里显式复制随包快照。
+        preview = cli('sources', 'preview', str(packaged / 'SkillSetLibrary/skills/stc'))
+        candidate = next(item for item in preview['candidates'] if item['slug'] == 'stc')
+        mcp_tool('sources_import_skill', {
+            'previewId': preview['id'], 'path': candidate['path'], 'slug': 'stc', 'mode': 'copy',
+        })
         found = mcp_tool('skills_search', {'query': 'stc'})['skills']
         if len(found) != 1:
             raise RuntimeError('隔离本机库未检索到同步的 stc 技能')

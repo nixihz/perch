@@ -191,6 +191,48 @@ struct GlobalConfigurationTests {
     }
 
     @Test
+    func externallyDeletedManagedSkillIsRecreatedByNextDeployment() throws {
+        let f = try GlobalFixture()
+        defer { f.cleanup() }
+        _ = try f.apply(f.plan())
+        try FileManager.default.removeItem(at: f.skill)
+
+        _ = try f.apply(f.plan())
+
+        #expect(f.exists(f.skill))
+        #expect(try f.read(f.skill.appendingPathComponent("SKILL.md")).contains("第一版"))
+    }
+
+    @Test
+    func externallyModifiedManagedSkillIsPreservedAndReconciled() throws {
+        let f = try GlobalFixture()
+        defer { f.cleanup() }
+        _ = try f.apply(f.plan())
+        try f.write("用户保留的技能", to: f.skill.appendingPathComponent("SKILL.md"))
+
+        _ = try f.apply(f.plan())
+
+        #expect(try f.read(f.skill.appendingPathComponent("SKILL.md")) == "用户保留的技能")
+        let observed = try #require(try f.manager.inspect(host: f.host).resources.first { $0.path == f.skill.path })
+        #expect(!observed.modified)
+    }
+
+    @Test
+    func externallyModifiedManagedRulesArePreservedAndReconciled() throws {
+        let f = try GlobalFixture()
+        defer { f.cleanup() }
+        _ = try f.apply(f.plan())
+        let edited = try f.read(f.rules).replacingOccurrences(of: "第一条规则", with: "用户保留的规则")
+        try f.write(edited, to: f.rules)
+
+        _ = try f.apply(f.plan())
+
+        #expect(try f.read(f.rules).contains("用户保留的规则"))
+        let observed = try #require(try f.manager.inspect(host: f.host).resources.first { $0.path == f.rules.path })
+        #expect(!observed.modified)
+    }
+
+    @Test
     func stopManagementKeepsEditsAndUndoWillNotReadoptChangedFiles() throws {
         let f = try GlobalFixture()
         defer { f.cleanup() }
@@ -461,9 +503,9 @@ private struct GlobalFixture {
         home = root.appendingPathComponent("home")
         paths = SkillSetRuntimePaths(applicationSupportRoot: root.appendingPathComponent("state"), repositoryRoot: nil)
         locations = GlobalConfigurationLocations(home: home, stateRoot: paths.applicationSupportRoot,
-            codexRoot: root.appendingPathComponent("custom-codex"))
+            codexRoot: home.appendingPathComponent("custom-codex"))
         try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
-        let library = SkillLibraryStore(rootURL: paths.libraryRoot)
+        let library = paths.makeLibraryStore(home: home)
         entry = try library.save(SkillEditorDraft(slug: "demo", document: "---\nname: demo\ndescription: 全局测试\n---\n第一版\n"), repositoryRoot: nil)
         source = try #require(library.sourceURLs()[entry.id])
         try FileManager.default.createDirectory(at: source.appendingPathComponent("assets"), withIntermediateDirectories: true)

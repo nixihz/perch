@@ -12,17 +12,8 @@ struct SkillsView: View {
     @State private var filter: SkillLibraryFilter = .all
     @State private var sourceID = ""
 
-    private var libraryIndex: SkillLibraryIndex { SkillLibraryIndex(entries: model.snapshot.catalog.entries) }
-    private var sourceLabels: [String: String] {
-        Dictionary(grouping: model.snapshot.catalog.entries, by: \.sourceId).mapValues { entries in
-            let id = entries[0].sourceId
-            return SkillSourceLabel.title(
-                sourceID: id,
-                origin: entries.compactMap { model.sourceOrigins[$0.id]?.url }.sorted().first,
-                registeredTitle: model.snapshot.sources.sources.first { $0.id == id }?.title
-            )
-        }
-    }
+    private var libraryIndex: SkillLibraryIndex { model.skillLibraryIndex }
+    private var sourceLabels: [String: String] { model.skillSourceLabels }
     private var visibleSkills: [SkillEntry] {
         let index = libraryIndex
         return model.filteredSkills.filter {
@@ -59,7 +50,7 @@ struct SkillsView: View {
                 StatusBadge(text: L10n.tr("\(model.snapshot.catalog.entries.count) 个技能"), tone: .accent)
                 StatusBadge(text: L10n.tr("\(model.blockedCount) 个暂不可用"), tone: model.blockedCount > 0 ? .danger : .positive)
                 Spacer()
-                Button(L10n.tr("启用到 AI 工具…")) { installing = true }
+                Button(L10n.tr("安装到本机…")) { installing = true }
                     .disabled(checkedSkillIDs.isEmpty || model.isWorking)
                     .accessibilityIdentifier("skills.install-user")
                 if model.hiddenSkillCount > 0 {
@@ -94,7 +85,7 @@ struct SkillsView: View {
             }
             Button(L10n.tr("取消"), role: .cancel) { removal = [] }
         } message: {
-            Text(L10n.tr("将移除以下技能：") + "\n" + removal.map(\.slug).joined(separator: "、") + "\n\n" + L10n.tr("本机技能从库中移除，历史版本保留；来源技能隐藏，可恢复。来源文件、项目文件和草稿不会改变。"))
+            Text(removalExplanation)
         }
         .onChange(of: model.snapshot.catalog.entries.map(\.id)) { _, ids in
             checkedSkillIDs.formIntersection(ids)
@@ -104,6 +95,28 @@ struct SkillsView: View {
         .task(id: model.selectedSkill.map { $0.id + ":" + $0.contentHash }) {
             await model.loadSelectedSkillDocumentInBackground()
         }
+    }
+
+    /// custom 里的技能没有可回退的来源，移除会删除文件。GitHub、skills.sh 等来源只退出技能库。
+    private var removalExplanation: String {
+        let names = removal.map(\.slug).joined(separator: "、")
+        let deletesFiles = removal.contains { !keepsExternalSource($0) }
+        let keepsSource = removal.contains(where: keepsExternalSource)
+        var lines = [L10n.tr("将移除以下技能："), names]
+        if deletesFiles {
+            lines.append(L10n.tr("custom 中的技能会删除文件。"))
+        }
+        if keepsSource {
+            lines.append(L10n.tr("来自 GitHub、skills.sh 等技能来源的技能会从技能库删除，技能来源里仍保留。"))
+        }
+        lines.append(L10n.tr("已经写到项目里的文件不会改变。"))
+        return lines.joined(separator: "\n")
+    }
+
+    private func keepsExternalSource(_ skill: SkillEntry) -> Bool {
+        if skill.sourceId == SkillLibraryStore.linkedSourceID { return true }
+        guard let url = model.sourceOrigins[skill.id]?.url else { return false }
+        return url.hasPrefix("https://") || url.hasPrefix("http://")
     }
 
     private var skillList: some View {
@@ -345,7 +358,7 @@ struct SkillsView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         } else {
-            EmptyState(icon: "wand.and.stars", title: L10n.tr("没有匹配的技能"), detail: L10n.tr("请清空筛选，或到「技能来源」预览其他仓库。"))
+            EmptyState(icon: "wand.and.stars", title: L10n.tr("没有匹配的技能"), detail: L10n.tr("请清空搜索，或到「技能来源」预览其他仓库。"))
         }
     }
 }
@@ -362,7 +375,7 @@ private struct UserSkillInstallSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(L10n.tr("用户级启用技能")).font(AppFont.title)
+            Text(L10n.tr("安装到本机")).font(AppFont.title)
             Text(L10n.tr("用户级技能会影响所选 AI 工具的全部项目。已有受管技能会保留；安装方式也会应用于它们。"))
                 .font(AppFont.secondary).foregroundStyle(.secondary)
             AppPicker(title: L10n.tr("目标 AI 工具"), selection: $host,

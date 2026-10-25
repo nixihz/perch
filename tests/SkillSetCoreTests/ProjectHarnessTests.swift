@@ -10,12 +10,13 @@ struct ProjectHarnessTests {
         let project = root.appendingPathComponent("project")
         try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
         let registration = try ProjectStore(rootURL: paths.applicationSupportRoot).register(path: project)
-        let library = SkillLibraryStore(rootURL: paths.libraryRoot)
+        let home = root.appendingPathComponent("home")
+        let library = paths.makeLibraryStore(home: home)
         let first = try library.save(SkillEditorDraft(slug: "first", document: "---\nname: first\ndescription: 原共享技能\n---\n第一份正文"), repositoryRoot: nil)
         let second = try library.save(SkillEditorDraft(slug: "second", document: "---\nname: second\ndescription: Codex 新技能\n---\n第二份正文"), repositoryRoot: nil)
         let rule = TemplateRecord(id: "legacy-rule", title: "原共享规则", body: "保留 Claude 的原规则。", purpose: "兼容验证", isLocal: true)
         _ = try TemplateStore(rootURL: paths.applicationSupportRoot).save(rule, initial: [])
-        let service = try SkillSetService(paths: paths)
+        let service = try SkillSetService(paths: paths, globalLocations: .init(home: home, stateRoot: paths.applicationSupportRoot))
         let initial = try service.makePlan(projectID: registration.id, skillIDs: [first.id], instructionIDs: [rule.id],
             agents: ["codex", "claude-code"], installMethod: .copy)
         _ = try service.approve(planID: initial.id, digest: initial.plan.digest)
@@ -113,9 +114,10 @@ struct ProjectHarnessTests {
         let project = root.appendingPathComponent("project")
         try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
         let registration = try ProjectStore(rootURL: paths.applicationSupportRoot).register(path: project)
-        let skill = try SkillLibraryStore(rootURL: paths.libraryRoot).save(
+        let home = root.appendingPathComponent("home")
+        let skill = try paths.makeLibraryStore(home: home).save(
             SkillEditorDraft(slug: "first", document: "---\nname: first\ndescription: 独立宿主\n---\n正文"), repositoryRoot: nil)
-        let service = try SkillSetService(paths: paths)
+        let service = try SkillSetService(paths: paths, globalLocations: .init(home: home, stateRoot: paths.applicationSupportRoot))
         let initial = try service.makeHarnessPlan(projectID: registration.id, agent: "codex",
             selection: ProjectHarnessSelection(skillIDs: [skill.id]), installMethod: .copy)
         _ = try service.approve(planID: initial.id, digest: initial.plan.digest)

@@ -85,7 +85,7 @@ final class SkillHostToggleUITests: XCTestCase {
         let locations = GlobalConfigurationLocations(home: home, stateRoot: paths.applicationSupportRoot)
         let slug = "long-skill-name-with-many-segments-that-must-leave-both-host-buttons-accessible"
         let description = String(repeating: "长说明需要换行，右侧两个工具的开关仍须保留。", count: 4)
-        let skill = try SkillLibraryStore(rootURL: paths.libraryRoot).save(SkillEditorDraft(
+        let skill = try paths.makeLibraryStore(home: home).save(SkillEditorDraft(
             slug: slug,
             document: "---\nname: \(slug)\ndescription: \(description)\n---\n测试技能正文。\n"
         ), repositoryRoot: nil)

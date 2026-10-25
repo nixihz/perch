@@ -13,6 +13,8 @@ final class PageLoadingTests: XCTestCase {
         let manager = GlobalConfigurationManager(paths: fixture.paths, locations: fixture.locations)
         let original = GlobalConfigurationDraft(skillIDs: ["existing-skill"], instructionIDs: ["existing-rule"], installMethod: .copy)
         try manager.saveDraft(original, host: .claudeCode)
+        // 该测试只验证宿主切换期间的并发保护；显式声明占位条目属于当前目录，避免被悬空引用修复逻辑清理。
+        global.setAvailableReferences(skillIDs: ["existing-skill"], instructionIDs: ["existing-rule"])
         global.refresh()
         global.selectHost(.claudeCode, inBackground: true)
         XCTAssertTrue(global.isRefreshing)
@@ -38,7 +40,7 @@ final class PageLoadingTests: XCTestCase {
         let firstDocument = "---\nname: first\ndescription: 刷新回归测试\n---\n上次成功读取的正文\n"
         XCTAssertTrue(model.saveSkill(SkillEditorDraft(slug: "first", document: firstDocument)))
         let first = try XCTUnwrap(model.selectedSkill)
-        let package = fixture.paths.libraryRoot.appendingPathComponent(first.path)
+        let package = fixture.paths.sourcesRoot.appendingPathComponent(first.path)
         try "附属文件正文\n".write(to: package.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
         let secondDocument = "---\nname: second\ndescription: 切换回归测试\n---\n第二个技能正文\n"
         XCTAssertTrue(model.saveSkill(SkillEditorDraft(slug: "second", document: secondDocument)))

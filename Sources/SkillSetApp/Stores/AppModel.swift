@@ -12,6 +12,20 @@ struct ProjectPlanNotice: Equatable {
     let tone: Tone
 }
 
+private struct ImportedOriginKey: Hashable {
+    let url: String
+    let commit: String
+    let path: String
+    let contentHash: String
+}
+
+private struct SourceDetailKey: Equatable {
+    let id: UUID
+    let createdAt: Date
+    let commit: String
+    let candidateCount: Int
+}
+
 @MainActor
 @Observable
 final class AppModel {
@@ -34,6 +48,16 @@ final class AppModel {
         }
     }
     var query = ""
+    @ObservationIgnored private var skillSearchIndex = SkillSearchIndex(entries: [])
+    @ObservationIgnored private var filteredSkillQuery: String?
+    @ObservationIgnored private var filteredSkillCache: [SkillEntry] = []
+    @ObservationIgnored private(set) var skillLibraryIndex = SkillLibraryIndex(entries: [])
+    @ObservationIgnored private(set) var skillSourceLabels: [String: String] = [:]
+    @ObservationIgnored private var importedSkillIDs: [ImportedOriginKey: String] = [:]
+    @ObservationIgnored private var sourceListTitles: [UUID: String] = [:]
+    @ObservationIgnored private var sourceDetailKey: SourceDetailKey?
+    @ObservationIgnored private var cachedSourceFolders: [(String, Int)] = []
+    @ObservationIgnored private var cachedSourceCandidates: [SourceSkillCandidate] = []
     var selectedProjectID = "" {
         didSet {
             guard selectedProjectID != oldValue else { return }
@@ -65,7 +89,7 @@ final class AppModel {
     var selectedPresetID = ""
     var presetSelection: PresetSelectionRequest?
     var presetEditor: PresetEditorDraft?
-    var presetError: String?
+    var presetError: LocalizedText?
     var selectedTemplateID = ""
     var templateError: String?
     private(set) var templateLibraryError: String?
@@ -110,6 +134,8 @@ final class AppModel {
     var selectedSkillFilePreview: SkillFilePreview?
     var skillFilePreviewError: String?
     var hiddenSkillCount = 0
+    /// 隐藏后仍能还原名称的技能。记录已被来源同步删除时不在这里，预设只能按标识中的名称提示。
+    var hiddenSkills: [SkillEntry] = []
     var aiAccessError: LocalizedText?
     private(set) var mcpAccessInstallation: MCPAccessInstallation?
     private(set) var isRefreshingMCPConfigurations = false
@@ -150,7 +176,9 @@ final class AppModel {
         projectStore = ProjectStore(rootURL: runtimePaths.applicationSupportRoot)
         draftStore = ProjectDraftStore(rootURL: runtimePaths.applicationSupportRoot)
         planStore = DeploymentPlanStore(rootURL: runtimePaths.plansRoot)
-        executor = FileTransactionExecutor(operationsRoot: runtimePaths.operationsRoot, versionsRoot: runtimePaths.versionsRoot)
+        executor = FileTransactionExecutor(
+            operationsRoot: runtimePaths.operationsRoot, versionsRoot: runtimePaths.versionsRoot,
+            libraryRoot: globalConfiguration.locations.libraryRoot, sourcesRoot: runtimePaths.sourcesRoot)
         service = try? SkillSetService(paths: runtimePaths, globalLocations: globalLocations)
         selectedSkillID = self.snapshot.catalog.entries.first?.id
 
@@ -172,15 +200,45 @@ final class AppModel {
                 report("已载入 \(projects.count) 个本机项目")
             }
         } catch {
+            refreshSkillIndexes()
             reportKey(UserFacingText.error(error))
         }
     }
 
     var filteredSkills: [SkillEntry] {
-        matchingSkills(snapshot.catalog.entries, query: query, sourceOrigins: sourceOrigins)
+        if filteredSkillQuery == query { return filteredSkillCache }
+        let matched = skillSearchIndex.matching(query: query)
+        filteredSkillQuery = query
+        filteredSkillCache = matched
+        return matched
     }
 
-    private var libraryStore: SkillLibraryStore { SkillLibraryStore(rootURL: runtimePaths.libraryRoot) }
+    /// 目录或来源变化后重建折叠文本和重名索引。搜索框连续读取命中缓存。
+    private func refreshSkillIndexes() {
+        skillSearchIndex = SkillSearchIndex(entries: snapshot.catalog.entries, sourceOrigins: sourceOrigins)
+        skillLibraryIndex = SkillLibraryIndex(entries: snapshot.catalog.entries)
+        skillSourceLabels = Dictionary(grouping: snapshot.catalog.entries, by: \.sourceId).mapValues { entries in
+            let id = entries[0].sourceId
+            return SkillSourceLabel.title(
+                sourceID: id,
+                origin: entries.compactMap { sourceOrigins[$0.id]?.url }.sorted().first,
+                registeredTitle: snapshot.sources.sources.first { $0.id == id }?.title
+            )
+        }
+        filteredSkillQuery = nil
+        var imported: [ImportedOriginKey: String] = [:]
+        imported.reserveCapacity(sourceOrigins.count)
+        for entry in snapshot.catalog.entries {
+            guard let origin = sourceOrigins[entry.id] else { continue }
+            let key = ImportedOriginKey(url: origin.url, commit: origin.commit, path: origin.path, contentHash: origin.contentHash)
+            if imported[key] == nil { imported[key] = entry.id }
+        }
+        importedSkillIDs = imported
+    }
+
+    private var libraryStore: SkillLibraryStore {
+        runtimePaths.makeLibraryStore(home: globalConfiguration.locations.home)
+    }
 
     func loadSelectedSkillDocument() {
         skillDocumentRequest = UUID()
@@ -205,8 +263,9 @@ final class AppModel {
         guard let skill = selectedSkill else { isLoadingSkillDocument = false; return }
         isLoadingSkillDocument = true
         let paths = runtimePaths
+        let home = globalConfiguration.locations.home
         let result = await Task.detached(priority: .userInitiated) {
-            let store = SkillLibraryStore(rootURL: paths.libraryRoot)
+            let store = paths.makeLibraryStore(home: home)
             let document = Result { try store.document(for: skill, repositoryRoot: paths.repositoryRoot) }
             let files = Result { try store.attachedFiles(for: skill, repositoryRoot: paths.repositoryRoot) }
             return (document, files)
@@ -318,9 +377,22 @@ final class AppModel {
         } catch { libraryError = UserFacingText.error(error) }
     }
 
+    private func resolvedHiddenSkills(_ loaded: LoadedSkillLibrary) -> [SkillEntry] {
+        let hidden = Set(loaded.hiddenIDs)
+        var resolved: [String: SkillEntry] = [:]
+        for entry in baseSnapshot.catalog.entries where hidden.contains(entry.id) {
+            resolved[entry.id] = entry
+        }
+        for entry in loaded.hiddenEntries {
+            resolved[entry.id] = entry
+        }
+        return resolved.values.sorted { $0.id < $1.id }
+    }
+
     private func reloadLibrary() throws {
-        snapshot = try baseSnapshot.replacingCatalog(libraryStore.catalog(merging: baseSnapshot.catalog))
-        sourceOrigins = try libraryStore.sourceOrigins()
+        let loaded = try libraryStore.loadLibrary()
+        snapshot = baseSnapshot.replacingCatalog(loaded.catalog(merging: baseSnapshot.catalog))
+        sourceOrigins = loaded.origins
         do {
             snapshot = try snapshot.replacingPresets(presetStore.list(merging: baseSnapshot.presets))
             if !snapshot.presets.contains(where: { $0.id == selectedPresetID }) {
@@ -328,9 +400,15 @@ final class AppModel {
             }
         }
         catch { presetError = "本机预设文件无法读取，请检查文件后重试。" }
+        globalConfiguration.setAvailableReferences(
+            skillIDs: Set(snapshot.catalog.entries.map(\.id)),
+            instructionIDs: Set(snapshot.templates.map(\.id))
+        )
         reloadTemplates()
-        hiddenSkillCount = try libraryStore.hiddenCount()
-        service = try SkillSetService(paths: runtimePaths, globalLocations: globalConfiguration.locations)
+        hiddenSkillCount = loaded.hiddenCount
+        hiddenSkills = resolvedHiddenSkills(loaded)
+        refreshSkillIndexes()
+        service = try SkillSetService(paths: runtimePaths, globalLocations: globalConfiguration.locations, library: loaded)
         updateQuery(query)
     }
 
@@ -393,10 +471,18 @@ final class AppModel {
             templateLibraryError = nil
             templateError = nil
             service = try? SkillSetService(paths: runtimePaths, globalLocations: globalConfiguration.locations)
+            globalConfiguration.setAvailableReferences(
+                skillIDs: Set(snapshot.catalog.entries.map(\.id)),
+                instructionIDs: Set(snapshot.templates.map(\.id))
+            )
         } catch {
             snapshot = snapshot.replacingTemplates([])
             selectedTemplateID = ""
             templateLibraryError = "片段库读取失败，请检查 JSON 格式和版本后重新读取。原文件未被修改。"
+            // 片段库读取失败时清空悬空草稿引用，保持项目和全局页面可继续操作。
+            globalConfiguration.setAvailableReferences(
+                skillIDs: Set(snapshot.catalog.entries.map(\.id)), instructionIDs: []
+            )
         }
     }
 
@@ -678,8 +764,8 @@ final class AppModel {
             service = try? SkillSetService(paths: runtimePaths, globalLocations: globalConfiguration.locations)
             report("预设已删除；已载入的项目草稿保持不变。")
         } catch let error as PresetStoreError {
-            presetError = error.errorDescription
-        } catch { presetError = UserFacingText.error(error) }
+            presetError = error.errorDescription.map { LocalizedText(stringLiteral: $0) }
+        } catch { presetError = LocalizedText(stringLiteral: UserFacingText.error(error)) }
     }
 
     func beginNewPreset() {
@@ -698,9 +784,10 @@ final class AppModel {
     func savePreset(_ draft: PresetEditorDraft) -> Bool {
         presetError = nil
         let preset = draft.record
-        let validation = PresetDraftPreview(preset: preset, project: selectedProject ?? ProjectRecord.demo[0], snapshot: snapshot)
-        guard validation.unavailableSkillIDs.isEmpty && validation.unavailableInstructionIDs.isEmpty && validation.conflictingSkillIDs.isEmpty else {
-            presetError = "预设包含不可用或同名冲突的技能、规则，请核对后重试"
+        let validation = PresetDraftPreview(preset: preset, project: selectedProject ?? ProjectRecord.demo[0], snapshot: snapshot, hiddenSkills: hiddenSkills)
+        let reasons = validation.blockingReasons(origins: sourceOrigins)
+        guard reasons.isEmpty else {
+            presetError = LocalizedText.joining(reasons)
             return false
         }
         do {
@@ -710,10 +797,10 @@ final class AppModel {
             report("预设已保存；可随时用于项目草稿。")
             return true
         } catch let error as PresetStoreError {
-            presetError = error.errorDescription
+            presetError = error.errorDescription.map { LocalizedText(stringLiteral: $0) }
             return false
         } catch {
-            presetError = UserFacingText.error(error)
+            presetError = LocalizedText(stringLiteral: UserFacingText.error(error))
             return false
         }
     }
@@ -729,7 +816,7 @@ final class AppModel {
         do {
             guard let plugin = presetPlugins(for: selectedProjectID).first(where: {
                 $0.host == reference.host && $0.pluginID == reference.pluginID && $0.manifestDigest == reference.manifestDigest
-            }) else { report("插件版本不可用，请重新扫描并更新预设。"); return }
+            }) else { report("插件「\(reference.name)」的这个版本不可用，请重新扫描并更新预设。"); return }
             preparedPlan = try service.makePluginLifecyclePlan(
                 projectID: reference.scope == .user ? nil : UUID(uuidString: selectedProjectID),
                 request: PluginLifecycleRequest(host: reference.host, pluginID: reference.pluginID,
@@ -764,10 +851,10 @@ final class AppModel {
             report("请先添加并选择一个项目")
             return false
         }
-        let preview = PresetDraftPreview(preset: preset, project: projects[index], snapshot: snapshot, availablePlugins: presetPlugins(for: targetID))
-        guard preview.canLoad else {
-            if let issue = preview.componentIssues.first { reportKey(issue) }
-            else { report("预设包含不可用或同名冲突的技能、规则，请核对后重试") }
+        let preview = PresetDraftPreview(preset: preset, project: projects[index], snapshot: snapshot, availablePlugins: presetPlugins(for: targetID), hiddenSkills: hiddenSkills)
+        let reasons = preview.blockingReasons(origins: sourceOrigins)
+        guard reasons.isEmpty else {
+            report(LocalizedText.joining(reasons))
             return false
         }
         do {
@@ -972,11 +1059,42 @@ final class AppModel {
     }
 
     func importedSkillID(preview: SourcePreviewRecord, candidate: SourceSkillCandidate) -> String? {
-        snapshot.catalog.entries.first { entry in
-            guard let origin = sourceOrigins[entry.id] else { return false }
-            return origin.url == preview.canonicalURL && origin.commit == preview.resolvedCommit
-                && origin.path == candidate.path && origin.contentHash == candidate.contentHash
-        }?.id
+        importedSkillIDs[ImportedOriginKey(
+            url: preview.canonicalURL, commit: preview.resolvedCommit,
+            path: candidate.path, contentHash: candidate.contentHash
+        )]
+    }
+
+    func sourceListTitle(_ preview: SourcePreviewRecord) -> String {
+        if let title = sourceListTitles[preview.id] { return title }
+        let title = SkillSourceLabel.repository(preview.canonicalURL)
+        sourceListTitles[preview.id] = title
+        return title
+    }
+
+    func sourceFolders(for preview: SourcePreviewRecord) -> [(String, Int)] {
+        prepareSourceDetail(preview)
+        return cachedSourceFolders
+    }
+
+    func sourceCandidates(for preview: SourcePreviewRecord) -> [SourceSkillCandidate] {
+        prepareSourceDetail(preview)
+        return cachedSourceCandidates
+    }
+
+    /// 文件夹分组和路径排序只跟当前预览绑定，避免详情每次刷新都重排整份候选列表。
+    private func prepareSourceDetail(_ preview: SourcePreviewRecord) {
+        let key = SourceDetailKey(id: preview.id, createdAt: preview.createdAt, commit: preview.resolvedCommit, candidateCount: preview.candidates.count)
+        guard sourceDetailKey != key else { return }
+        var counts: [String: Int] = [:]
+        for candidate in preview.candidates {
+            let folder = (candidate.path as NSString).deletingLastPathComponent
+            let name = folder.isEmpty ? "." : folder
+            counts[name, default: 0] += 1
+        }
+        cachedSourceFolders = counts.sorted { $0.key < $1.key }.map { ($0.key, $0.value) }
+        cachedSourceCandidates = preview.candidates.sorted { $0.path < $1.path }
+        sourceDetailKey = key
     }
 
     func showLibrarySkill(_ id: String) {
@@ -1120,6 +1238,7 @@ final class AppModel {
     }
 
     var installedSkillImportError: String?
+    var installedSkillRemovalError: String?
 
     func importInstalledSkills(_ selection: [InstalledSkillObservation]) async -> Bool {
         guard !isWorking else { return false }
@@ -1134,10 +1253,56 @@ final class AppModel {
             }.value
             try reloadLibrary()
             refreshSourcePreviews()
-            report("已收录本机技能；原安装保持原样，可勾选技能后启用到 AI 工具")
+            report("已收录本机技能；建议删除原安装，统一由技能库管理")
             return true
         } catch {
             installedSkillImportError = UserFacingText.error(error)
+            reportKey(UserFacingText.error(error))
+            return false
+        }
+    }
+
+    func removeInstalledSkill(_ item: InstalledSkillObservation) async -> Bool {
+        guard !isWorking, item.contentHash != nil else { return false }
+        isWorking = true
+        defer { isWorking = false }
+        installedSkillRemovalError = nil
+        let paths = runtimePaths
+        let locations = globalConfiguration.locations
+        do {
+            try await Task.detached(priority: .userInitiated) {
+                try SkillSetService(paths: paths, globalLocations: locations)
+                    .removeInstalledSkill(item)
+            }.value
+            try reloadLibrary()
+            refreshSourcePreviews()
+            report("已删除原安装；技能库收录副本保留")
+            return true
+        } catch {
+            installedSkillRemovalError = UserFacingText.error(error)
+            reportKey(UserFacingText.error(error))
+            return false
+        }
+    }
+
+    func removeInstalledSkills(_ items: [InstalledSkillObservation]) async -> Bool {
+        guard !isWorking, !items.isEmpty else { return false }
+        isWorking = true
+        defer { isWorking = false }
+        installedSkillRemovalError = nil
+        let paths = runtimePaths
+        let locations = globalConfiguration.locations
+        do {
+            try await Task.detached(priority: .userInitiated) {
+                try SkillSetService(paths: paths, globalLocations: locations)
+                    .removeInstalledSkills(items)
+            }.value
+            try reloadLibrary()
+            refreshSourcePreviews()
+            report("已批量删除 \(items.count) 个原安装；技能库收录副本保留")
+            return true
+        } catch {
+            installedSkillRemovalError = UserFacingText.error(error)
             reportKey(UserFacingText.error(error))
             return false
         }
@@ -1190,13 +1355,41 @@ final class AppModel {
 
     func refreshSourcePreviews() {
         do {
-            sourcePreviews = try SourcePreviewStore(rootURL: runtimePaths.previewsRoot).list()
-            if selectedPreviewID == nil {
-                selectedPreviewID = sourcePreviews.first?.id
-            }
+            applySourcePreviews(try SourcePreviewStore(rootURL: runtimePaths.previewsRoot).list())
         } catch {
             reportKey(UserFacingText.error(error))
         }
+    }
+
+    /// 页面打开时在后台重读预览文件。内容没变就不替换数组，避免主线程比对整份候选列表。
+    func reloadSourcePreviews() async {
+        let root = runtimePaths.previewsRoot
+        let records = await Task.detached(priority: .userInitiated) {
+            try? SourcePreviewStore(rootURL: root).list()
+        }.value
+        guard let records else { return }
+        applySourcePreviews(records)
+    }
+
+    private func applySourcePreviews(_ records: [SourcePreviewRecord]) {
+        if sourcePreviewListMatches(sourcePreviews, records) { return }
+        sourcePreviews = records
+        sourceDetailKey = nil
+        sourceListTitles.removeAll(keepingCapacity: true)
+        if selectedPreviewID == nil {
+            selectedPreviewID = records.first?.id
+        }
+    }
+
+    private func sourcePreviewListMatches(_ current: [SourcePreviewRecord], _ records: [SourcePreviewRecord]) -> Bool {
+        guard current.count == records.count else { return false }
+        for (left, right) in zip(current, records) {
+            if left.id != right.id || left.createdAt != right.createdAt || left.resolvedCommit != right.resolvedCommit
+                || left.candidates.count != right.candidates.count {
+                return false
+            }
+        }
+        return true
     }
 
     func prepareMCPLibraryPlan(host: MCPHost, projectID: UUID?) {
@@ -1426,7 +1619,8 @@ final class AppModel {
                 inspection = try ProjectInspector.inspect(
                     projectURL: projectURL,
                     catalog: snapshot.catalog,
-                    operationsRoot: runtimePaths.operationsRoot, versionsRoot: runtimePaths.versionsRoot
+                    operationsRoot: runtimePaths.operationsRoot, versionsRoot: runtimePaths.versionsRoot,
+                    libraryRoot: globalConfiguration.locations.libraryRoot, sourcesRoot: runtimePaths.sourcesRoot
                 )
                 inspectionFailure = nil
             } catch {
@@ -1445,6 +1639,31 @@ final class AppModel {
                         ?? (registration.agents.isEmpty ? ["codex"] : registration.agents),
                     harnessSelections: manifest?.harnessSelections
                 )
+            }
+            if let loaded = draft {
+                let availableSkills = Set(snapshot.catalog.entries.map(\.id))
+                let availableInstructions = Set(snapshot.templates.map(\.id))
+                let repairedSelections = loaded.harnessSelections?.mapValues {
+                    ProjectHarnessSelection(
+                        skillIDs: $0.skillIDs.filter(availableSkills.contains),
+                        instructionIDs: $0.instructionIDs.filter(availableInstructions.contains)
+                    )
+                }
+                let repairedSkills = loaded.skillIDs.filter(availableSkills.contains)
+                let repairedInstructions = loaded.instructionIDs.filter(availableInstructions.contains)
+                if repairedSkills != loaded.skillIDs || repairedInstructions != loaded.instructionIDs
+                    || repairedSelections != loaded.harnessSelections {
+                    // 删除技能库条目或片段后，自动清理项目草稿中的悬空引用；已部署文件不动。
+                    draft = try draftStore.save(
+                        projectID: registration.id,
+                        skillIDs: repairedSkills,
+                        instructionIDs: repairedInstructions,
+                        agents: loaded.agents,
+                        plugins: loaded.plugins,
+                        mcpServers: loaded.mcpServers,
+                        harnessSelections: repairedSelections
+                    )
+                }
             }
             let agents = displayAgentNames(draft?.agents ?? registration.agents)
             var record = ProjectRecord(
@@ -1523,7 +1742,9 @@ final class AppModel {
             projectURL: URL(fileURLWithPath: project.path, isDirectory: true),
             catalog: snapshot.catalog,
             operationsRoot: runtimePaths.operationsRoot,
-            versionsRoot: runtimePaths.versionsRoot
+            versionsRoot: runtimePaths.versionsRoot,
+            libraryRoot: globalConfiguration.locations.libraryRoot,
+            sourcesRoot: runtimePaths.sourcesRoot
         ) else {
             return false
         }

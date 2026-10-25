@@ -29,131 +29,190 @@ public struct SkillEditorDraft: Identifiable, Sendable {
     }
 }
 
+struct SkillLibraryMeta: Codable, Sendable {
+    var categories: [String: String] = [:]
+    var origins: [String: SourceSkillOrigin] = [:]
+    var hiddenIDs: [String] = []
+}
+
+struct LibraryIndex: Codable, Sendable {
+    var schemaVersion = 1
+    var records: [LibrarySkillRecord] = []
+    var hiddenIDs: [String] = []
+}
+
 public struct LibrarySkillRecord: Codable, Sendable {
     public let entry: SkillEntry
     public let originID: String?
     public let sourceOrigin: SourceSkillOrigin?
 }
 
-struct LibraryIndex: Codable {
-    var schemaVersion = 1
-    var records: [LibrarySkillRecord] = []
-    var hiddenIDs: [String] = []
-}
+/// 一次目录扫描的结果。技能名来自库目录里的子项，不再读取 packages 索引。
+public struct LoadedSkillLibrary: Sendable {
+    public let hiddenIDs: [String]
+    public let hiddenEntries: [SkillEntry]
+    public let origins: [String: SourceSkillOrigin]
+    public let packageURLs: [String: URL]
+    let records: [LibrarySkillRecord]
 
-/// 每次保存创建独立版本目录，最后原子替换索引；旧版本保留，写入失败不破坏当前版本。
-public struct SkillLibraryStore {
-    public static let sourceID = "personal"
-    public let rootURL: URL
-    private let fileManager = FileManager.default
+    public var hiddenCount: Int { hiddenIDs.count }
 
-    public init(rootURL: URL) {
-        self.rootURL = rootURL.standardizedFileURL
-    }
-
-    public func catalog(merging base: CatalogDocument) throws -> CatalogDocument {
-        let index = try load()
+    public func catalog(merging base: CatalogDocument) -> CatalogDocument {
+        let hidden = Set(hiddenIDs)
+        let ids = Set(records.map(\.entry.id))
+        let kept = base.entries.filter { !hidden.contains($0.id) && !ids.contains($0.id) }
+        let visible = records.map(\.entry).filter { !hidden.contains($0.id) }
         return CatalogDocument(
             schemaVersion: base.schemaVersion, hashAlgorithm: base.hashAlgorithm,
-            entries: (base.entries.filter { !index.hiddenIDs.contains($0.id) } + index.records.map(\.entry).filter { !index.hiddenIDs.contains($0.id) })
-                .sorted { $0.id < $1.id }
+            entries: (kept + visible).sorted { $0.id < $1.id }
         )
     }
+}
 
-    public func hiddenCount() throws -> Int { try load().hiddenIDs.count }
+/// 技能文件放在来源目录。自建、本地导入和复制都放在 custom，技能库里只留同名软链。跟随来源的导入则指向来源目录。
+public struct SkillLibraryStore {
+    public static let sourceID = "custom"
+    public static let linkedSourceID = "link"
+    public static let copiedSourceID = "copy"
+    public let libraryURL: URL
+    public let sourcesURL: URL
+    public let categoriesURL: URL
+    private let fileManager = FileManager.default
+
+    public init(libraryURL: URL, sourcesURL: URL, categoriesURL: URL) {
+        self.libraryURL = libraryURL.standardizedFileURL
+        self.sourcesURL = sourcesURL.standardizedFileURL
+        self.categoriesURL = categoriesURL.standardizedFileURL
+    }
+
+    public var customURL: URL { sourcesURL.appendingPathComponent(Self.sourceID, isDirectory: true) }
+
+    public func catalog(merging base: CatalogDocument) throws -> CatalogDocument {
+        try loadLibrary().catalog(merging: base)
+    }
+
+    public func hiddenCount() throws -> Int { try loadLibrary().hiddenCount }
 
     public func sourceOrigins() throws -> [String: SourceSkillOrigin] {
-        Dictionary(uniqueKeysWithValues: try load().records.compactMap { record in
-            record.sourceOrigin.map { (record.entry.id, $0) }
-        })
+        try loadLibrary().origins
     }
 
     public func sourceURLs() throws -> [String: URL] {
-        try Dictionary(uniqueKeysWithValues: load().records.map { ($0.entry.id, try packageURL($0.entry.path)) })
+        try loadLibrary().packageURLs
+    }
+
+    public func loadLibrary() throws -> LoadedSkillLibrary {
+        try migrateLegacyPackagesIfNeeded()
+        // 库里的实体目录是以前复制进来的技能。文件改放到 custom，库内只留软链。
+        try adoptOwnedDirectories()
+        let meta = try loadMeta()
+        let records = try scan(origins: meta.origins)
+        let hidden = Set(meta.hiddenIDs)
+        let hiddenEntries = records.map(\.entry).filter { hidden.contains($0.id) }.sorted { $0.id < $1.id }
+        let urls = Dictionary(uniqueKeysWithValues: try records.map { record in
+            (record.entry.id, try sourceURL(for: record.entry, repositoryRoot: nil))
+        })
+        return LoadedSkillLibrary(hiddenIDs: meta.hiddenIDs, hiddenEntries: hiddenEntries, origins: meta.origins, packageURLs: urls, records: records)
     }
 
     public func document(for entry: SkillEntry, repositoryRoot: URL?) throws -> String {
         let source = try sourceURL(for: entry, repositoryRoot: repositoryRoot)
         let file = source.appendingPathComponent("SKILL.md")
-        try checkPath(file, inside: source)
-        let size = try file.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+        let resolved = file.resolvingSymlinksInPath().standardizedFileURL
+        try checkPath(resolved, inside: source.resolvingSymlinksInPath().standardizedFileURL)
+        let size = try resolved.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
         guard size <= 2 * 1_024 * 1_024 else { throw SkillLibraryError.invalidDocument }
-        return try String(contentsOf: file, encoding: .utf8)
+        return try String(contentsOf: resolved, encoding: .utf8)
     }
 
     public func save(_ draft: SkillEditorDraft, repositoryRoot: URL?) throws -> SkillEntry {
-        guard draft.slug.range(of: #"^[a-z0-9]+(?:-[a-z0-9]+)*$"#, options: .regularExpression) != nil,
-              draft.slug.count <= 80 else { throw SkillLibraryError.invalidSlug }
-        let metadata = try Self.metadata(draft.document)
-        var index = try load()
-        let id = "\(Self.sourceID)/\(draft.slug)"
-        let editing = draft.original?.sourceId == Self.sourceID
-        if let existing = index.records.first(where: { $0.entry.id == id }),
-           !editing || existing.entry.id != draft.original?.id {
+        try validateSlug(draft.slug)
+        _ = try Self.metadata(draft.document)
+        let loaded = try loadLibrary()
+        if loaded.records.contains(where: { $0.entry.slug == draft.slug && $0.entry.id != draft.original?.id }) {
             throw SkillLibraryError.duplicate
         }
-        if editing {
-            guard let original = draft.original, original.id == id,
-                  index.records.contains(where: { $0.entry.id == original.id && $0.entry.contentHash == original.contentHash }) else {
+        if let original = draft.original, original.id == draft.slug,
+           original.sourceId == Self.sourceID || original.sourceId == Self.copiedSourceID {
+            guard loaded.records.contains(where: { $0.entry.id == original.id && $0.entry.contentHash == original.contentHash }) else {
                 throw SkillLibraryError.stale
             }
-        }
-        var source: URL?
-        if let original = draft.original {
-            guard !original.isBlocked else { throw DeploymentError.skillBlocked(original.id) }
-            let url = try sourceURL(for: original, repositoryRoot: repositoryRoot)
-            guard try SkillAssetCopier.analyze(from: url).contentHash == original.contentHash else {
+            let directory = try sourceURL(for: original, repositoryRoot: repositoryRoot)
+            guard try SkillAssetCopier.analyze(from: directory).contentHash == original.contentHash else {
                 throw SkillLibraryError.stale
             }
-            source = url
+            try Data(draft.document.utf8).write(to: directory.appendingPathComponent("SKILL.md"), options: .atomic)
+            return try requireSkill(draft.slug)
         }
-        try prepareRoot()
-        let relative = "packages/\(UUID().uuidString)"
-        let destination = try packageURL(relative)
+
+        try prepareRoots()
+        let destination = customURL.appendingPathComponent(draft.slug, isDirectory: true)
+        try ensureRealDirectory(customURL)
+        guard !fileManager.fileExists(atPath: destination.path) else { throw SkillLibraryError.duplicate }
         var committed = false
         defer { if !committed { try? fileManager.removeItem(at: destination) } }
-        if let source {
+        if let original = draft.original {
+            guard !original.isBlocked else { throw DeploymentError.skillBlocked(original.id) }
+            let source = try sourceURL(for: original, repositoryRoot: repositoryRoot)
             _ = try SkillAssetCopier.copy(from: source, to: destination)
         } else {
             try fileManager.createDirectory(at: destination, withIntermediateDirectories: true)
         }
         try Data(draft.document.utf8).write(to: destination.appendingPathComponent("SKILL.md"), options: .atomic)
-        let analysis = try SkillAssetCopier.analyze(from: destination)
-        let entry = SkillEntry(
-            id: id, slug: draft.slug, declaredName: metadata.name, description: metadata.description,
-            declaredVersion: metadata.version, metadataReview: "not-schema-validated", sourceId: Self.sourceID,
-            path: relative, contentHash: analysis.contentHash, fileCount: analysis.fileManifest.count,
-            bytes: analysis.bytes, integrity: "snapshotted", issues: [],
-            licenseReview: draft.original?.licenseReview ?? "required", excludedPaths: []
-        )
-        let origin = editing ? index.records.first(where: { $0.entry.id == id })?.originID : draft.original?.id
-        let sourceOrigin = draft.original.flatMap { original in
-            index.records.first { $0.entry.id == original.id }?.sourceOrigin
-        }
-        index.records.removeAll { $0.entry.id == id }
-        index.records.append(LibrarySkillRecord(entry: entry, originID: origin, sourceOrigin: sourceOrigin))
-        try write(index)
+        try linkLibrary(name: draft.slug, to: destination)
         committed = true
-        return entry
+        var meta = try loadMeta()
+        if let original = draft.original, let origin = loaded.origins[original.id] {
+            meta.origins[draft.slug] = origin
+            try writeMeta(meta)
+        }
+        return try requireSkill(draft.slug)
     }
 
-    /// 导入保存独立副本，核对复制后的内容再发布索引；任何失败都清理新包。
+    /// 软链指向来源目录。复制不跟随来源，文件和自建技能放在同一处，库里只留软链。重名拒绝，不覆盖。
     func importSource(_ draft: SourceSkillImportDraft, source: URL, licenses: [String: Data]) throws -> SkillEntry {
-        guard draft.slug.range(of: #"^[a-z0-9]+(?:-[a-z0-9]+)*$"#, options: .regularExpression) != nil,
-              draft.slug.count <= 80 else { throw SkillLibraryError.invalidSlug }
-        var index = try load()
-        let id = "\(Self.sourceID)/\(draft.slug)"
-        guard !index.records.contains(where: { $0.entry.id == id }) else { throw SkillLibraryError.duplicate }
-        try prepareRoot()
-        let relative = "packages/\(UUID())"
-        let destination = try packageURL(relative)
-        var committed = false
-        defer { if !committed { try? fileManager.removeItem(at: destination) } }
+        try validateSlug(draft.slug)
+        let document = try String(contentsOf: source.appendingPathComponent("SKILL.md"), encoding: .utf8)
+        _ = try Self.metadata(document)
+        let loaded = try loadLibrary()
+        guard !loaded.records.contains(where: { $0.entry.slug == draft.slug }) else { throw SkillLibraryError.duplicate }
+        if draft.mode == .copy {
+            try storeOwnedCopy(slug: draft.slug, from: source, licenses: licenses, origin: draft.origin, category: draft.category)
+        } else {
+            try prepareRoots()
+            let libraryEntry = libraryURL.appendingPathComponent(draft.slug, isDirectory: true)
+            guard !fileManager.fileExists(atPath: libraryEntry.path), !isLink(libraryEntry) else {
+                throw SkillLibraryError.duplicate
+            }
+            try fileManager.createSymbolicLink(at: libraryEntry, withDestinationURL: source)
+            var meta = try loadMeta()
+            meta.origins[draft.slug] = draft.origin
+            let category = draft.category.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !category.isEmpty { meta.categories[draft.slug] = category }
+            do { try writeMeta(meta) }
+            catch {
+                try? fileManager.removeItem(at: libraryEntry)
+                throw error
+            }
+        }
+        return try requireSkill(draft.slug)
+    }
+
+    /// 把一份不跟随来源的技能放进 custom，并在技能库建立同名软链。调用方已确认内容指纹。
+    func storeOwnedCopy(slug: String, from source: URL, licenses: [String: Data], origin: SourceSkillOrigin, category: String) throws {
+        try validateSlug(slug)
+        try prepareRoots()
+        let destination = customURL.appendingPathComponent(slug, isDirectory: true)
+        let libraryEntry = libraryURL.appendingPathComponent(slug, isDirectory: true)
+        guard !fileManager.fileExists(atPath: destination.path),
+              !fileManager.fileExists(atPath: libraryEntry.path), !isLink(libraryEntry) else {
+            throw SkillLibraryError.duplicate
+        }
+        var created: URL?
+        defer { if let created { try? fileManager.removeItem(at: created) } }
         let copied = try SkillAssetCopier.copy(from: source, to: destination)
-        guard copied.contentHash == draft.origin.contentHash else { throw SourceSkillImportError.changed }
-        let document = try String(contentsOf: destination.appendingPathComponent("SKILL.md"), encoding: .utf8)
-        let metadata = try Self.metadata(document)
-        // 根目录技能也不能把仓库的 Git 数据带到项目中。
+        created = destination
+        guard copied.contentHash == origin.contentHash else { throw SourceSkillImportError.changed }
         let git = destination.appendingPathComponent(".git")
         if fileManager.fileExists(atPath: git.path) { try fileManager.removeItem(at: git) }
         if !licenses.isEmpty {
@@ -161,109 +220,295 @@ public struct SkillLibraryStore {
             while fileManager.fileExists(atPath: destination.appendingPathComponent(name).path) { name += "_" }
             let directory = destination.appendingPathComponent(name)
             try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-            for (name, data) in licenses { try data.write(to: directory.appendingPathComponent(name), options: .atomic) }
+            for (file, data) in licenses { try data.write(to: directory.appendingPathComponent(file), options: .atomic) }
         }
-        let analysis = try SkillAssetCopier.analyze(from: destination)
-        let entry = SkillEntry(
-            id: id, slug: draft.slug, declaredName: metadata.name, description: metadata.description,
-            declaredVersion: metadata.version, metadataReview: "not-schema-validated", sourceId: Self.sourceID,
-            path: relative, contentHash: analysis.contentHash, fileCount: analysis.fileManifest.count,
-            bytes: analysis.bytes, integrity: "snapshotted", issues: [], licenseReview: "required", excludedPaths: []
-        )
-        index.records.append(LibrarySkillRecord(entry: entry, originID: draft.origin.url + "#" + draft.origin.path, sourceOrigin: draft.origin))
-        try write(index)
-        committed = true
-        return entry
+        try linkLibrary(name: slug, to: destination)
+        var meta = try loadMeta()
+        meta.origins[slug] = origin
+        let trimmed = category.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty { meta.categories[slug] = trimmed }
+        do { try writeMeta(meta) }
+        catch {
+            try? fileManager.removeItem(at: libraryEntry)
+            throw error
+        }
+        created = nil
     }
 
     public func remove(_ entry: SkillEntry) throws {
-        var index = try load()
-        if entry.sourceId == Self.sourceID {
-            guard index.records.contains(where: { $0.entry.id == entry.id && $0.entry.contentHash == entry.contentHash }),
-                  try SkillAssetCopier.analyze(from: packageURL(entry.path)).contentHash == entry.contentHash else {
+        var meta = try loadMeta()
+        let records = try scan(origins: meta.origins)
+        if entry.sourceId == Self.sourceID || entry.sourceId == Self.linkedSourceID || entry.sourceId == Self.copiedSourceID {
+            guard records.contains(where: { $0.entry.id == entry.id && $0.entry.contentHash == entry.contentHash }) else {
                 throw SkillLibraryError.stale
             }
-            index.records.removeAll { $0.entry.id == entry.id }
-        } else if !index.hiddenIDs.contains(entry.id) {
-            index.hiddenIDs.append(entry.id)
+            let directory = try sourceURL(for: entry, repositoryRoot: nil)
+            guard try SkillAssetCopier.analyze(from: directory).contentHash == entry.contentHash else {
+                throw SkillLibraryError.stale
+            }
+            let libraryEntry = libraryURL.appendingPathComponent(entry.slug)
+            if fileManager.fileExists(atPath: libraryEntry.path) || isLink(libraryEntry) {
+                try fileManager.removeItem(at: libraryEntry)
+            }
+            if entry.sourceId == Self.sourceID, fileManager.fileExists(atPath: directory.path) {
+                try fileManager.removeItem(at: directory)
+            }
+            meta.origins[entry.slug] = nil
+            meta.categories[entry.slug] = nil
+        } else if !meta.hiddenIDs.contains(entry.id) {
+            meta.hiddenIDs.append(entry.id)
         }
-        try prepareRoot()
-        try write(index)
+        try writeMeta(meta)
     }
 
     public func restoreHidden() throws {
-        var index = try load()
-        index.hiddenIDs = []
-        try prepareRoot()
-        try write(index)
+        var meta = try loadMeta()
+        meta.hiddenIDs = []
+        try writeMeta(meta)
+    }
+
+    /// 来源重新预览后生成新的 checkout 目录；将库内指向旧 checkout 的软链平滑切换到新目录，使同步模式下的技能保持有效。
+    func retargetSourceLinks(from oldCheckout: URL, to newCheckout: URL, commit: String) throws {
+        guard fileManager.fileExists(atPath: libraryURL.path), !isLink(libraryURL) else { return }
+        let oldPrefix = oldCheckout.standardizedFileURL.path + "/"
+        let newBase = newCheckout.standardizedFileURL
+        var meta = try loadMeta()
+        var changedMeta = false
+        let children = try fileManager.contentsOfDirectory(at: libraryURL, includingPropertiesForKeys: [.isSymbolicLinkKey], options: [.skipsHiddenFiles])
+        for child in children {
+            let link = libraryURL.appendingPathComponent(child.lastPathComponent)
+            guard isLink(link),
+                  let rawTarget = try? fileManager.destinationOfSymbolicLink(atPath: link.path) else { continue }
+            let resolvedTarget = URL(fileURLWithPath: rawTarget, relativeTo: libraryURL).standardizedFileURL
+            let relative: String
+            if resolvedTarget.path == oldCheckout.standardizedFileURL.path {
+                relative = "."
+            } else if resolvedTarget.path.hasPrefix(oldPrefix) {
+                relative = String(resolvedTarget.path.dropFirst(oldPrefix.count))
+            } else {
+                continue
+            }
+            let updatedTarget = relative == "." ? newBase : newBase.appendingPathComponent(relative, isDirectory: true).standardizedFileURL
+            try linkLibrary(name: child.lastPathComponent, to: updatedTarget)
+            if var origin = meta.origins[child.lastPathComponent],
+               let analysis = try? SkillAssetCopier.analyze(from: updatedTarget) {
+                origin = SourceSkillOrigin(
+                    url: origin.url, commit: commit, path: origin.path,
+                    contentHash: analysis.contentHash, licenseEvidence: origin.licenseEvidence,
+                    licenseHashes: origin.licenseHashes, declaredName: origin.declaredName
+                )
+                meta.origins[child.lastPathComponent] = origin
+                changedMeta = true
+            }
+        }
+        if changedMeta {
+            try writeMeta(meta)
+        }
     }
 
     func sourceURL(for entry: SkillEntry, repositoryRoot: URL?) throws -> URL {
-        if entry.sourceId == Self.sourceID || entry.sourceId.hasPrefix("source-") { return try packageURL(entry.path) }
-        guard let repositoryRoot else { throw SkillSetServiceError.repositoryNotFound }
-        let source = repositoryRoot.appendingPathComponent(entry.path).standardizedFileURL
-        try checkPath(source, inside: repositoryRoot)
-        return source
+        switch entry.sourceId {
+        case Self.sourceID:
+            let url = customURL.appendingPathComponent(entry.slug, isDirectory: true)
+            try ensureInside(url, customURL)
+            return url
+        case Self.copiedSourceID:
+            let url = libraryURL.appendingPathComponent(entry.slug, isDirectory: true)
+            try ensureInside(url, libraryURL)
+            return url
+        case Self.linkedSourceID:
+            let link = libraryURL.appendingPathComponent(entry.slug)
+            let destination = try fileManager.destinationOfSymbolicLink(atPath: link.path)
+            let url = URL(fileURLWithPath: destination, relativeTo: libraryURL).standardizedFileURL
+            guard url.path != libraryURL.path, !url.path.hasPrefix(libraryURL.path + "/") else {
+                throw SkillLibraryError.unsafePath
+            }
+            return url
+        default:
+            guard let repositoryRoot else { throw SkillSetServiceError.repositoryNotFound }
+            let source = repositoryRoot.appendingPathComponent(entry.path).standardizedFileURL
+            try checkPath(source, inside: repositoryRoot)
+            return source
+        }
     }
 
-    func packageURL(_ path: String) throws -> URL {
-        let parts = path.split(separator: "/", omittingEmptySubsequences: false)
-        guard parts.count == 2, parts[0] == "packages", UUID(uuidString: String(parts[1])) != nil else {
+    private func requireSkill(_ slug: String) throws -> SkillEntry {
+        let records = try scan(origins: try loadMeta().origins)
+        guard let entry = records.first(where: { $0.entry.slug == slug })?.entry else { throw SkillLibraryError.stale }
+        return entry
+    }
+
+    private func scan(origins: [String: SourceSkillOrigin]) throws -> [LibrarySkillRecord] {
+        guard fileManager.fileExists(atPath: libraryURL.path) else { return [] }
+        // 库根本身被换成软链时，扫描会跟到库外。拒绝这种根，子项软链仍然允许。
+        guard !isLink(libraryURL) else { throw SkillLibraryError.unsafePath }
+        var names: [String: URL] = [:]
+        let children = try fileManager.contentsOfDirectory(at: libraryURL, includingPropertiesForKeys: [.isSymbolicLinkKey], options: [.skipsHiddenFiles])
+        for child in children.sorted(by: { $0.path < $1.path }) {
+            let item = libraryURL.appendingPathComponent(child.lastPathComponent)
+            let linked = isLink(item)
+            var isDirectory: ObjCBool = false
+            let exists = fileManager.fileExists(atPath: item.resolvingSymlinksInPath().path, isDirectory: &isDirectory)
+            let name: String
+            if linked || isDirectory.boolValue {
+                name = item.lastPathComponent
+            } else if exists {
+                name = (item.lastPathComponent as NSString).deletingPathExtension
+                guard !name.isEmpty else { continue }
+            } else {
+                name = item.lastPathComponent
+            }
+            if names[name] != nil { throw SkillLibraryError.duplicate }
+            names[name] = item
+        }
+        return try names.keys.sorted().map { name in
+            let item = names[name]!
+            let linked = isLink(item)
+            let target = try linked ? URL(fileURLWithPath: fileManager.destinationOfSymbolicLink(atPath: item.path), relativeTo: libraryURL).standardizedFileURL : item
+            let insideCustom = target.deletingLastPathComponent().standardizedFileURL.path == customURL.standardizedFileURL.path
+            let sourceId = linked ? (insideCustom ? Self.sourceID : Self.linkedSourceID) : Self.copiedSourceID
+            let content = (existsDirectory(target) ? target : item).resolvingSymlinksInPath()
+            let analysis = try? SkillAssetCopier.analyze(from: content)
+            let origin = origins[name]
+            let skillFile = content.appendingPathComponent("SKILL.md")
+            let parsed = (try? String(contentsOf: skillFile, encoding: .utf8)).flatMap { try? Self.metadata($0) }
+            let entry = SkillEntry(
+                id: name, slug: name, declaredName: parsed?.name ?? origin?.declaredName ?? name,
+                description: parsed?.description ?? "",
+                declaredVersion: parsed?.version, metadataReview: "not-schema-validated", sourceId: sourceId,
+                path: "\(sourceId)/\(name)",
+                contentHash: analysis?.contentHash ?? "", fileCount: analysis?.fileManifest.count ?? 0,
+                bytes: analysis?.bytes ?? 0, integrity: analysis == nil ? "blocked" : "snapshotted", issues: [],
+                licenseReview: "required", excludedPaths: []
+            )
+            return LibrarySkillRecord(entry: entry, originID: origin.map { $0.url + "#" + $0.path }, sourceOrigin: origin)
+        }
+    }
+
+    private func linkLibrary(name: String, to destination: URL) throws {
+        try ensureRealDirectory(libraryURL)
+        let link = libraryURL.appendingPathComponent(name)
+        if isLink(link) || fileManager.fileExists(atPath: link.path) {
+            try fileManager.removeItem(at: link)
+        }
+        try fileManager.createSymbolicLink(at: link, withDestinationURL: destination)
+    }
+
+    private func validateSlug(_ slug: String) throws {
+        guard slug.range(of: #"^[a-z0-9]+(?:-[a-z0-9]+)*$"#, options: .regularExpression) != nil,
+              slug.count <= 80 else { throw SkillLibraryError.invalidSlug }
+    }
+
+    private func prepareRoots() throws {
+        try fileManager.createDirectory(at: customURL, withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: libraryURL, withIntermediateDirectories: true)
+        try ensureRealDirectory(customURL)
+        try ensureRealDirectory(libraryURL)
+    }
+
+    /// custom 或库根被换成指向外部的软链时，后续写入会落到预期目录之外。
+    private func ensureRealDirectory(_ url: URL) throws {
+        guard !isLink(url) else { throw SkillLibraryError.unsafePath }
+        var directory: ObjCBool = false
+        guard fileManager.fileExists(atPath: url.path, isDirectory: &directory), directory.boolValue else {
             throw SkillLibraryError.unsafePath
         }
-        let url = rootURL.appendingPathComponent(path)
-        try checkPath(url, inside: rootURL)
-        return url
+    }
+
+    private func ensureInside(_ url: URL, _ root: URL) throws {
+        let root = root.standardizedFileURL
+        let url = url.standardizedFileURL
+        guard url.path == root.path || url.path.hasPrefix(root.path + "/") else { throw SkillLibraryError.unsafePath }
     }
 
     func checkPath(_ url: URL, inside root: URL) throws {
-        let root = root.standardizedFileURL
-        guard root.resolvingSymlinksInPath().path == root.path,
-              url.standardizedFileURL.path.hasPrefix(root.path + "/"),
-              url.resolvingSymlinksInPath().path == url.standardizedFileURL.path else {
+        let root = root.resolvingSymlinksInPath().standardizedFileURL
+        let resolved = url.resolvingSymlinksInPath().standardizedFileURL
+        guard resolved.path == root.path || resolved.path.hasPrefix(root.path + "/") else {
             throw SkillLibraryError.unsafePath
         }
     }
 
-    func prepareRoot() throws {
-        try checkPath(rootURL.appendingPathComponent("packages"), inside: rootURL)
-        try fileManager.createDirectory(at: rootURL.appendingPathComponent("packages"), withIntermediateDirectories: true)
-    }
-
-    func load() throws -> LibraryIndex {
-        let url = rootURL.appendingPathComponent("index.json")
-        try checkPath(url, inside: rootURL)
-        guard fileManager.fileExists(atPath: url.path) else { return LibraryIndex() }
-        let index: LibraryIndex
-        do { index = try JSONDecoder().decode(LibraryIndex.self, from: Data(contentsOf: url)) }
+    private func loadMeta() throws -> SkillLibraryMeta {
+        guard fileManager.fileExists(atPath: categoriesURL.path) else { return SkillLibraryMeta() }
+        do { return try JSONDecoder().decode(SkillLibraryMeta.self, from: Data(contentsOf: categoriesURL)) }
         catch { throw SkillLibraryError.corrupt }
-        guard index.schemaVersion == 1, Set(index.records.map { $0.entry.id }).count == index.records.count else {
-            throw SkillLibraryError.corrupt
-        }
-        for record in index.records {
-            let entry = record.entry
-            let personal = entry.sourceId == Self.sourceID && entry.id == "personal/\(entry.slug)"
-            let source = entry.sourceId.range(of: #"^source-[0-9a-f]{64}$"#, options: .regularExpression) != nil
-                && entry.id.hasPrefix(entry.sourceId + "/") && entry.id.hasSuffix("/" + entry.slug)
-            guard personal || source,
-                  !entry.slug.isEmpty, !entry.slug.contains("/"), entry.slug != ".", entry.slug != ".." else {
-                throw SkillLibraryError.corrupt
-            }
-            _ = try packageURL(entry.path)
-        }
-        return index
     }
 
-    func write(_ index: LibraryIndex) throws {
-        let url = rootURL.appendingPathComponent("index.json")
-        try checkPath(url, inside: rootURL)
+    private func writeMeta(_ meta: SkillLibraryMeta) throws {
+        try fileManager.createDirectory(at: categoriesURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        try encoder.encode(index).write(to: url, options: .atomic)
+        try encoder.encode(meta).write(to: categoriesURL, options: .atomic)
+    }
+
+    private func isLink(_ url: URL) -> Bool {
+        (try? fileManager.destinationOfSymbolicLink(atPath: url.path)) != nil
+    }
+
+    private func existsDirectory(_ url: URL) -> Bool {
+        var directory: ObjCBool = false
+        return fileManager.fileExists(atPath: url.resolvingSymlinksInPath().path, isDirectory: &directory) && directory.boolValue
+    }
+
+    /// 技能库里的实体目录改放到 custom。已占用的 custom 名字跳过，避免覆盖另一份技能。
+    private func adoptOwnedDirectories() throws {
+        guard fileManager.fileExists(atPath: libraryURL.path), !isLink(libraryURL) else { return }
+        let children = try fileManager.contentsOfDirectory(at: libraryURL, includingPropertiesForKeys: [.isSymbolicLinkKey], options: [.skipsHiddenFiles])
+        guard children.contains(where: { !isLink(libraryURL.appendingPathComponent($0.lastPathComponent)) }) else { return }
+        try prepareRoots()
+        for child in children {
+            let item = libraryURL.appendingPathComponent(child.lastPathComponent)
+            guard !isLink(item) else { continue }
+            var directory: ObjCBool = false
+            guard fileManager.fileExists(atPath: item.path, isDirectory: &directory), directory.boolValue else { continue }
+            let name = item.lastPathComponent
+            let destination = customURL.appendingPathComponent(name, isDirectory: true)
+            guard !fileManager.fileExists(atPath: destination.path), !isLink(destination) else { continue }
+            try fileManager.moveItem(at: item, to: destination)
+            do { try linkLibrary(name: name, to: destination) }
+            catch {
+                try? fileManager.moveItem(at: destination, to: item)
+                throw error
+            }
+        }
+    }
+
+    /// 旧索引里的个人技能搬到 custom，并在技能库留下同名软链。已占用的名字跳过。
+    private func migrateLegacyPackagesIfNeeded() throws {
+        let stateRoot = categoriesURL.deletingLastPathComponent()
+        let legacyIndex = stateRoot.appendingPathComponent("skills/index.json")
+        let marker = sourcesURL.appendingPathComponent(".migrated-skill-packages")
+        guard fileManager.fileExists(atPath: legacyIndex.path), !fileManager.fileExists(atPath: marker.path) else { return }
+        let index: LibraryIndex
+        do { index = try JSONDecoder().decode(LibraryIndex.self, from: Data(contentsOf: legacyIndex)) }
+        catch { return }
+        try prepareRoots()
+        var meta = (try? loadMeta()) ?? SkillLibraryMeta()
+        for record in index.records {
+            let slug = record.entry.slug
+            guard (try? validateSlug(slug)) != nil else { continue }
+            let package = stateRoot.appendingPathComponent("skills").appendingPathComponent(record.entry.path)
+            guard fileManager.fileExists(atPath: package.path) else { continue }
+            let libraryEntry = libraryURL.appendingPathComponent(slug)
+            guard !fileManager.fileExists(atPath: libraryEntry.path), !isLink(libraryEntry) else { continue }
+            if record.entry.sourceId == "personal" {
+                let destination = customURL.appendingPathComponent(slug, isDirectory: true)
+                guard !fileManager.fileExists(atPath: destination.path) else { continue }
+                _ = try SkillAssetCopier.copy(from: package, to: destination)
+                try linkLibrary(name: slug, to: destination)
+            } else {
+                _ = try SkillAssetCopier.copy(from: package, to: libraryEntry)
+            }
+            if let origin = record.sourceOrigin { meta.origins[slug] = origin }
+        }
+        meta.hiddenIDs.append(contentsOf: index.hiddenIDs.filter { !meta.hiddenIDs.contains($0) })
+        try writeMeta(meta)
+        try Data().write(to: marker)
     }
 
     /// 仅提取展示所需字段；保留完整原文和未知字段，不宣称完成 YAML schema 校验。
-    private static func metadata(_ text: String) throws -> (name: String, description: String, version: String?) {
+    static func metadata(_ text: String) throws -> (name: String, description: String, version: String?) {
         guard text.utf8.count <= 2 * 1_024 * 1_024 else { throw SkillLibraryError.invalidDocument }
         let lines = text.components(separatedBy: .newlines)
         guard lines.first == "---", let end = lines.dropFirst().firstIndex(of: "---"),

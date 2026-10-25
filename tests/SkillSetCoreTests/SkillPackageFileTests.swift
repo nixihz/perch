@@ -90,7 +90,11 @@ struct SkillPackageFileTests {
 private struct PackageFixture {
     let root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent("package-reader-\(UUID())")
     var package: URL { root.appendingPathComponent("skills/demo") }
-    var store: SkillLibraryStore { SkillLibraryStore(rootURL: root.appendingPathComponent("library")) }
+    var store: SkillLibraryStore {
+        SkillLibraryStore(libraryURL: root.appendingPathComponent("library"),
+                          sourcesURL: root.appendingPathComponent("sources"),
+                          categoriesURL: root.appendingPathComponent("categories.json"))
+    }
 
     init() throws { try write("SKILL.md", "---\nname: demo\ndescription: 演示\n---\n正文") }
     func cleanup() { try? FileManager.default.removeItem(at: root) }

@@ -25,9 +25,12 @@ extension SkillSetService {
         }
 
         let record = try previewService.preview(urlString: repositoryURL)
+        var installed = false
         defer {
-            // 目录安装只借用隔离预览；成功或失败都不能把整仓登记成持久来源。
-            try? SourcePreviewStore(rootURL: previewService.previewsRoot).remove(record.id)
+            // 安装失败不留下半成品来源。成功后保留来源，从技能库移除时还能再加入。
+            if !installed {
+                try? SourcePreviewStore(rootURL: previewService.previewsRoot).remove(record.id)
+            }
         }
         guard record.canonicalURL == repositoryURL else {
             throw SkillsShDirectoryError.nonGitHubSource(hit.source)
@@ -35,6 +38,9 @@ extension SkillSetService {
         let candidate = try SkillsShCandidateMatcher.match(hit, candidates: record.candidates)
         var draft = try sourceSkillImportDraft(previewID: record.id, path: candidate.path)
         draft.slug = slug
-        return try importSourceSkill(draft)
+        draft.mode = .copy
+        let entry = try importSourceSkill(draft)
+        installed = true
+        return entry
     }
 }

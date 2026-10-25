@@ -48,7 +48,7 @@ final class SkillsShWorkflowTests: XCTestCase {
 
             XCTAssertFalse(model.snapshot.catalog.entries.contains { $0.id == entry.id })
             XCTAssertNil(model.sourceOrigins[entry.id])
-            XCTAssertTrue(FileManager.default.fileExists(atPath: package.appendingPathComponent("SKILL.md").path))
+            XCTAssertFalse(FileManager.default.fileExists(atPath: package.appendingPathComponent("SKILL.md").path))
             XCTAssertEqual(
                 try String(contentsOf: deployed.appendingPathComponent("SKILL.md"), encoding: .utf8),
                 Self.document(name: "review-demo")
@@ -107,16 +107,14 @@ final class SkillsShWorkflowTests: XCTestCase {
             var editor = try XCTUnwrap(model.editorDraft(for: entry))
             editor.document = Self.document(name: "other-review")
             XCTAssertTrue(model.saveSkill(editor), model.libraryError ?? "")
-            let indexURL = paths.libraryRoot.appendingPathComponent("index.json")
-            var index = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: indexURL)) as? [String: Any])
-            var records = try XCTUnwrap(index["records"] as? [[String: Any]])
-            for offset in records.indices {
-                var origin = try XCTUnwrap(records[offset]["sourceOrigin"] as? [String: Any])
-                origin.removeValue(forKey: "declaredName")
-                records[offset]["sourceOrigin"] = origin
+            let categoriesURL = paths.applicationSupportRoot.appendingPathComponent("skill-categories.json")
+            var meta = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: categoriesURL)) as? [String: Any])
+            var origins = try XCTUnwrap(meta["origins"] as? [String: [String: Any]])
+            for key in Array(origins.keys) {
+                origins[key]?.removeValue(forKey: "declaredName")
             }
-            index["records"] = records
-            try JSONSerialization.data(withJSONObject: index).write(to: indexURL, options: .atomic)
+            meta["origins"] = origins
+            try JSONSerialization.data(withJSONObject: meta).write(to: categoriesURL, options: .atomic)
             let restarted = AppModel(runtimePaths: paths)
             let otherHit = SkillsShHit(id: "fixture/skills/other-review", source: "fixture/skills",
                                       skillId: "other-review", name: "other-review", installs: 1)
@@ -222,7 +220,8 @@ final class SkillsShWorkflowTests: XCTestCase {
         let service = try SkillSetService(paths: paths)
         var entries: [SkillEntry] = []
         for candidate in candidates {
-            let draft = try service.sourceSkillImportDraft(previewID: previewID, path: candidate.path)
+            var draft = try service.sourceSkillImportDraft(previewID: previewID, path: candidate.path)
+            draft.mode = .copy
             entries.append(try service.importSourceSkill(draft))
         }
         // 与真实目录安装一致：导入完成后删除临时预览，避免初始化同步再生成同源条目。
@@ -236,14 +235,14 @@ final class SkillsShWorkflowTests: XCTestCase {
             // 部署服务必须重新读取导入后的技能库，不能复用导入前的目录快照。
             let deploymentService = try SkillSetService(paths: paths)
             let plan = try deploymentService.makePlan(
-                projectID: registration.id, skillIDs: [first.id], instructionIDs: [], agents: ["codex"]
+                projectID: registration.id, skillIDs: [first.id], instructionIDs: [], agents: ["codex"], installMethod: .copy
             )
             _ = try deploymentService.approve(planID: plan.id, digest: plan.plan.digest)
             _ = try deploymentService.apply(planID: plan.id, digest: plan.plan.digest)
             deployed = project.appendingPathComponent(".agents/skills/\(first.slug)")
         }
 
-        let store = SkillLibraryStore(rootURL: paths.libraryRoot)
+        let store = paths.makeLibraryStore(home: root.appendingPathComponent("SKILLSET_HOME"))
         let packageURLs = entries.compactMap { try? store.sourceURLs()[$0.id] }
         let hit = SkillsShHit(
             id: "fixture/skills/\(packages[0].name)", source: "fixture/skills",

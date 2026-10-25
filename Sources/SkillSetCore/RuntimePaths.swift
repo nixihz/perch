@@ -29,6 +29,19 @@ public struct SkillSetRuntimePaths: Sendable {
         applicationSupportRoot.appendingPathComponent("skills", isDirectory: true)
     }
 
+    public var sourcesRoot: URL {
+        applicationSupportRoot.appendingPathComponent("sources", isDirectory: true)
+    }
+
+    /// 技能库是主目录下的扁平目录。文件在 sources，库内子项只保留技能名。
+    public func makeLibraryStore(home: URL) -> SkillLibraryStore {
+        SkillLibraryStore(
+            libraryURL: home.appendingPathComponent(".agents/skills", isDirectory: true),
+            sourcesURL: sourcesRoot,
+            categoriesURL: applicationSupportRoot.appendingPathComponent("skill-categories.json")
+        )
+    }
+
     public var versionsRoot: URL { applicationSupportRoot.appendingPathComponent("versions", isDirectory: true) }
 
     /// 只复制旧状态，保留原目录供回退；临时目录全部成功后才发布。

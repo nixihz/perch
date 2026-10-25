@@ -89,7 +89,7 @@ struct SkillsShDirectoryTests {
     @Test func nonGitHubDirectoryEntryIsRejectedBeforePreviewing() throws {
         let fixture = try SkillsShInstallFixture(candidates: ["skills/review-demo"])
         defer { fixture.cleanup() }
-        let service = try SkillSetService(paths: fixture.paths)
+        let service = try SkillSetService(paths: fixture.paths, globalLocations: .init(home: fixture.root.appendingPathComponent("home"), stateRoot: fixture.paths.applicationSupportRoot))
         let remoteOnly = SkillsShHit(
             id: "example/remote-only", source: "gitlab.com/example/skills",
             skillId: "review-demo", name: "review-demo", installs: 1
@@ -104,25 +104,31 @@ struct SkillsShDirectoryTests {
         #expect(try SourcePreviewStore(rootURL: fixture.paths.previewsRoot).list().isEmpty)
     }
 
-    @Test func installPinsCommitCopiesCompletePackageAndRemovesTemporaryPreview() throws {
+    @Test func installPinsCommitCopiesCompletePackageAndKeepsSource() throws {
         let fixture = try SkillsShInstallFixture(candidates: ["skills/review-demo"])
         defer { fixture.cleanup() }
-        let service = try SkillSetService(paths: fixture.paths)
+        let service = try SkillSetService(paths: fixture.paths, globalLocations: .init(home: fixture.root.appendingPathComponent("home"), stateRoot: fixture.paths.applicationSupportRoot))
 
         let entry = try service.installDirectorySkill(
             hit(skillID: "review-demo"), previewService: fixture.previewService
         )
 
-        let store = SkillLibraryStore(rootURL: fixture.paths.libraryRoot)
+        let store = fixture.paths.makeLibraryStore(home: fixture.root.appendingPathComponent("home"))
         let origin = try #require(store.sourceOrigins()[entry.id])
         let package = try #require(store.sourceURLs()[entry.id])
-        #expect(entry.id == "personal/review-demo")
+        #expect(entry.id == "review-demo")
         #expect(origin.url == "https://github.com/fixture/skills")
         #expect(origin.commit == fixture.headCommit)
         #expect(origin.path == "skills/review-demo")
         #expect(try String(contentsOf: package.appendingPathComponent("references/guide.md"), encoding: .utf8) == "# Guide\n")
         #expect(!FileManager.default.fileExists(atPath: fixture.executionMarker.path))
-        #expect(try SourcePreviewStore(rootURL: fixture.paths.previewsRoot).list().isEmpty)
+        let previews = SourcePreviewStore(rootURL: fixture.paths.previewsRoot)
+        #expect(try previews.list().map(\.canonicalURL) == ["https://github.com/fixture/skills"])
+        try store.remove(entry)
+        let empty = CatalogDocument(schemaVersion: 1, hashAlgorithm: "sha256:path-content-executable:v1", entries: [])
+        #expect(try store.catalog(merging: empty).entries.isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: package.path))
+        #expect(try previews.list().map(\.canonicalURL) == ["https://github.com/fixture/skills"])
     }
 
     @Test func missingOrAmbiguousCandidatePublishesNothing() throws {
@@ -132,7 +138,7 @@ struct SkillsShDirectoryTests {
                 declaredNames: ["skills/react-a": "react", "other/react-b": "react"]
             )
             defer { fixture.cleanup() }
-            let service = try SkillSetService(paths: fixture.paths)
+            let service = try SkillSetService(paths: fixture.paths, globalLocations: .init(home: fixture.root.appendingPathComponent("home"), stateRoot: fixture.paths.applicationSupportRoot))
 
             do {
                 _ = try service.installDirectorySkill(
@@ -147,7 +153,7 @@ struct SkillsShDirectoryTests {
                     Issue.record("意外错误：\(error)")
                 }
             }
-            #expect(try SkillLibraryStore(rootURL: fixture.paths.libraryRoot).sourceURLs().isEmpty)
+            #expect(try fixture.paths.makeLibraryStore(home: fixture.root.appendingPathComponent("home")).sourceURLs().isEmpty)
             #expect(try SourcePreviewStore(rootURL: fixture.paths.previewsRoot).list().isEmpty)
         }
     }

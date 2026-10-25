@@ -47,6 +47,8 @@ public enum ProjectInspector {
         ruleBlockID: String = "project-rules",
         operationsRoot: URL? = nil,
         versionsRoot: URL? = nil,
+        libraryRoot: URL? = nil,
+        sourcesRoot: URL? = nil,
         fileManager: FileManager = .default
     ) throws -> ProjectInspection {
         let projectRoot = projectURL.resolvingSymlinksInPath().standardizedFileURL
@@ -117,7 +119,7 @@ public enum ProjectInspector {
                     let candidates = catalog.entries.filter { $0.slug == slug && !$0.isBlocked }
                     let catalogMatches = candidates.filter { $0.contentHash == actualHash }
                     let matches = lockedMatches.count == 1 ? lockedMatches.map(\.id) : catalogMatches.map(\.id)
-                    let observedHash = isLink ? try ManagedSkillLink.hash(child, versionsRoot: versionsRoot) : actualHash
+                    let observedHash = isLink ? try ManagedSkillLink.hash(child, versionsRoot: versionsRoot, libraryRoot: libraryRoot, sourcesRoot: sourcesRoot) : actualHash
                     let status = ownedSkills[path].map { $0 == observedHash ? "matching" : "drifted" }
                         ?? (matches.isEmpty ? "unknown" : "matching")
                     skillObservations.append(ProjectSkillObservation(

@@ -31,7 +31,8 @@ final class SourceImportWorkflowUITests: XCTestCase {
         try ui.captureWindowScreenshot(to: URL(fileURLWithPath: "/tmp/skillset-source-import-review.png"))
         try ui.pressButton(identifier: "sources.view.skills/import-ui")
         try ui.waitForStaticText(containing: "来源界面测试正文")
-        let library = SkillLibraryStore(rootURL: state.appendingPathComponent("skills"))
+        let library = SkillSetRuntimePaths(applicationSupportRoot: state, repositoryRoot: nil)
+            .makeLibraryStore(home: state.deletingLastPathComponent())
         let importedID = try XCTUnwrap(
             try library.sourceURLs().keys.first { $0.hasSuffix("/import-ui") },
             "来源同步后应能在技能库找到 import-ui"

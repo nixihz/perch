@@ -17,15 +17,33 @@ extension GlobalConfigurationManager {
         try builder.requireState(current)
         var desired: Set<String> = []
         var slugs: Set<String> = []
+        let skillsByID = skillLookup(catalog.entries)
         for id in selection.skillIDs {
-            guard let entry = catalog.entries.first(where: { $0.id == id }) else { throw DeploymentError.skillNotFound(id) }
+            guard let entry = skillsByID[id] else { throw DeploymentError.skillNotFound(id) }
             guard !entry.isBlocked else { throw DeploymentError.skillBlocked(id) }
             let target = locations.skillsRoot(host).appendingPathComponent(entry.slug)
             guard allowedResource(target, host: host), slugs.insert(entry.slug).inserted else { throw DeploymentError.invalidPlan }
             desired.insert(target.path)
             let actual = try builder.observe(target)
+            let libraryEntry = locations.libraryRoot.appendingPathComponent(entry.slug, isDirectory: true)
+            if target.standardizedFileURL.path == libraryEntry.standardizedFileURL.path, let actual {
+                // 当目标目录与技能库重合时，只登记已有条目，不把库内软链换成另一份副本。
+                let old = current?.managed[target.path]
+                next.managed[target.path] = GlobalManagedResource(hash: actual, baselineID: old?.baselineID,
+                    baselineHash: old?.baselineHash ?? actual, originalRules: nil, writtenRules: nil)
+                continue
+            }
             let old = current?.managed[target.path]
-            if let old, actual != old.hash { throw DeploymentError.managedSkillDrift(target.path) }
+            if let old, actual != old.hash, actual != nil {
+                // 外部修改保留在原地；本次计划只重新登记实际指纹，避免阻塞其他全局配置。
+                next.managed[target.path] = GlobalManagedResource(hash: actual!, baselineID: old.baselineID,
+                    baselineHash: old.baselineHash, originalRules: old.originalRules, writtenRules: old.writtenRules)
+                builder.warnings.append("检测到外部修改，保留当前技能文件并更新管理指纹：\(target.path)")
+                continue
+            }
+            if old != nil, actual == nil {
+                builder.warnings.append("检测到受管技能已被删除，批准后将从技能库重新创建：\(target.path)")
+            }
             if actual != nil, old == nil, !takeOverExisting {
                 if actual == entry.contentHash { continue }
                 throw DeploymentError.unmanagedSkillConflict(target.path)
@@ -38,10 +56,13 @@ extension GlobalConfigurationManager {
             guard try SkillAssetCopier.analyze(from: source).contentHash == entry.contentHash else { throw DeploymentError.skillSourceChanged(source.path) }
             let installedHash: String
             if installMethod == .symlink {
-                let version = try ManagedSkillLink.prepare(source: source, contentHash: entry.contentHash, root: paths.versionsRoot)
+                let linkTarget = try ManagedSkillLink.prepare(source: source, contentHash: entry.contentHash, root: paths.versionsRoot)
                 try fileManager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
-                try fileManager.createSymbolicLink(at: destination, withDestinationURL: version)
-                installedHash = try ManagedSkillLink.hash(destination, versionsRoot: paths.versionsRoot)!
+                try fileManager.createSymbolicLink(at: destination, withDestinationURL: linkTarget)
+                installedHash = try ManagedSkillLink.hash(
+                    destination, versionsRoot: paths.versionsRoot,
+                    libraryRoot: locations.libraryRoot, sourcesRoot: paths.sourcesRoot
+                )!
             } else {
                 let result = try SkillAssetCopier.copy(from: source, to: destination)
                 guard result.contentHash == entry.contentHash else { throw DeploymentError.skillSourceChanged(source.path) }
@@ -77,10 +98,13 @@ extension GlobalConfigurationManager {
             let original = try dataIfPresent(rules)
             let observedBody = try original.flatMap { try ruleBody($0, path: rules.path) }
             let old = current?.managed[rules.path]
-            if let old, observedBody.map({ SkillAssetCopier.sha256(Data($0.utf8)) }) != old.hash {
-                throw DeploymentError.managedRuleDrift(rules.path)
-            }
-            if old == nil, observedBody != nil, !takeOverExisting {
+            let observedHash = observedBody.map { SkillAssetCopier.sha256(Data($0.utf8)) }
+            if let old, observedHash != old.hash, observedBody != nil {
+                // 保留用户修改，只更新管理记录；下次计划仍可继续处理其他内容。
+                next.managed[rules.path] = GlobalManagedResource(hash: observedHash!, baselineID: old.baselineID,
+                    baselineHash: old.baselineHash, originalRules: old.originalRules, writtenRules: old.writtenRules)
+                builder.warnings.append("检测到外部修改，保留当前规则文件并更新管理指纹：\(rules.path)")
+            } else if old == nil, observedBody != nil, !takeOverExisting {
                 guard observedBody == body else { throw DeploymentError.unmanagedRuleConflict(rules.path) }
             } else {
                 let text = original.flatMap { String(data: $0, encoding: .utf8) } ?? ""
@@ -133,12 +157,29 @@ extension GlobalConfigurationManager {
         let actual = try builder.observe(target)
         if target == locations.rulesURL(host) {
             let current = try dataIfPresent(target)
+            guard current != nil else {
+                if builder.action == "deploy" { builder.warnings.append("原规则文件已删除，跳过恢复并清理管理记录：\(target.path)") }
+                return
+            }
+            let observedHash = try current.flatMap { try ruleBody($0, path: target.path) }
+                .map { SkillAssetCopier.sha256(Data($0.utf8)) }
+            if observedHash != resource.hash {
+                if builder.action == "deploy" { return }
+                throw DeploymentError.managedRuleDrift(target.path)
+            }
             guard let current, try ruleBody(current, path: target.path).map({ SkillAssetCopier.sha256(Data($0.utf8)) }) == resource.hash,
                   let written = resource.writtenRules else { throw DeploymentError.managedRuleDrift(target.path) }
             let restored = try GlobalRuleEditing.restore(current: current, written: written, original: resource.originalRules, path: target.path)
             try builder.write(restored, to: target, summary: "恢复接管前规则，保留后续块外编辑")
         } else {
-            guard actual == resource.hash else { throw DeploymentError.managedSkillDrift(target.path) }
+            if actual == nil {
+                if builder.action == "deploy" { builder.warnings.append("原技能目录已删除，跳过恢复并清理管理记录：\(target.path)") }
+                return
+            }
+            if actual != resource.hash {
+                if builder.action == "deploy" { return }
+                throw DeploymentError.managedSkillDrift(target.path)
+            }
             if let id = resource.baselineID {
                 let baseline = baselineURL(id)
                 guard try hash(baseline) == resource.baselineHash, resource.baselineHash != nil else {
@@ -162,6 +203,7 @@ final class GlobalPlanBuilder {
     let root: URL
     let stage: URL
     var changes: [PlannedChange] = []
+    var warnings: [String] = []
     var observations: [String: PlannedObservation] = [:]
     var newBaselines: [URL] = []
     var saved = false
@@ -226,7 +268,7 @@ final class GlobalPlanBuilder {
         let digest = DeploymentPlanner.calculateDigest(projectPath: root.path, changes: changes,
             selectedSkills: [], metadata: metadata, observations: dependencies)
         let plan = DeploymentPlan(id: id, projectPath: root.path, createdAt: Date(), digest: digest,
-            changes: changes, warnings: ["此操作影响当前用户在该 AI 工具中的全部项目。"],
+            changes: changes, warnings: ["此操作影响当前用户在该 AI 工具中的全部项目。"] + warnings,
             metadata: metadata, observations: dependencies)
         try manager.validate(plan: plan)
         let stored = try DeploymentPlanStore(rootURL: manager.paths.plansRoot).save(plan: plan, stagingPath: stage.path)

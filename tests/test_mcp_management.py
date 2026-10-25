@@ -80,7 +80,7 @@ class MCPManagementTests(unittest.TestCase):
         self.tool("skills_get", {"skillId": skill["id"]}, error="RESOURCE_NOT_FOUND")
         self.tool("skills_delete", {"skillId": skill["id"]}, error="RESOURCE_NOT_FOUND")
         self.assertEqual(installed.read_text(), edited)
-        self.assertTrue((self.state / "skills" / saved["path"]).exists())
+        self.assertFalse((self.state / "sources" / saved["path"]).exists())
 
     def test_template_preset_crud_and_live_deployment(self):
         template = self.tool("templates_create", {"title": "协作", "body": "使用中文。", "purpose": "测试"})["template"]
@@ -107,14 +107,13 @@ class MCPManagementTests(unittest.TestCase):
         (source / "SKILL.md").write_text(self.document())
         (source / "helper.txt").write_text("附属文件")
         preview = self.tool("sources_preview", {"url": str(source)})
-        entry = self.tool("skills_search", {"query": "sample"})["skills"][0]
+        self.assertEqual(self.tool("skills_search", {"query": "sample"})["skills"], [])
+        entry = self.tool("sources_import_skill", {"previewId": preview["id"], "path": preview["candidates"][0]["path"], "slug": "sample", "mode": "symlink"})["skill"]
         self.tool("skills_update", {"skillId": entry["id"], "document": self.document()}, error="LIBRARY_READ_ONLY_SOURCE")
         self.tool("skills_delete", {"skillId": entry["id"]})
         self.assertEqual(self.tool("skills_search", {"query": "sample"})["skills"], [])
-        self.tool("skills_restore_hidden")
-        self.assertEqual(len(self.tool("skills_search", {"query": "sample"})["skills"]), 1)
-        personal = self.tool("sources_import_skill", {"previewId": preview["id"], "path": preview["candidates"][0]["path"], "slug": "copy"})["skill"]
-        self.assertEqual((self.state / "skills" / personal["path"] / "helper.txt").read_text(), "附属文件")
+        personal = self.tool("sources_import_skill", {"previewId": preview["id"], "path": preview["candidates"][0]["path"], "slug": "copy", "mode": "copy"})["skill"]
+        self.assertEqual((self.state / "sources" / personal["path"] / "helper.txt").read_text(), "附属文件")
         self.tool("sources_import_skill", {"previewId": preview["id"], "path": "../escape"}, error="SOURCE_IMPORT_UNAVAILABLE")
         updated = self.tool("sources_update", {"previewId": preview["id"]})["preview"]
         self.assertNotEqual(updated["id"], preview["id"])
@@ -214,6 +213,79 @@ class MCPManagementTests(unittest.TestCase):
             with self.subTest(name=name, args=args):
                 self.tool(name, args, error="INVALID_ARGUMENTS")
         self.assertFalse(self.state.exists())
+
+    def test_mcp_batch_reuses_state_and_returns_partial_failures(self):
+        response = self.rpc("tools/call", {"name": "mcp_batch", "arguments": {"operations": [
+            {"name": "skills_create", "arguments": {"slug": "batch-skill", "document": self.document()}},
+            {"name": "skills_search", "arguments": {"query": "batch-skill"}},
+            {"name": "skills_create", "arguments": {"slug": "batch-skill", "document": self.document()}},
+            {"name": "mcp_library_list", "arguments": {}},
+        ]}})
+        self.assertTrue(response["isError"])
+        batch = response["structuredContent"]
+        self.assertEqual(batch["count"], 4)
+        self.assertEqual(batch["succeeded"], 3)
+        self.assertEqual(batch["failed"], 1)
+        self.assertEqual(batch["results"][1]["result"]["structuredContent"]["count"], 1)
+        self.assertEqual(batch["results"][2]["result"]["structuredContent"]["code"], "LIBRARY_DUPLICATE")
+
+    def test_cached_reads_see_library_writes_and_external_edits(self):
+        created = self.tool("skills_create", {"slug": "cached-skill", "document": self.document(name="cached-skill")})
+        self.assertEqual(self.tool("skills_search", {"query": "cached-skill"})["count"], 1)
+        self.assertEqual(created["skill"]["id"], "cached-skill")
+        self.assertEqual(self.tool("templates_list")["templates"], [])
+        document = {
+            "schemaVersion": 1,
+            "records": [{
+                "id": "external-rule",
+                "title": "外部",
+                "body": "外部写入。",
+                "purpose": "缓存失效",
+                "isLocal": True,
+            }],
+            "deletedIDs": [],
+        }
+        path = self.state / "templates.json"
+        path.write_text(json.dumps(document), encoding="utf-8")
+        self.assertEqual(self.tool("templates_get", {"templateId": "external-rule"})["template"]["body"], "外部写入。")
+        document["records"][0]["body"] = "再次写入。"
+        path.write_text(json.dumps(document), encoding="utf-8")
+        self.assertEqual(self.tool("templates_get", {"templateId": "external-rule"})["template"]["body"], "再次写入。")
+
+    def test_batch_reads_follow_the_write_in_the_same_request(self):
+        operations = [{"name": "skills_create", "arguments": {"slug": "batch-read", "document": self.document(name="batch-read")}}]
+        operations.extend({"name": "skills_search", "arguments": {"query": "batch-read"}} for _ in range(10))
+        batch = self.rpc("tools/call", {"name": "mcp_batch", "arguments": {"operations": operations}})["structuredContent"]
+        self.assertEqual(batch["failed"], 0)
+        self.assertEqual(batch["succeeded"], 11)
+        for item in batch["results"][1:]:
+            self.assertEqual(item["result"]["structuredContent"]["count"], 1)
+
+    def test_json_rpc_array_sees_the_earlier_write(self):
+        messages = [
+            {"jsonrpc": "2.0", "id": 30, "method": "tools/call", "params": {
+                "name": "skills_create", "arguments": {"slug": "array-skill", "document": self.document(name="array-skill")}
+            }},
+            {"jsonrpc": "2.0", "id": 31, "method": "tools/call", "params": {
+                "name": "skills_search", "arguments": {"query": "array-skill"}
+            }},
+        ]
+        self.process.stdin.write(json.dumps(messages) + "\n")
+        self.process.stdin.flush()
+        response = json.loads(self.process.stdout.readline())
+        self.assertEqual([item["id"] for item in response], [30, 31])
+        self.assertFalse(response[0]["result"]["isError"])
+        self.assertEqual(response[1]["result"]["structuredContent"]["count"], 1)
+
+    def test_json_rpc_array_returns_one_batch_response(self):
+        messages = [
+            {"jsonrpc": "2.0", "id": 10, "method": "ping", "params": {}},
+            {"jsonrpc": "2.0", "id": 11, "method": "tools/list", "params": {}},
+        ]
+        self.process.stdin.write(json.dumps(messages) + "\n")
+        self.process.stdin.flush()
+        response = json.loads(self.process.stdout.readline())
+        self.assertEqual([item["id"] for item in response], [10, 11])
 
 
 if __name__ == "__main__":

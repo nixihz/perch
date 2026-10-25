@@ -8,7 +8,7 @@ struct ProjectInstallationTests {
         defer { fixture.cleanup() }
         let first = try fixture.saveSkill("first")
         let second = try fixture.saveSkill("second")
-        let service = try SkillSetService(paths: fixture.paths)
+        let service = try SkillSetService(paths: fixture.paths, globalLocations: .init(home: fixture.root.appendingPathComponent("home"), stateRoot: fixture.paths.applicationSupportRoot))
         let initial = try service.makeInstallationPlan(projectID: fixture.registration.id, skillIDs: [first.id], agents: ["codex"])
         _ = try service.approve(planID: initial.id, digest: initial.plan.digest)
         _ = try service.apply(planID: initial.id, digest: initial.plan.digest)
@@ -41,7 +41,7 @@ struct ProjectInstallationTests {
         // 正常用户库从空片段开始，安装测试显式建立自己的规则输入。
         let rule = TemplateRecord(id: "installation-rule", title: "安装规则", body: "安装后核对当前工具的配置。", purpose: "安装测试夹具", isLocal: true)
         _ = try TemplateStore(rootURL: fixture.paths.applicationSupportRoot).save(rule, initial: [])
-        let service = try SkillSetService(paths: fixture.paths)
+        let service = try SkillSetService(paths: fixture.paths, globalLocations: .init(home: fixture.root.appendingPathComponent("home"), stateRoot: fixture.paths.applicationSupportRoot))
         let initial = try service.makeInstallationPlan(projectPath: fixture.project.path, skillIDs: [first.id], agents: ["codex"])
         #expect(throws: DeploymentPlanStoreError.self) {
             try service.apply(planID: initial.id, digest: initial.plan.digest)
@@ -75,7 +75,7 @@ struct ProjectInstallationTests {
     @Test func rejectsMissingAmbiguousUnregisteredTargetsAndUnknownPresetsWithoutPlans() throws {
         let fixture = try InstallationFixture()
         defer { fixture.cleanup() }
-        let service = try SkillSetService(paths: fixture.paths)
+        let service = try SkillSetService(paths: fixture.paths, globalLocations: .init(home: fixture.root.appendingPathComponent("home"), stateRoot: fixture.paths.applicationSupportRoot))
         for arguments: (UUID?, String?) in [(nil, nil), (fixture.registration.id, fixture.project.path), (nil, "relative")] {
             #expect(throws: ProjectInstallationError.self) {
                 try service.makeInstallationPlan(projectID: arguments.0, projectPath: arguments.1, skillIDs: ["personal/demo"])
@@ -97,7 +97,7 @@ struct ProjectInstallationTests {
         defer { fixture.cleanup() }
         let skill = try fixture.saveSkill("demo")
         _ = try fixture.presets.save(PresetRecord(id: "personal-base", name: "本机组合", skills: [skill.id]), initial: [])
-        let service = try SkillSetService(paths: fixture.paths)
+        let service = try SkillSetService(paths: fixture.paths, globalLocations: .init(home: fixture.root.appendingPathComponent("home"), stateRoot: fixture.paths.applicationSupportRoot))
         let override = try service.presets().filter { $0.id == "personal-base" }
         #expect(override.count == 1)
         #expect(override.first?.name == "本机组合")
@@ -129,7 +129,7 @@ private struct InstallationFixture {
     }
 
     func saveSkill(_ slug: String) throws -> SkillEntry {
-        try SkillLibraryStore(rootURL: paths.libraryRoot).save(
+        try paths.makeLibraryStore(home: root.appendingPathComponent("home")).save(
             SkillEditorDraft(slug: slug, document: "---\nname: \(slug)\ndescription: 用于验证项目安装\n---\n\n# \(slug)\n"), repositoryRoot: nil
         )
     }

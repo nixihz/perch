@@ -35,7 +35,7 @@ Skill Set 是一个**本地 macOS 桌面应用**和 Git 大仓，不是 Web 软�
 
 1. **借鉴 Matt，不复制其安装副作用。** 采用 promoted / in-progress / deprecated 生命周期，但不执行会删除既有目标的软链脚本。
 2. **三个版本层次互不替代。** 整仓发布版本、skill/plugin/MCP 的不可变 revision、项目锁文件分别管理。
-3. **namespace 是强制的。** `workspace/stc` 与 `local-brian/stc` 可以共存；部署到同一宿主的裸目录名冲突必须人工解决。
+3. **技能名在技能库内唯一。** 不再用 namespace 让同名技能共存。详见 [技能库](specs/skill-library.md)。
 4. **共享事实进 Git，本机观察留在用户数据目录。** 绝对路径、备份、审批、凭据状态和进程日志不进入项目锁。
 5. **应用、CLI 和 stdio MCP 共用 Swift core。** 不允许 UI、CLI、MCP 各写一套文件安装逻辑。
 6. **先适配 Codex 与 Claude Code。** 其他宿主只显示未知或待适配，不从一个宿主的 manifest 推断另一个宿主的能力。
@@ -66,7 +66,7 @@ Skill Set 是一个**本地 macOS 桌面应用**和 Git 大仓，不是 Web 软�
 - Claude Code / Codex 插件缓存与 manifest、Claude 安装索引、Codex plugin 配置的真实盘点；展示 marketplace、安装状态、revision、组件和 hooks 风险。
 - Plugin 生命周期计划：操作本机已发现的插件；Claude install/update/enable/disable/uninstall，Codex install/uninstall。计划绑定 host、plugin id、scope、manifest digest、CLI realpath 和固定 argv；多缓存版本必须精确选择，执行前复核状态，执行后回读并记录 operation。
 - `skillset` CLI：doctor、projects、skills、sources、objects、plugins（list/plan）、inspect、plan、plans、approve、apply、operations、rollback、mcp。
-- `perch` stdio MCP legacy `2025-11-25`：59 个工具，支持技能库、片段、预设、来源、项目、MCP 配置库与插件来源管理，以及按已登记项目路径或 ID 追加安装、项目/全局应用计划、pending plans、apply、operation、对象核验和 Plugin 生命周期计划。MCP 不能批准计划，也不能为高风险安装/更新作风险确认。
+- `perch` stdio MCP legacy `2025-11-25`：60 个工具，支持技能库、片段、预设、来源、项目、MCP 配置库与插件来源管理，以及按已登记项目路径或 ID 追加安装、项目/全局应用计划、pending plans、apply、operation、对象核验和 Plugin 生命周期计划；`mcp_batch` 支持单请求最多 50 项顺序调用；技能索引、片段和预设未变化时复用已加载服务。MCP 不能批准计划，也不能为高风险安装/更新作风险确认。
 - Swift core 行为测试、CLI/MCP 集成测试、真实 GitHub 预览和原生 bundle 构建验证。
 
 ### 下一阶段 P0

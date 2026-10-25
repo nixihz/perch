@@ -64,7 +64,7 @@ stdio MCP 使用同一服务边界：
 .build/debug/skillset mcp serve --transport stdio
 ```
 
-MCP 服务名为 `perch`，首版协议为 legacy `2025-11-25`，提供 59 个工具，覆盖技能库、规则片段、预设、来源、项目、MCP 配置库与插件来源管理，以及项目/全局应用计划、apply、operation、离线对象核验和 Plugin 生命周期计划。库 CRUD 即时生效，删除不卸载已部署内容；完整工具矩阵见 [MCP 契约](docs/specs/mcp.md)。`skills_install` / `presets_install` 接收已登记项目的绝对路径或 ID，追加技能与规则并返回待批准计划；含插件或 MCP 的混合预设转本机完整审阅。`deployment_apply` 只执行已由 UI/CLI 批准且 digest 完全一致的计划。MCP 不能批准计划，也不能替用户确认安装/更新包风险。
+MCP 服务名为 `perch`，首版协议为 legacy `2025-11-25`，提供 60 个工具，覆盖技能库、规则片段、预设、来源、项目、MCP 配置库与插件来源管理，以及项目/全局应用计划、apply、operation、离线对象核验和 Plugin 生命周期计划。`mcp_batch` 支持一个请求顺序处理最多 50 项工具调用，读操作复用快照；技能索引、片段或预设变化后刷新，并返回逐项成功或失败结果。同一进程中这些文件未变化时，后续调用复用已加载的库。JSON-RPC 数组请求也按单个数组响应处理。库 CRUD 即时生效，删除不卸载已部署内容；完整工具矩阵见 [MCP 契约](docs/specs/mcp.md)。`skills_install` / `presets_install` 接收已登记项目的绝对路径或 ID，追加技能与规则并返回待批准计划；含插件或 MCP 的混合预设转本机完整审阅。`deployment_apply` 只执行已由 UI/CLI 批准且 digest 完全一致的计划。MCP 不能批准计划，也不能替用户确认安装/更新包风险。
 
 ## 设计与规范
 
@@ -168,4 +168,4 @@ npx skills add ssh://git@git.xiezhi.xin:2222/iamx/skill-set.git
 
 这会按该 CLI 自己的发现和安装策略操作，**不等于安装本仓 150 条完整库存**，也不经过本管理器的计划/审批。需要可审计写入时使用 `skillset`；完整版本锁、来源收录和宿主适配边界见 SPEC。
 
-技能库的「扫描已安装技能…」可扫描当前 Codex、Claude Code 技能目录及手动追加的目录。勾选后将完整技能包复制到 `~/.perch/sources/local-imports/`，作为独立本地来源参与搜索；同内容去重，原始路径及扫描时间保留，原安装不变。后续可通过「启用到 AI 工具…」预览并批准接管、软链或复制安装，操作历史支持撤销。
+技能库的「扫描已安装技能…」可扫描当前 Codex、Claude Code 技能目录及手动追加的目录。勾选后把技能复制到 `~/.perch/sources/custom/<技能名>/`，并在 `~/.agents/skills` 留下同名软链。原安装保持原样。同名技能不覆盖。旧的 `~/.perch/sources/local-imports` 会在启动时迁入 `custom` 后删除。

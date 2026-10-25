@@ -17,14 +17,27 @@ struct SourceSkillImportSheet: View {
         draft.slug.count > 80 || draft.slug.range(of: #"^[a-z0-9]+(?:-[a-z0-9]+)*$"#, options: .regularExpression) == nil
     }
 
-    private var duplicate: Bool { model.snapshot.catalog.entries.contains { $0.id == "personal/\(draft.slug)" } }
+    private var duplicate: Bool { model.snapshot.catalog.entries.contains { $0.slug == draft.slug } }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text(L10n.tr(addedID == nil ? "加入技能库" : "已加入技能库")).font(AppFont.title.weight(.bold))
             if addedID == nil {
-                Text(L10n.tr("完整保存技能正文、附带文件和仓库许可文件。加入后可在项目中选择，导入时不运行脚本。"))
+                Text(L10n.tr("软链会跟随来源更新。复制会把文件放进技能库，之后与来源无关。导入时不运行脚本。"))
                     .font(AppFont.secondary).foregroundStyle(.secondary)
+                Picker(L10n.tr("存放方式"), selection: $draft.mode) {
+                    Text(L10n.tr("软链")).tag(SkillInstallMethod.symlink)
+                    Text(L10n.tr("复制")).tag(SkillInstallMethod.copy)
+                }
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("sources.import.mode")
+                HStack {
+                    Text(L10n.tr("分类"))
+                    TextField(L10n.tr("可选"), text: $draft.category)
+                        .textFieldStyle(AppTextFieldStyle())
+                        .disabled(model.isWorking)
+                        .accessibilityIdentifier("sources.import.category")
+                }
                 HStack {
                     Text(L10n.tr("技能标识"))
                     TextField("my-skill", text: $draft.slug)
@@ -39,7 +52,9 @@ struct SourceSkillImportSheet: View {
                         .font(AppFont.secondary).foregroundStyle(.red)
                 }
             } else {
-                Text(L10n.tr("技能已独立保存在本机，删除来源预览不会影响它。到项目页勾选技能，再预览变更并批准写入。"))
+                    Text(L10n.tr(draft.mode == .symlink
+                        ? "技能库里是一条指向来源的软链。删除来源后链接会断开。到项目页勾选技能，再预览变更并批准写入。"
+                        : "技能已复制进技能库。删除来源不会影响它。到项目页勾选技能，再预览变更并批准写入。"))
                     .font(AppFont.body)
             }
             ScrollView {
@@ -81,7 +96,7 @@ struct SourceSkillImportSheet: View {
                 } else {
                     if model.isWorking { ProgressView().controlSize(.small) }
                     Button(L10n.tr("加入技能库")) {
-                        Task { if await model.importSourceSkill(draft) { addedID = "personal/\(draft.slug)" } }
+                        Task { if await model.importSourceSkill(draft) { addedID = draft.slug } }
                     }
                     .buttonStyle(AppButtonStyle(kind: .primary)).keyboardShortcut(.defaultAction)
                     .disabled(model.isWorking || invalidSlug || duplicate)

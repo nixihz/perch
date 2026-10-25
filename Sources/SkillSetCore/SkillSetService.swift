@@ -111,6 +111,9 @@ public struct SkillSetService {
     private let pluginLifecycle: PluginLifecycleManager
     /// 测试夹具可以显式提供技能源；正常运行只从本机技能库读取。
     private let injectedSkillSourceURLs: [String: URL]
+    /// 与本次服务快照一起固定。重复搜索不再读索引，也不再折叠目录文本。
+    private let skillSearchIndex: SkillSearchIndex
+    private let libraryPackageURLs: [String: URL]
 
     public init(
         paths: SkillSetRuntimePaths = .detect(),
@@ -121,12 +124,18 @@ public struct SkillSetService {
         pluginLifecycleManager: PluginLifecycleManager? = nil,
         globalLocations: GlobalConfigurationLocations? = nil,
         snapshot overrideSnapshot: AppSnapshot? = nil,
-        skillSourceURLs: [String: URL]? = nil
+        skillSourceURLs: [String: URL]? = nil,
+        library: LoadedSkillLibrary? = nil
     ) throws {
         try paths.migrateLegacyState()
+        let configuration = GlobalConfigurationManager(paths: paths, locations: globalLocations)
+        try Self.absorbLocalImports(paths: paths, home: configuration.locations.home)
         self.paths = paths
-        self.globalConfiguration = GlobalConfigurationManager(paths: paths, locations: globalLocations)
-        let repositorySnapshot = AppSnapshot.load(repositoryRoot: paths.repositoryRoot)
+        self.globalConfiguration = configuration
+        let repositorySnapshot = AppSnapshot.load(
+            repositoryRoot: paths.repositoryRoot,
+            includeBundledLibrary: Self.usesRepositoryLibrary
+        )
         let base = overrideSnapshot ?? Self.defaultSnapshot(repositorySnapshot: repositorySnapshot)
         var automaticSources: [String: URL] = [:]
         if Self.usesRepositoryLibrary, let repositoryRoot = paths.repositoryRoot {
@@ -135,7 +144,10 @@ public struct SkillSetService {
             })
         }
         injectedSkillSourceURLs = automaticSources.merging(skillSourceURLs ?? [:]) { _, explicit in explicit }
-        let localCatalog = try SkillLibraryStore(rootURL: paths.libraryRoot).catalog(merging: base.catalog)
+        let loadedLibrary = try library ?? paths.makeLibraryStore(home: self.globalConfiguration.locations.home).loadLibrary()
+        let localCatalog = loadedLibrary.catalog(merging: base.catalog)
+        libraryPackageURLs = loadedLibrary.packageURLs
+        skillSearchIndex = SkillSearchIndex(entries: localCatalog.entries, sourceOrigins: loadedLibrary.origins)
         let localPresets = try PresetStore(rootURL: paths.applicationSupportRoot).list(merging: base.presets)
         snapshot = try base.replacingCatalog(localCatalog)
             .replacingPresets(localPresets)
@@ -143,7 +155,9 @@ public struct SkillSetService {
         self.projectStore = projectStore ?? ProjectStore(rootURL: paths.applicationSupportRoot)
         self.draftStore = draftStore ?? ProjectDraftStore(rootURL: paths.applicationSupportRoot)
         self.planStore = planStore ?? DeploymentPlanStore(rootURL: paths.plansRoot)
-        self.executor = executor ?? FileTransactionExecutor(operationsRoot: paths.operationsRoot, versionsRoot: paths.versionsRoot)
+        self.executor = executor ?? FileTransactionExecutor(
+            operationsRoot: paths.operationsRoot, versionsRoot: paths.versionsRoot,
+            libraryRoot: self.globalConfiguration.locations.libraryRoot, sourcesRoot: paths.sourcesRoot)
         self.pluginLifecycle = pluginLifecycleManager ?? PluginLifecycleManager(
             planStore: self.planStore,
             stagingRoot: paths.stagingRoot,
@@ -152,12 +166,15 @@ public struct SkillSetService {
     }
 
     /// 回归夹具显式设置该变量后使用仓库快照；正常启动只接受用户同步进本机技能库的内容。
-    static var usesRepositoryLibrary: Bool {
+    public static var usesRepositoryLibrary: Bool {
         ProcessInfo.processInfo.environment["SKILLSET_REPOSITORY_LIBRARY"] == "1"
     }
 
     public static func defaultSnapshot(for paths: SkillSetRuntimePaths) -> AppSnapshot {
-        defaultSnapshot(repositorySnapshot: AppSnapshot.load(repositoryRoot: paths.repositoryRoot))
+        defaultSnapshot(repositorySnapshot: AppSnapshot.load(
+            repositoryRoot: paths.repositoryRoot,
+            includeBundledLibrary: usesRepositoryLibrary
+        ))
     }
 
     private static func defaultSnapshot(repositorySnapshot: AppSnapshot) -> AppSnapshot {
@@ -166,17 +183,21 @@ public struct SkillSetService {
             .replacingPresets([]).replacingTemplates([])
     }
 
+    public func libraryStore(home: URL? = nil) -> SkillLibraryStore {
+        paths.makeLibraryStore(home: home ?? globalConfiguration.locations.home)
+    }
+
     /// 本机技能库版本优先，测试注入的仓库快照只在库中没有同名条目时兜底。
     private func resolvedSkillSources() throws -> [String: URL] {
-        try SkillLibraryStore(rootURL: paths.libraryRoot).sourceURLs()
-            .merging(injectedSkillSourceURLs) { librarySource, _ in librarySource }
+        libraryPackageURLs.merging(injectedSkillSourceURLs) { librarySource, _ in librarySource }
     }
 
     public func projects() throws -> [ProjectServiceSummary] {
         try projectStore.list().map { registration in
             let projectURL = URL(fileURLWithPath: registration.canonicalPath, isDirectory: true)
             let inspection = try ProjectInspector.inspect(
-                projectURL: projectURL, catalog: snapshot.catalog, operationsRoot: executor.operationsRoot, versionsRoot: paths.versionsRoot
+                projectURL: projectURL, catalog: snapshot.catalog, operationsRoot: executor.operationsRoot, versionsRoot: paths.versionsRoot,
+                libraryRoot: globalConfiguration.locations.libraryRoot, sourcesRoot: paths.sourcesRoot
             )
             let draft = try draftStore.load(projectID: registration.id)
             let projectState = ProjectLockStore(projectRoot: projectURL, stateRoot: paths.applicationSupportRoot).inspect()
@@ -199,8 +220,9 @@ public struct SkillSetService {
     }
 
     public func skills(query: String, sourceID: String? = nil, includeBlocked: Bool = true) -> [SkillEntry] {
-        matchingSkills(snapshot.catalog.entries, query: query, sourceID: sourceID, sourceOrigins: (try? SkillLibraryStore(rootURL: paths.libraryRoot).sourceOrigins()) ?? [:])
-            .filter { includeBlocked || !$0.isBlocked }
+        let matched = skillSearchIndex.matching(query: query, sourceID: sourceID)
+        guard !includeBlocked else { return matched }
+        return matched.filter { !$0.isBlocked }
     }
 
     public func makePlan(
@@ -258,7 +280,9 @@ public struct SkillSetService {
             stagingRoot: paths.stagingRoot,
             operationsRoot: executor.operationsRoot,
             skillSourceURLs: try resolvedSkillSources(),
-            versionsRoot: paths.versionsRoot
+            versionsRoot: paths.versionsRoot,
+            libraryRoot: globalConfiguration.locations.libraryRoot,
+            sourcesRoot: paths.sourcesRoot
         )
         let plan = try planner.makePlan(
             projectPath: URL(fileURLWithPath: project.canonicalPath, isDirectory: true),
@@ -326,7 +350,7 @@ public struct SkillSetService {
             sources[id] = target
         }
         if adoptExistingSkills {
-            let origins = try SkillLibraryStore(rootURL: paths.libraryRoot).sourceOrigins()
+            let origins = try libraryStore().sourceOrigins()
             for entry in entries where skillIDs.contains(entry.id) {
                 let target = manager.locations.skillsRoot(host).appendingPathComponent(entry.slug)
                 if inspection.resources.contains(where: { $0.path == target.path && !$0.managed }) {
@@ -459,7 +483,7 @@ public struct SkillSetService {
 
     public func makeGlobalPlan(host: MCPHost, selection: GlobalConfigurationDraft, takeOverExisting: Bool = false) throws -> StoredDeploymentPlan {
         try globalConfiguration.makeDeploymentPlan(host: host, selection: selection, catalog: snapshot.catalog,
-            sourceURLs: SkillLibraryStore(rootURL: paths.libraryRoot).sourceURLs(),
+            sourceURLs: libraryStore().sourceURLs(),
             fragments: Dictionary(uniqueKeysWithValues: snapshot.templates.map { ($0.id, $0.body) }),
             takeOverExisting: takeOverExisting, installMethod: selection.installMethod ?? .symlink)
     }
@@ -539,7 +563,14 @@ public struct SkillSetService {
         let store = SourcePreviewStore(rootURL: paths.previewsRoot)
         if let replacedID { _ = try store.load(replacedID) }
         let record = try SourcePreviewService(previewsRoot: paths.previewsRoot).preview(urlString: urlString, ref: ref)
-        do { try synchronizeSourceLibrary(excluding: replacedID) }
+        do {
+            if let replacedID {
+                let oldRoot = paths.previewsRoot.appendingPathComponent(replacedID.uuidString).appendingPathComponent("checkout")
+                let newRoot = paths.previewsRoot.appendingPathComponent(record.id.uuidString).appendingPathComponent("checkout")
+                try libraryStore().retargetSourceLinks(from: oldRoot, to: newRoot, commit: record.resolvedCommit)
+            }
+            try synchronizeSourceLibrary(excluding: replacedID)
+        }
         catch { try? store.remove(record.id); throw error }
         if let replacedID { try store.remove(replacedID) }
         return record

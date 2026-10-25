@@ -122,6 +122,8 @@ public struct TransactionResult: Hashable, Sendable {
 public struct FileTransactionExecutor {
     public let operationsRoot: URL
     private let versionsRoot: URL?
+    private let libraryRoot: URL?
+    private let sourcesRoot: URL?
     private let fileManager: FileManager
     private let clock: () -> Date
     private let idGenerator: () -> UUID
@@ -129,12 +131,16 @@ public struct FileTransactionExecutor {
     public init(
         operationsRoot: URL,
         versionsRoot: URL? = nil,
+        libraryRoot: URL? = nil,
+        sourcesRoot: URL? = nil,
         fileManager: FileManager = .default,
         clock: @escaping () -> Date = Date.init,
         idGenerator: @escaping () -> UUID = UUID.init
     ) {
         self.operationsRoot = operationsRoot
         self.versionsRoot = versionsRoot
+        self.libraryRoot = libraryRoot
+        self.sourcesRoot = sourcesRoot
         self.fileManager = fileManager
         self.clock = clock
         self.idGenerator = idGenerator
@@ -553,7 +559,7 @@ public struct FileTransactionExecutor {
 
     private func ensureTargetIsNotSymlink(_ target: URL) throws {
         if (try? fileManager.destinationOfSymbolicLink(atPath: target.path)) != nil {
-            guard try ManagedSkillLink.hash(target, versionsRoot: versionsRoot) != nil else {
+            guard try ManagedSkillLink.hash(target, versionsRoot: versionsRoot, libraryRoot: libraryRoot, sourcesRoot: sourcesRoot) != nil else {
                 throw FileTransactionError.unsafeDestination(target.path)
             }
         }
@@ -603,7 +609,7 @@ public struct FileTransactionExecutor {
     }
 
     private func currentContentHash(_ url: URL) throws -> String? {
-        if let hash = try ManagedSkillLink.hash(url, versionsRoot: versionsRoot) { return hash }
+        if let hash = try ManagedSkillLink.hash(url, versionsRoot: versionsRoot, libraryRoot: libraryRoot, sourcesRoot: sourcesRoot) { return hash }
         var isDirectory: ObjCBool = false
         guard fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
             return nil

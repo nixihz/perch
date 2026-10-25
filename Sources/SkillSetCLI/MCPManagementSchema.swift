@@ -47,7 +47,7 @@ extension MCPStdioServer {
         add("sources_get", "读取来源预览及其全部候选技能、固定版本和许可线索。", ["previewId": uuid], ["previewId"], read: true)
         add("sources_update", "重新同步并替换来源，失败保留旧记录；ref 空字符串表示使用默认版本。", ["previewId": uuid, "url": text, "ref": ["type": "string", "maxLength": 256]], ["previewId"], open: true)
         add("sources_delete", "删除来源缓存与搜索索引；独立导入的个人技能、已部署版本保留。", ["previewId": uuid], ["previewId"], destructive: true)
-        add("sources_import_skill", "将来源中的一个已扫描技能保存为独立个人副本，保留附属文件、许可与来源证据；不启用。", ["previewId": uuid, "path": text, "slug": text], ["previewId", "path"])
+        add("sources_import_skill", "把来源中的一个技能加入技能库。mode 为 symlink 时跟随来源，为 copy 时复制实体；不启用。", ["previewId": uuid, "path": text, "slug": text, "mode": ["type": "string", "enum": ["symlink", "copy"]], "category": text], ["previewId", "path"])
         add("projects_create", "显式登记绝对路径项目，建立后续计划可选目标；不写项目或宿主文件。", ["projectPath": text, "name": text, "agents": agents], ["projectPath"])
         add("projects_update", "更新项目名称和登记宿主，不移动目录或修改已部署选择。", ["projectId": uuid, "name": text, "agents": agents], ["projectId"])
         add("projects_delete", "取消项目登记，不删除目录、不卸载技能或规则。", ["projectId": uuid], ["projectId"], destructive: true)

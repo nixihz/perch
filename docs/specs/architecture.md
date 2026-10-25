@@ -55,7 +55,7 @@ Tests/SkillSetCoreTests/        Swift Testing 行为测试
 
 正常运行时片段和预设只读取 ~/.perch/templates.json 与 ~/.perch/presets.json，初始为空；仓库 JSON/Markdown 与 SwiftPM 快照仅用于显式启用的开发夹具，不作为用户的预置内容。技能库只读取用户配置来源与本机索引，不自动加载仓库 catalog。项目草稿、计划、staging、operation 和来源缓存写入 ~/.perch。所有部署写入经过 `SkillSetService`，UI、CLI 和 MCP 不各自实现安装逻辑。
 
-技能库编辑通过 `SkillLibraryStore` 保存到 `~/.perch/skills/`：`index.json` 记录 `personal/<slug>` 条目与外部隐藏条目，`packages/<uuid>/` 保存完整版本。每次编辑先复制旧包、替换 `SKILL.md`、计算部署同算法指纹，再原子切换索引；失败不修改旧索引或旧版本。删除只移除索引引用，历史包保留，外部条目可恢复隐藏。当前不提供跨进程编辑锁、历史版本恢复 UI 或缓存清理。
+技能库按 [技能库](skill-library.md) 存放。自建、本地导入和复制的技能都写在 `~/.perch/sources/custom/<技能名>/`，`~/.agents/skills/<技能名>` 软链指向它。跟随来源的导入则让软链指向来源目录。技能名唯一，不再使用 `personal/<slug>`、`packages/<uuid>` 或内容哈希作为身份。分类记在 `~/.perch/skill-categories.json`。
 
 `SkillSetService` 初始化时合并仓库 catalog 和本机索引；部署计划从索引解析本地包路径，仍由原计划审批、对象存储和文件事务落地。编辑不写 `registry/catalog.json`、`vendor/`、全局技能或项目配置。`SKILL.md` 编辑只提取 name、description 和 version 供展示，保留原文与未知字段，不宣称完成完整 YAML schema 校验。
 
@@ -192,7 +192,7 @@ observed → planned → approved → applying
 
 无标记时 plan 提议追加；一对完整标记只替换块；重复、交叉、缺尾或软链目标阻塞。块外 bytes 保留。当前实现可同时部署 Codex `.agents/skills` / `AGENTS.md` 与 Claude `.claude/skills` / `CLAUDE.md`，项目锁记录两个目标。祖先规则、`AGENTS.override.md`、Claude 加载链和会话重载仍是适配器设计。
 
-默认部署为软链接，也可选择实体 copy；link 只能指向 ~/.perch/versions/<contentHash> 的固定版本包。链接指纹同时绑定目标绝对路径与内容指纹，生成计划、执行和回滚均复核；父目录和任意外部软链接继续拒绝。外部来源、项目目标和宿主配置不允许通过任意 symlink 越界。
+默认部署为软链接，也可选择实体 copy。软链指向技能库中的同名技能 `~/.agents/skills/<技能名>`，不再指向 `~/.perch/versions/<contentHash>`。链接指纹同时绑定目标绝对路径与内容指纹，生成计划、执行和回滚均复核；父目录和任意外部软链接继续拒绝。外部来源、项目目标和宿主配置不允许通过任意 symlink 越界。
 
 归属依据是本机已完成 operation 的 `ownershipReceipt`，包含对应锁指纹、逐路径技能指纹和逐规则块正文指纹。锁的可选 `managementRevision` 给每次实际部署分配独立身份，避免同内容的不同部署历史误配收据；无变更时沿用原身份。项目锁和相同内容均不能单独证明归属，旧锁无本机收据时不自动接管或删除。项目计划记录 manifest、锁、所选/待移除路径与规则文件的读取依赖，执行前一起复核；旧版缺失收据与读取依赖的部署计划必须重新生成。
 
@@ -231,6 +231,6 @@ MCP 目标由宿主与范围共同确定。Codex 用户级使用 `$CODEX_HOME/co
 
 ### MCP 管理能力补齐（2026-10-23）
 
-stdio MCP 从 17 个扩展为 59 个工具，覆盖技能库、规则片段、预设、来源、项目、MCP 配置库和插件来源的管理，以及项目/全局应用计划。复用现有 Swift Core store 与服务，不新增数据库或部署执行器。具体矩阵见 [MCP 契约](mcp.md)。此变更解除此前“库写操作仅限本机 UI”的接口限制；库写操作只影响本机状态，宿主变更仍逐计划由本机批准。
+stdio MCP 从 17 个扩展为 60 个工具，覆盖技能库、规则片段、预设、来源、项目、MCP 配置库和插件来源的管理，以及项目/全局应用计划。`mcp_batch` 复用单次服务快照处理最多 50 项调用；技能索引、片段或预设文件变化后刷新。JSON-RPC 数组请求按批响应。复用现有 Swift Core store 与服务，不新增数据库或部署执行器。具体矩阵见 [MCP 契约](mcp.md)。此变更解除此前“库写操作仅限本机 UI”的接口限制；库写操作只影响本机状态，宿主变更仍逐计划由本机批准。
 
-每次工具调用重新初始化服务以读取最新本机技能、片段和预设；删除后不再使用初始化快照生成新计划。已生成计划仍绑定原有 staging 和 digest，后续库修改不改写旧计划。项目登记通过显式绝对路径开放，取消登记不删除项目目录。跨进程锁仍未实现。
+普通工具调用在技能索引、片段和预设文件身份未变化时复用已解析服务，避免重复解析 catalog 和重建检索索引；这些文件变化后的下一次调用重新加载。`mcp_batch` 在批内复用读快照，并在上述文件变化后刷新，使后续项看到刚才的写入。删除后不再使用旧快照生成新计划。已生成计划仍绑定原有 staging 和 digest，后续库修改不改写旧计划。项目登记通过显式绝对路径开放，取消登记不删除项目目录。跨进程锁仍未实现。

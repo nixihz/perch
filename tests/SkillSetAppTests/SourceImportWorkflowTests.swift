@@ -34,15 +34,15 @@ final class SourceImportWorkflowTests: XCTestCase {
             try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
             XCTAssertTrue(model.registerProject(project))
             let prepared = await model.prepareSourceSkillImport(previewID: preview.id, path: "skills/import-workflow")
-            let draft = try XCTUnwrap(prepared)
+            var draft = try XCTUnwrap(prepared)
+            draft.mode = .copy
             XCTAssertTrue(draft.document.contains("来源正文"))
-            let cachedID = try XCTUnwrap(model.importedSkillID(preview: preview, candidate: preview.candidates[0]))
-            XCTAssertTrue(cachedID.hasPrefix("source-"), "同步后无需逐项导入即可搜索")
-            XCTAssertFalse(model.snapshot.catalog.entries.contains { $0.id == "personal/import-workflow" }, "审阅不应创建个人副本")
+            XCTAssertNil(model.importedSkillID(preview: preview, candidate: preview.candidates[0]), "未导入前不自动写入技能库")
+            XCTAssertFalse(model.snapshot.catalog.entries.contains { $0.id == "import-workflow" }, "审阅不应创建个人副本")
             model.query = "an-unrelated-search"
             let succeeded = await model.importSourceSkill(draft)
             XCTAssertTrue(succeeded, model.sourceImportError ?? "")
-            let entry = try XCTUnwrap(model.snapshot.catalog.entries.first { $0.id == "personal/import-workflow" })
+            let entry = try XCTUnwrap(model.snapshot.catalog.entries.first { $0.id == "import-workflow" })
             XCTAssertEqual(model.importedSkillID(preview: preview, candidate: preview.candidates[0]), entry.id)
             XCTAssertEqual(model.query, "")
             XCTAssertTrue(model.selectedProject?.draftSkillIDs.isEmpty == true)
@@ -72,9 +72,9 @@ final class SourceImportWorkflowTests: XCTestCase {
             XCTAssertFalse(succeeded)
             XCTAssertFalse(model.isWorking)
             XCTAssertTrue(model.sourceImportError?.contains("重新预览") == true)
-            XCTAssertNotNil(model.importedSkillID(preview: preview, candidate: preview.candidates[0]), "导入副本失败不能移除已同步版本")
+            XCTAssertNil(model.importedSkillID(preview: preview, candidate: preview.candidates[0]), "导入失败不应产生已导入记录")
             XCTAssertEqual(model.sourcePreviews.count, 1)
-            XCTAssertFalse(model.snapshot.catalog.entries.contains { $0.id == "personal/import-workflow" })
+            XCTAssertFalse(model.snapshot.catalog.entries.contains { $0.id == "import-workflow" })
         }
     }
 

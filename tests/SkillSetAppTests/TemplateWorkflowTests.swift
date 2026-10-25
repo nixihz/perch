@@ -97,7 +97,7 @@ final class TemplateWorkflowTests: XCTestCase {
             for name in ["AGENTS.md", "CLAUDE.md"] {
                 try "# 手写约定\n不要删除这一行。\n".write(to: projectURL.appendingPathComponent(name), atomically: true, encoding: .utf8)
             }
-            let skill = try SkillLibraryStore(rootURL: paths.libraryRoot).save(
+            let skill = try paths.makeLibraryStore(home: locations.home).save(
                 SkillEditorDraft(slug: "keep", document: "---\nname: keep\ndescription: 保留既有选择\n---\n技能正文\n"), repositoryRoot: nil)
             let model = AppModel(runtimePaths: paths, globalLocations: locations)
             XCTAssertTrue(model.registerProject(projectURL))

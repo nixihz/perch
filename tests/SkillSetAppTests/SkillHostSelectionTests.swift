@@ -231,7 +231,7 @@ final class SkillHostSelectionTests: XCTestCase {
         }
         let paths = SkillSetRuntimePaths(applicationSupportRoot: root.appendingPathComponent("state"), repositoryRoot: nil)
         let locations = GlobalConfigurationLocations(home: root.appendingPathComponent("home"), stateRoot: paths.applicationSupportRoot)
-        let library = SkillLibraryStore(rootURL: paths.libraryRoot)
+        let library = paths.makeLibraryStore(home: locations.home)
         let first = try library.save(SkillEditorDraft(slug: "first", document: "---\nname: first\ndescription: 第一份技能\n---\n第一份正文\n"), repositoryRoot: nil)
         let second = try library.save(SkillEditorDraft(slug: "second", document: "---\nname: second\ndescription: 第二份技能\n---\n第二份正文\n"), repositoryRoot: nil)
         let duplicate = try changedEntry(first, values: ["id": "fixture-source/first", "sourceId": "fixture-source"])

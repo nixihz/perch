@@ -12,42 +12,36 @@ struct PerchLibraryTests {
         #expect(try service.sourcePreviews().isEmpty)
     }
 
-    @Test func localSourceIsImmediatelySearchableWithoutRunningScriptsAndDeletionKeepsDeployedLinks() throws {
+    @Test func localSourceStaysOutOfTheLibraryUntilImportedAndDeploymentLinksToTheLibrary() throws {
         let fixture = try PerchFixture()
         defer { fixture.cleanup() }
         let preview = try fixture.service().previewSource(urlString: fixture.source.path)
-        let service = try fixture.service()
-        let entry = try #require(service.skills(query: "demo").first)
-        #expect(service.skills(query: fixture.source.path).map(\.id) == [entry.id])
-        let library = SkillLibraryStore(rootURL: fixture.paths.libraryRoot)
-        try library.remove(entry)
         #expect(try fixture.service().skills(query: "demo").isEmpty)
-        try library.restoreHidden()
-        #expect(try fixture.service().skills(query: "demo").map(\.id) == [entry.id])
-        #expect(service.skills(query: "").count == 1)
+        let entry = try fixture.importSkill(previewID: preview.id)
+        let service = try fixture.service()
+        #expect(service.skills(query: "demo").map(\.id) == [entry.id])
         let project = try fixture.register()
         let plan = try service.makePlan(projectID: project.id, skillIDs: [entry.id], instructionIDs: [], agents: ["codex", "claude-code"])
         #expect(throws: DeploymentPlanStoreError.self) { try service.apply(planID: plan.id, digest: plan.plan.digest) }
         _ = try service.approve(planID: plan.id, digest: plan.plan.digest)
         _ = try service.apply(planID: plan.id, digest: plan.plan.digest)
         let deployed = fixture.project.appendingPathComponent(".agents/skills/demo")
+        let librarySkill = fixture.root.appendingPathComponent("home/.agents/skills/demo").path
         let link = try FileManager.default.destinationOfSymbolicLink(atPath: deployed.path)
-        #expect(link.hasPrefix(fixture.paths.versionsRoot.path + "/"))
+        #expect(URL(fileURLWithPath: link).standardizedFileURL.path == librarySkill)
         #expect(try Data(contentsOf: deployed.appendingPathComponent("assets/data.bin")) == Data([0, 255, 128]))
         #expect(!FileManager.default.fileExists(atPath: fixture.marker.path))
         #expect(try service.projects().first?.skillObservations.allSatisfy { $0.status == "matching" } == true)
         try service.removeSource(preview.id)
-        #expect(try fixture.service().skills(query: "demo").isEmpty)
-        #expect(try String(contentsOf: deployed.appendingPathComponent("SKILL.md"), encoding: .utf8).contains("demo"))
-        #expect(try FileManager.default.destinationOfSymbolicLink(atPath: fixture.project.appendingPathComponent(".claude/skills/demo").path) == link)
+        #expect(throws: (any Error).self) { try String(contentsOf: deployed.appendingPathComponent("SKILL.md"), encoding: .utf8) }
     }
 
     @Test func sourceUpdatesKeepIdentityAndPinExistingLinksUntilDeploymentAndRollbackRestoresLink() throws {
         let fixture = try PerchFixture()
         defer { fixture.cleanup() }
         let first = try fixture.service().previewSource(urlString: fixture.source.path)
+        let entry = try fixture.importSkill(previewID: first.id)
         var service = try fixture.service()
-        let entry = try #require(service.skills(query: "demo").first)
         let project = try fixture.register()
         let original = try service.makePlan(projectID: project.id, skillIDs: [entry.id], instructionIDs: [])
         try fixture.apply(original)
@@ -66,16 +60,16 @@ struct PerchLibraryTests {
         #expect(try String(contentsOf: deployed.appendingPathComponent("assets/data.bin"), encoding: .utf8) == "new version")
         _ = try service.rollback(operationID: operation.operationID)
         #expect(try FileManager.default.destinationOfSymbolicLink(atPath: deployed.path) == oldLink)
-        #expect(try Data(contentsOf: deployed.appendingPathComponent("assets/data.bin")) == Data([0, 255, 128]))
+        #expect(try String(contentsOf: deployed.appendingPathComponent("assets/data.bin"), encoding: .utf8) == "new version")
     }
 
     @Test func changedLinkOrVersionBlocksApplyWithoutChangingOtherTargets() throws {
         for mutateVersion in [false, true] {
             let fixture = try PerchFixture()
             defer { fixture.cleanup() }
-            _ = try fixture.service().previewSource(urlString: fixture.source.path)
+            let preview = try fixture.service().previewSource(urlString: fixture.source.path)
+            let entry = try fixture.importSkill(previewID: preview.id)
             let service = try fixture.service()
-            let entry = try #require(service.skills(query: "demo").first)
             let project = try fixture.register()
             let first = try service.makePlan(projectID: project.id, skillIDs: [entry.id], instructionIDs: [])
             try fixture.apply(first)
@@ -97,12 +91,12 @@ struct PerchLibraryTests {
         let fixture = try PerchFixture()
         defer { fixture.cleanup() }
         let home = fixture.root.appendingPathComponent("home")
-        let deployed = home.appendingPathComponent(".agents/skills/demo")
+        let deployed = home.appendingPathComponent(".codex/skills/demo")
         try FileManager.default.createDirectory(at: deployed.deletingLastPathComponent(), withIntermediateDirectories: true)
         try FileManager.default.copyItem(at: fixture.source.appendingPathComponent("demo"), to: deployed)
-        _ = try fixture.service().previewSource(urlString: deployed.deletingLastPathComponent().path)
+        let preview = try fixture.service().previewSource(urlString: deployed.deletingLastPathComponent().path)
+        let entry = try fixture.importSkill(previewID: preview.id)
         let service = try fixture.service()
-        let entry = try #require(service.skills(query: "demo").first)
         let plan = try service.makeUserSkillPlan(skillIDs: [entry.id], agents: ["codex"], adoptExistingSkills: true, homeDirectory: home)
         let result = try fixture.apply(plan)
         #expect((try? FileManager.default.destinationOfSymbolicLink(atPath: deployed.path)) != nil)
@@ -153,6 +147,11 @@ private struct PerchFixture {
     func cleanup() { try? FileManager.default.removeItem(at: root) }
     func service() throws -> SkillSetService { try SkillSetService(paths: paths, globalLocations: GlobalConfigurationLocations(home: root.appendingPathComponent("home"), stateRoot: paths.applicationSupportRoot)) }
     func register() throws -> ProjectRegistration { try ProjectStore(rootURL: paths.applicationSupportRoot).register(path: project) }
+    func importSkill(previewID: UUID, path: String = "demo", mode: SkillInstallMethod = .symlink) throws -> SkillEntry {
+        var draft = try service().sourceSkillImportDraft(previewID: previewID, path: path)
+        draft.mode = mode
+        return try service().importSourceSkill(draft)
+    }
     @discardableResult func apply(_ record: StoredDeploymentPlan) throws -> ApplyServiceResult {
         let service = try service()
         _ = try service.approve(planID: record.id, digest: record.plan.digest)

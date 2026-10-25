@@ -21,6 +21,7 @@ def project_state(state, project):
 class CLIIntegrationTests(unittest.TestCase):
     def run_cli(self, state, *args, check=True, extra_env=None):
         env = os.environ.copy()
+        env.setdefault("SKILLSET_HOME", str(state.parent / "home"))
         env.update(extra_env or {})
         result = subprocess.run(
             [str(CLI), "--state", str(state), *args],
@@ -55,10 +56,9 @@ class CLIIntegrationTests(unittest.TestCase):
                 state, "projects", "add", str(project), "--name", "Fixture", "--json"
             ).stdout
         )
-        source = root / "source" / "stc"
+        source = root / "home" / ".agents" / "skills" / "stc"
         source.mkdir(parents=True)
         (source / "SKILL.md").write_text("---\nname: stc\ndescription: CLI installation fixture\n---\nComplete skill body\n", encoding="utf-8")
-        self.run_cli(state, "sources", "preview", str(source.parent), "--json")
         self.skill_id = json.loads(self.run_cli(state, "skills", "search", "stc", "--json").stdout)["skills"][0]["id"]
         return state, project, added["project"]["id"]
 
@@ -226,6 +226,7 @@ class CLIIntegrationTests(unittest.TestCase):
             self.assertEqual(
                 {tool["name"] for tool in responses[1]["result"]["tools"]},
                 {
+                    "mcp_batch",
                     "projects_list",
                     "presets_list",
                     "skills_install",
