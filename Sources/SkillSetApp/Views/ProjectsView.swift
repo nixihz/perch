@@ -528,6 +528,7 @@ struct PlanSheet: View {
     @State private var rulePreviews: [RuleFilePreview] = []
     @State private var rulePreviewError: String?
     @State private var rulePreviewsLoaded = false
+    @State private var selectedChangePath = ""
 
     private var isPluginPlan: Bool {
         model.preparedPlan?.plan.metadata?["planType"] == "plugin-lifecycle"
@@ -546,19 +547,10 @@ struct PlanSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(isGlobalPlan ? L10n.tr("全局配置计划") : isPluginPlan ? L10n.tr("插件变更计划") : isMCPPlan ? L10n.tr("MCP 配置计划") : L10n.tr("变更计划"))
-                        .font(AppFont.title.weight(.bold))
-                    Text(
-                        isPluginPlan
-                            ? L10n.tr("核对 AI 工具、插件、影响范围和将运行的命令。批准后，栖集会调用对应工具完成操作。")
-                            : L10n.tr("核对目标路径、内容指纹和变更内容。写入前会备份原文件并保存操作记录。")
-                    )
-                        .font(AppFont.body)
-                        .foregroundStyle(.secondary)
-                }
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(isGlobalPlan ? L10n.tr("全局配置计划") : isPluginPlan ? L10n.tr("插件变更计划") : isMCPPlan ? L10n.tr("MCP 配置计划") : L10n.tr("变更计划"))
+                    .font(AppFont.title.weight(.bold))
                 Spacer()
                 if let record = model.preparedPlan {
                     StatusBadge(
@@ -567,89 +559,42 @@ struct PlanSheet: View {
                     )
                 }
             }
-            Divider()
             if let record = model.preparedPlan {
-                KeyValueLine(
-                    key: isGlobalPlan ? L10n.tr("全局事务目录") : isPluginPlan ? L10n.tr("工作目录") : isMCPPlan ? L10n.tr("配置目录") : L10n.tr("项目"),
-                    value: record.plan.projectPath,
-                    monospaced: true
-                )
+                planContext(record)
+                reviewArea(record)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 DisclosureGroup(L10n.tr("计划详情（指纹与有效期）")) {
                     VStack(alignment: .leading, spacing: 8) {
+                        Text(planIntro)
+                            .font(AppFont.secondary)
+                            .foregroundStyle(.secondary)
                         KeyValueLine(key: L10n.tr("计划"), value: record.id.uuidString, monospaced: true)
                         KeyValueLine(key: L10n.tr("计划指纹"), value: record.plan.digest, monospaced: true)
                         KeyValueLine(key: L10n.tr("有效至"), value: L10n.date(record.expiresAt))
-                    }.padding(.top, 8)
-                }
-                .font(AppFont.secondary)
-                if isGlobalPlan {
-                    KeyValueLine(key: L10n.tr("AI 工具 / 使用范围"),
-                        value: (MCPHost(rawValue: record.plan.metadata?["globalHost"] ?? "")?.displayName ?? "") + " / " + L10n.tr("当前用户的全部项目"))
-                    Label(L10n.tr("此操作影响当前用户在该 AI 工具中的全部项目。"), systemImage: "globe")
-                        .font(AppFont.secondary).foregroundStyle(.orange)
-                }
-                if isMCPPlan {
-                    KeyValueLine(key: L10n.tr("AI 工具 / 使用范围"),
-                        value: (MCPHost(rawValue: record.plan.metadata?["host"] ?? "")?.displayName ?? "") + " / "
-                            + (record.plan.metadata?["scope"] == "user" ? L10n.tr("当前用户的全部项目") : L10n.tr("项目")))
-                    KeyValueLine(key: L10n.tr("MCP 配置文件"), value: record.plan.metadata?["configPath"] ?? "", monospaced: true)
-                }
-                if isPluginPlan {
-                    KeyValueLine(
-                        key: L10n.tr("AI 工具 / 使用范围"),
-                        value: "\(MCPHost(rawValue: record.plan.metadata?["pluginHost"] ?? "")?.displayName ?? L10n.tr("未识别工具")) / "
-                            + L10n.text(UserFacingText.metadata(record.plan.metadata?["pluginScope"] ?? "", field: .scope))
-                    )
-                    KeyValueLine(
-                        key: L10n.tr("插件标识"),
-                        value: record.plan.metadata?["pluginID"] ?? L10n.tr("未知"),
-                        monospaced: true
-                    )
-                    KeyValueLine(
-                        key: L10n.tr("目标清单指纹"),
-                        value: record.plan.metadata?["pluginExpectedManifestDigest"].flatMap {
-                            $0.isEmpty ? nil : $0
-                        } ?? L10n.tr("未指定（仅允许唯一记录）"),
-                        monospaced: true
-                    )
-                }
-                Divider()
-                Text(isPluginPlan ? L10n.tr("工具命令 \(record.plan.changes.count) 项") : L10n.tr("文件变更 \(record.plan.changes.count) 项"))
-                    .font(AppFont.heading)
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 10) {
-                        ForEach(rulePreviews) { preview in
-                            RuleFilePreviewView(preview: preview)
+                        if isPluginPlan {
+                            KeyValueLine(
+                                key: L10n.tr("目标清单指纹"),
+                                value: record.plan.metadata?["pluginExpectedManifestDigest"].flatMap {
+                                    $0.isEmpty ? nil : $0
+                                } ?? L10n.tr("未指定（仅允许唯一记录）"),
+                                monospaced: true
+                            )
                         }
                         ForEach(record.plan.changes, id: \.relativePath) { change in
-                            VStack(alignment: .leading, spacing: 4) {
-                                HStack {
-                                    StatusBadge(text: L10n.text(UserFacingText.changeAction(change.action)), tone: change.action == "add" ? .positive : .warning)
-                                    Text(change.scope == "project-state"
-                                        ? ProjectLockStore(projectRoot: URL(fileURLWithPath: record.plan.projectPath), stateRoot: model.runtimePaths.applicationSupportRoot).directoryURL.appendingPathComponent(change.relativePath).path
-                                        : isGlobalPlan ? URL(fileURLWithPath: record.plan.projectPath).appendingPathComponent(change.relativePath).path : change.relativePath)
-                                        .font(AppFont.code.weight(.semibold))
-                                    Spacer()
-                                }
-                                Text(UserFacingText.planSummary(change))
-                                    .font(AppFont.secondary)
-                                    .foregroundStyle(.secondary)
-                                Text(
-                                    isPluginPlan
-                                        ? L10n.tr("观察 \(change.beforeHash ?? L10n.tr("不存在")) · 命令 \(change.afterHash ?? L10n.tr("未记录"))")
-                                        : L10n.tr("旧 \(change.beforeHash ?? L10n.tr("不存在")) · 新 \(change.afterHash ?? L10n.tr("删除"))")
-                                )
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(displayedPath(change, record: record))
+                                    .font(AppFont.code)
+                                    .textSelection(.enabled)
+                                Text(hashLine(change))
                                     .font(AppFont.metadata.monospaced())
                                     .foregroundStyle(.secondary)
                                     .textSelection(.enabled)
                             }
-                            .padding(10)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 8))
                         }
                     }
+                    .padding(.top, 8)
                 }
-                .frame(maxHeight: .infinity)
+                .font(AppFont.secondary)
                 DisclosureGroup(L10n.tr("批准前须知")) {
                   VStack(alignment: .leading, spacing: 8) {
                     Label(
@@ -669,7 +614,7 @@ struct PlanSheet: View {
                 }
                 .font(AppFont.secondary)
                 .foregroundStyle(.secondary)
-                let warnings = record.plan.warnings.filter { !UserFacingText.isInformationalPlanNote($0) }
+                let warnings = visibleWarnings(record)
                 if !warnings.isEmpty {
                     Text(warnings.map { L10n.text(UserFacingText.diagnostic($0, context: .plan)) }.joined(separator: "\n"))
                         .font(AppFont.secondary).foregroundStyle(.orange)
@@ -698,8 +643,8 @@ struct PlanSheet: View {
             }
         }
         .appControls()
-        .padding(26)
-        .frame(width: 700, height: 680)
+        .padding(20)
+        .frame(width: 880, height: 680)
         .task(id: model.preparedPlan?.id) { loadRulePreviews() }
         .confirmationDialog(
             isGlobalPlan ? L10n.tr("确认更新当前用户的全局配置？") : isPluginPlan ? L10n.tr("执行这条插件命令？") : isMCPPlan ? L10n.tr("更新 AI 工具配置？") : L10n.tr("确认写入这个项目？"),
@@ -720,16 +665,199 @@ struct PlanSheet: View {
             }
         }
     }
+
+    private var planIntro: String {
+        isPluginPlan
+            ? L10n.tr("核对 AI 工具、插件、影响范围和将运行的命令。批准后，栖集会调用对应工具完成操作。")
+            : L10n.tr("核对目标路径、内容指纹和变更内容。写入前会备份原文件并保存操作记录。")
+    }
+
+    /// 标题下只留目标路径和范围。指纹、哈希与备份说明放到差异下方，避免挤占正文。
+    private func planContext(_ record: StoredDeploymentPlan) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(record.plan.projectPath)
+                .font(AppFont.code)
+                .textSelection(.enabled)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            if isGlobalPlan {
+                Text((MCPHost(rawValue: record.plan.metadata?["globalHost"] ?? "")?.displayName ?? "")
+                    + " · " + L10n.tr("此操作影响当前用户在该 AI 工具中的全部项目。"))
+                    .font(AppFont.secondary)
+                    .foregroundStyle(.orange)
+                    .lineLimit(2)
+            } else if isMCPPlan {
+                Text((MCPHost(rawValue: record.plan.metadata?["host"] ?? "")?.displayName ?? "") + " · "
+                    + (record.plan.metadata?["scope"] == "user" ? L10n.tr("当前用户的全部项目") : L10n.tr("项目")))
+                    .font(AppFont.secondary)
+                    .foregroundStyle(.secondary)
+                Text(record.plan.metadata?["configPath"] ?? "")
+                    .font(AppFont.code)
+                    .textSelection(.enabled)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            } else if isPluginPlan {
+                Text("\(MCPHost(rawValue: record.plan.metadata?["pluginHost"] ?? "")?.displayName ?? L10n.tr("未识别工具")) · "
+                    + L10n.text(UserFacingText.metadata(record.plan.metadata?["pluginScope"] ?? "", field: .scope)))
+                    .font(AppFont.secondary)
+                    .foregroundStyle(.secondary)
+                Text(record.plan.metadata?["pluginID"] ?? L10n.tr("未知"))
+                    .font(AppFont.code)
+                    .textSelection(.enabled)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+        }
+    }
+
+    private func visibleWarnings(_ record: StoredDeploymentPlan) -> [String] {
+        record.plan.warnings.filter { warning in
+            !UserFacingText.isInformationalPlanNote(warning)
+                && !(isGlobalPlan && warning == "此操作影响当前用户在该 AI 工具中的全部项目。")
+        }
+    }
+
+    @ViewBuilder
+    private func reviewArea(_ record: StoredDeploymentPlan) -> some View {
+        let changes = record.plan.changes
+        VStack(alignment: .leading, spacing: 8) {
+            Text(isPluginPlan ? L10n.tr("工具命令 \(changes.count) 项") : L10n.tr("文件变更 \(changes.count) 项"))
+                .font(AppFont.heading)
+            if isPluginPlan || isMCPPlan {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(changes, id: \.relativePath) { change in
+                            changeSummary(change, record: record)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if changes.count > 1 {
+                HStack(alignment: .top, spacing: 12) {
+                    changeList(changes)
+                        .frame(maxHeight: .infinity, alignment: .top)
+                    selectedChangeDetail(record, changes: changes)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .layoutPriority(1)
+            } else {
+                selectedChangeDetail(record, changes: changes)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .layoutPriority(1)
+            }
+        }
+    }
+
+    private func changeList(_ changes: [PlannedChange]) -> some View {
+        let selected = resolvedSelection(changes)
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(changes, id: \.relativePath) { change in
+                    Button {
+                        selectedChangePath = change.relativePath
+                    } label: {
+                        HStack(spacing: 8) {
+                            StatusBadge(
+                                text: L10n.text(UserFacingText.changeAction(change.action)),
+                                tone: change.action == "add" ? .positive : .warning
+                            )
+                            Text(change.relativePath)
+                                .font(AppFont.code)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.horizontal, 8)
+                        .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .selectionRow(change.relativePath == selected)
+                    .accessibilityLabel(change.relativePath)
+                }
+            }
+        }
+        .frame(width: 248)
+    }
+
+    @ViewBuilder
+    private func selectedChangeDetail(_ record: StoredDeploymentPlan, changes: [PlannedChange]) -> some View {
+        let path = resolvedSelection(changes)
+        if let change = changes.first(where: { $0.relativePath == path }) {
+            if let preview = rulePreviews.first(where: { $0.id == change.relativePath }) {
+                RuleFilePreviewView(preview: preview)
+            } else {
+                ScrollView {
+                    changeSummary(change, record: record)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }
+        }
+    }
+
+    private func changeSummary(_ change: PlannedChange, record: StoredDeploymentPlan) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(displayedPath(change, record: record))
+                .font(AppFont.code.weight(.semibold))
+                .textSelection(.enabled)
+            Text(UserFacingText.planSummary(change))
+                .font(AppFont.secondary)
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text(hashLine(change))
+                .font(AppFont.metadata.monospaced())
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func resolvedSelection(_ changes: [PlannedChange]) -> String {
+        if changes.contains(where: { $0.relativePath == selectedChangePath }) {
+            return selectedChangePath
+        }
+        return changes.first { isRuleChange($0) }?.relativePath ?? changes.first?.relativePath ?? ""
+    }
+
+    private func isRuleChange(_ change: PlannedChange) -> Bool {
+        change.scope != "project-state"
+            && ["AGENTS.md", "CLAUDE.md"].contains(URL(fileURLWithPath: change.relativePath).lastPathComponent)
+    }
+
+    private func displayedPath(_ change: PlannedChange, record: StoredDeploymentPlan) -> String {
+        if change.scope == "project-state" {
+            return ProjectLockStore(
+                projectRoot: URL(fileURLWithPath: record.plan.projectPath),
+                stateRoot: model.runtimePaths.applicationSupportRoot
+            ).directoryURL.appendingPathComponent(change.relativePath).path
+        }
+        if isGlobalPlan {
+            return URL(fileURLWithPath: record.plan.projectPath).appendingPathComponent(change.relativePath).path
+        }
+        return change.relativePath
+    }
+
+    private func hashLine(_ change: PlannedChange) -> String {
+        isPluginPlan
+            ? L10n.tr("观察 \(change.beforeHash ?? L10n.tr("不存在")) · 命令 \(change.afterHash ?? L10n.tr("未记录"))")
+            : L10n.tr("旧 \(change.beforeHash ?? L10n.tr("不存在")) · 新 \(change.afterHash ?? L10n.tr("删除"))")
+    }
+
     private func loadRulePreviews() {
         rulePreviews = []
         rulePreviewError = nil
         rulePreviewsLoaded = false
         guard let record = model.preparedPlan else { return }
+        if let preferred = record.plan.changes.first(where: isRuleChange)?.relativePath ?? record.plan.changes.first?.relativePath {
+            selectedChangePath = preferred
+        }
         if isPluginPlan || isMCPPlan { rulePreviewsLoaded = true; return }
         do {
-            rulePreviews = try record.plan.changes.filter {
-                $0.scope != "project-state" && ["AGENTS.md", "CLAUDE.md"].contains(URL(fileURLWithPath: $0.relativePath).lastPathComponent)
-            }.map { try RuleFilePreview.load(record: record, change: $0) }
+            rulePreviews = try record.plan.changes.filter(isRuleChange).map { try RuleFilePreview.load(record: record, change: $0) }
             rulePreviewsLoaded = true
         } catch RulePreviewError.tooLarge {
             rulePreviewError = "规则文件超过 1 MiB，无法在此完整审阅；请先精简文件，再重新生成计划。"

@@ -21,10 +21,18 @@ struct LocalizedText: ExpressibleByStringLiteral, ExpressibleByStringInterpolati
     }
 
     static func joining(_ keys: [String]) -> LocalizedText {
-        var interpolation = StringInterpolation(literalCapacity: 0, interpolationCount: keys.count)
-        for (index, key) in keys.enumerated() {
-            if index > 0 { interpolation.appendLiteral("\n") }
-            interpolation.appendInterpolation(LocalizedText(stringLiteral: key))
+        joining(keys.map { LocalizedText(stringLiteral: $0) })
+    }
+
+    /// 每条原因单独翻译后再拼接，名称和来源保持原文。
+    static func joining(_ parts: [LocalizedText], separator: String = "\n") -> LocalizedText {
+        guard let first = parts.first else { return "" }
+        if parts.count == 1 { return first }
+        var interpolation = StringInterpolation(literalCapacity: separator.count * parts.count, interpolationCount: parts.count)
+        interpolation.appendInterpolation(first)
+        for part in parts.dropFirst() {
+            interpolation.appendLiteral(separator)
+            interpolation.appendInterpolation(part)
         }
         return LocalizedText(stringInterpolation: interpolation)
     }

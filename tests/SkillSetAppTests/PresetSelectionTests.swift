@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 import XCTest
-import SkillSetCore
+@testable import SkillSetCore
 @testable import SkillSetApp
 
 @MainActor
@@ -53,6 +53,82 @@ final class PresetSelectionTests: XCTestCase {
                 XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent(name).path), ["sentinel.txt"])
                 XCTAssertEqual(try String(contentsOf: root.appendingPathComponent(name + "/sentinel.txt"), encoding: .utf8), "项目原有内容\n")
             }
+        }
+    }
+
+    func testBlockingPresetNamesTheSkillRuleOrConflictAndKeepsTheDraft() throws {
+        try withFixture { model, root in
+            let projectID = try register("named-block", model: model, root: root)
+            let store = PresetStore(rootURL: model.runtimePaths.applicationSupportRoot)
+            let preferences = AppPreferences.shared
+            let languageBefore = preferences.language
+            defer { preferences.language = languageBefore }
+            preferences.language = .chinese
+
+            var conflict = PresetEditorDraft()
+            conflict.name = "冲突组合"
+            conflict.skills = ["workspace/stc", "local-brian/stc"]
+            XCTAssertFalse(model.savePreset(conflict))
+            let conflictMessage = L10n.tr(try XCTUnwrap(model.presetError))
+            XCTAssertTrue(conflictMessage.contains("同名冲突"))
+            XCTAssertTrue(conflictMessage.contains("stc（local-brian）"))
+            XCTAssertTrue(conflictMessage.contains("stc（workspace）"))
+            XCTAssertFalse(FileManager.default.fileExists(atPath: store.documentURL.path))
+
+            preferences.language = .english
+            XCTAssertTrue(L10n.tr(try XCTUnwrap(model.presetError)).contains("Name conflict. Keep only one:"))
+            XCTAssertTrue(L10n.tr(try XCTUnwrap(model.presetError)).contains("stc（workspace）"))
+            preferences.language = .chinese
+
+            var blocked = PresetEditorDraft()
+            blocked.name = "不可用技能"
+            blocked.skills = ["local-brian/ponytail-review"]
+            XCTAssertFalse(model.savePreset(blocked))
+            let blockedMessage = L10n.tr(try XCTUnwrap(model.presetError))
+            XCTAssertEqual(blockedMessage.components(separatedBy: "链接目标丢失或循环引用").count - 1, 1)
+            XCTAssertTrue(blockedMessage.contains("技能「ponytail-review」暂不可用"))
+            XCTAssertTrue(blockedMessage.contains("来源：local-brian"))
+
+            var missing = PresetEditorDraft()
+            missing.name = "缺失规则"
+            missing.skills = ["workspace/stc"]
+            missing.instructions = ["missing-rule"]
+            XCTAssertFalse(model.savePreset(missing))
+            XCTAssertTrue(L10n.tr(try XCTUnwrap(model.presetError)).contains("规则不在片段库：missing-rule"))
+
+            XCTAssertFalse(model.loadPreset(try makePreset(skills: ["missing/skill"]), into: projectID))
+            XCTAssertTrue(model.lastAction.contains("技能「skill」不在技能库。请从预设中移除这项引用。"))
+            XCTAssertFalse(model.lastAction.contains("missing/skill"))
+            XCTAssertFalse(FileManager.default.fileExists(atPath: store.documentURL.path))
+
+            let staleID = "source-d23e91a448f2029713fda4fcc9c83a3d7aa62697a0930cb36c2ab52475178b71/b58e338b7575/emil-design-eng"
+            let hiddenID = "source-d23e91a448f2029713fda4fcc9c83a3d7aa62697a0930cb36c2ab52475178b71/5580a4891f52/review-animations"
+            let hidden = SkillEntry(
+                id: hiddenID, slug: "review-animations", declaredName: "review-animations", description: "",
+                declaredVersion: nil, metadataReview: "not-schema-validated",
+                sourceId: "source-d23e91a448f2029713fda4fcc9c83a3d7aa62697a0930cb36c2ab52475178b71",
+                path: "packages/00000000-0000-0000-0000-000000000001",
+                contentHash: String(repeating: "ab", count: 32), fileCount: 1, bytes: 1,
+                integrity: "snapshotted", issues: [], licenseReview: "required", excludedPaths: []
+            )
+            let project = try XCTUnwrap(model.projects.first { $0.id == projectID })
+            let beforeProjects = model.projects
+            let preview = PresetDraftPreview(
+                preset: try makePreset(skills: [staleID, hiddenID]), project: project,
+                snapshot: model.snapshot, hiddenSkills: [hidden]
+            )
+            let reasons = preview.blockingReasons().map { L10n.tr($0) }.joined(separator: "\n")
+            XCTAssertFalse(preview.canLoad)
+            XCTAssertTrue(reasons.contains("技能「emil-design-eng」不在技能库。请从预设中移除这项引用。"))
+            XCTAssertTrue(reasons.contains("技能「review-animations」已从技能库隐藏。恢复隐藏条目，或从预设中移除这项引用。"))
+            XCTAssertFalse(reasons.contains("source-d23e"))
+            model.hiddenSkills = [hidden]
+            XCTAssertFalse(model.loadPreset(try makePreset(skills: [staleID, hiddenID]), into: projectID))
+            XCTAssertEqual(model.projects, beforeProjects)
+            preferences.language = .english
+            XCTAssertTrue(model.lastAction.contains("Skill “emil-design-eng” is not in the library."))
+            XCTAssertTrue(model.lastAction.contains("Skill “review-animations” is hidden from the library."))
+            preferences.language = .chinese
         }
     }
 
@@ -264,7 +340,14 @@ final class PresetSelectionTests: XCTestCase {
             XCTAssertEqual(try store.load(projectID: UUID(uuidString: projectID)!)?.plugins.first?.manifestDigest, plugin.manifestDigest)
             let before = try Data(contentsOf: store.documentURL)
             try #"{"name":"preset-fixture","version":"2.0.0","description":"Plugin fixture"}"#.write(to: manifest, atomically: true, encoding: .utf8)
+            let preferences = AppPreferences.shared
+            let languageBefore = preferences.language
+            defer { preferences.language = languageBefore }
             XCTAssertFalse(model.loadPreset(preset, into: projectID))
+            preferences.language = .chinese
+            XCTAssertTrue(model.lastAction.contains("插件「preset-fixture」的这个版本不可用"))
+            preferences.language = .english
+            XCTAssertTrue(model.lastAction.contains("This version of plugin “preset-fixture” is unavailable"))
             XCTAssertEqual(try Data(contentsOf: store.documentURL), before)
             XCTAssertNil(model.preparedPlan)
             XCTAssertTrue(model.pendingPlans.isEmpty)

@@ -29,7 +29,7 @@ struct PresetSelectionSheet: View {
     private var preset: PresetRecord? { model.snapshot.presets.first { $0.id == presetID } }
     private var preview: PresetDraftPreview? {
         guard let project, let preset else { return nil }
-        return PresetDraftPreview(preset: preset, project: project, snapshot: model.snapshot, availablePlugins: availablePlugins)
+        return PresetDraftPreview(preset: preset, project: project, snapshot: model.snapshot, availablePlugins: availablePlugins, hiddenSkills: model.hiddenSkills)
     }
 
     var body: some View {
@@ -346,14 +346,12 @@ struct PresetSelectionSheet: View {
 
     private func validationMessage(_ preview: PresetDraftPreview) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Label(L10n.tr("部分技能或规则暂不可用，或存在重名，请核对下方提示后重试。"), systemImage: "exclamationmark.circle")
-            ForEach(preview.componentIssues, id: \.self) { Text(L10n.text($0)) }
-            ForEach(Array(Set(preview.unavailableSkillIDs + preview.unavailableInstructionIDs + preview.conflictingSkillIDs)).sorted(), id: \.self) { id in
-                Text(id).font(AppFont.metadata.monospaced())
+            ForEach(Array(preview.blockingReasons(origins: model.sourceOrigins).enumerated()), id: \.offset) { _, reason in
+                Label(L10n.tr(reason), systemImage: "exclamationmark.circle")
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .font(AppFont.secondary).foregroundStyle(.red)
-        .fixedSize(horizontal: false, vertical: true)
     }
 
     private var footer: some View {

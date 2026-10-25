@@ -103,8 +103,15 @@ struct PresetEditorSheet: View {
             }
             Divider()
             VStack(alignment: .leading, spacing: 10) {
-                if let error = model.presetError {
-                    Label(L10n.text(error), systemImage: "exclamationmark.circle")
+                let reasons = draftBlockingReasons
+                if !reasons.isEmpty {
+                    ForEach(Array(reasons.enumerated()), id: \.offset) { _, reason in
+                        Label(L10n.tr(reason), systemImage: "exclamationmark.circle")
+                            .font(AppFont.secondary).foregroundStyle(.red)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                } else if let error = model.presetError {
+                    Label(L10n.tr(error), systemImage: "exclamationmark.circle")
                         .font(AppFont.secondary).foregroundStyle(.red)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -128,6 +135,7 @@ struct PresetEditorSheet: View {
         .disclosureGroupStyle(FullRowDisclosureGroupStyle())
         .defaultFocus($nameFocused, true)
         .interactiveDismissDisabled(draft != initial)
+        .onChange(of: draft) { _, _ in model.presetError = nil }
         .confirmationDialog(L10n.tr("放弃未保存的修改？"), isPresented: $confirmDiscard, titleVisibility: .visible) {
             Button(L10n.tr("放弃修改"), role: .destructive) { dismiss() }
             Button(L10n.tr("继续编辑"), role: .cancel) {}
@@ -146,7 +154,22 @@ struct PresetEditorSheet: View {
 
     private var skills: some View {
         let entries = matchingSkills(model.snapshot.catalog.entries, query: search, sourceOrigins: model.sourceOrigins)
+        let unresolved = unresolvedSkillIDs
         return Group {
+            // 当前目录没有这些标识，搜索也筛不出勾选框；不单独列出就无法从预设里拿掉。
+            ForEach(unresolved, id: \.self) { id in
+                HStack(alignment: .center, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(unresolvedSkillTitle(id)).font(AppFont.secondary.weight(.medium))
+                        Text(L10n.tr(model.hiddenSkills.contains { $0.id == id } ? "已从技能库隐藏" : "不在技能库"))
+                            .font(AppFont.metadata).foregroundStyle(.red)
+                    }
+                    Spacer(minLength: 12)
+                    Button(L10n.tr("移除引用")) { draft.skills.remove(id) }
+                        .accessibilityIdentifier("presets.editor.skill.remove.\(id)")
+                }
+                .help(id)
+            }
             if entries.isEmpty { Text(L10n.tr("没有匹配的技能")).foregroundStyle(.secondary) }
             ForEach(entries) { skill in
                 Toggle(isOn: membership(skill.id, in: $draft.skills)) {
@@ -270,6 +293,12 @@ struct PresetEditorSheet: View {
         }
     }
 
+    private var draftBlockingReasons: [LocalizedText] {
+        let project = model.selectedProject ?? ProjectRecord.demo[0]
+        return PresetDraftPreview(preset: draft.record, project: project, snapshot: model.snapshot, hiddenSkills: model.hiddenSkills)
+            .blockingReasons(origins: model.sourceOrigins)
+    }
+
     private func count(_ item: PresetComponent) -> Int {
         switch item {
         case .skills: draft.skills.count
@@ -277,6 +306,15 @@ struct PresetEditorSheet: View {
         case .mcp: draft.mcpServers.count
         case .instructions: draft.instructions.count
         }
+    }
+
+    private var unresolvedSkillIDs: [String] {
+        let known = Set(model.snapshot.catalog.entries.map(\.id))
+        return draft.skills.subtracting(known).sorted()
+    }
+
+    private func unresolvedSkillTitle(_ id: String) -> String {
+        model.hiddenSkills.first { $0.id == id }?.declaredName ?? PresetDraftPreview.referenceName(id)
     }
 
     private func membership(_ id: String, in values: Binding<Set<String>>) -> Binding<Bool> {

@@ -153,13 +153,13 @@ final class TemplateEditorTests: XCTestCase {
         let preview = try model.templateUsePreview(templateID: template.id, target: target)
         XCTAssertTrue(model.prepareTemplateUse(templateID: template.id, target: target, preview: preview))
         let controller = NSHostingController(rootView: PlanSheet(model: model).background(Color(nsColor: .windowBackgroundColor)))
-        let window = makeWindow(controller, size: NSSize(width: 700, height: 680))
+        let window = makeWindow(controller, size: NSSize(width: 880, height: 680))
         defer { window.close() }
         for appearance in [NSAppearance.Name.aqua, .darkAqua] {
             window.appearance = NSAppearance(named: appearance)
             try await Task.sleep(for: .milliseconds(100))
             controller.view.layoutSubtreeIfNeeded()
-            XCTAssertLessThanOrEqual(controller.view.fittingSize.width, 701)
+            XCTAssertLessThanOrEqual(controller.view.fittingSize.width, 881)
             XCTAssertLessThanOrEqual(controller.view.fittingSize.height, 681)
             XCTAssertTrue(descendants(controller.view).contains { $0 is NSScrollView })
             try capture(controller.view, path: "/tmp/perch-template-diff-\(appearance == .aqua ? "light" : "dark").png")

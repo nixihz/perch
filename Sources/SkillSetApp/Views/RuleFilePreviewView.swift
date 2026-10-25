@@ -8,23 +8,35 @@ struct RuleFilePreviewView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(preview.id).font(AppFont.code.weight(.semibold)).textSelection(.enabled)
-            Picker(L10n.tr("规则内容"), selection: $mode) {
-                Text(L10n.tr("差异")).tag(0)
-                Text(L10n.tr("写入前")).tag(1)
-                Text(L10n.tr("写入后")).tag(2)
+            HStack(alignment: .center, spacing: 12) {
+                Text(preview.id)
+                    .font(AppFont.code.weight(.semibold))
+                    .textSelection(.enabled)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer(minLength: 8)
+                Picker(L10n.tr("规则内容"), selection: $mode) {
+                    Text(L10n.tr("差异")).tag(0)
+                    Text(L10n.tr("写入前")).tag(1)
+                    Text(L10n.tr("写入后")).tag(2)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 248)
+                .accessibilityIdentifier("templates.plan.contentMode")
+                .help(L10n.tr("− 表示移除的行，+ 表示写入的行；其余行为上下文。"))
             }
-            .pickerStyle(.segmented)
-            .accessibilityIdentifier("templates.plan.contentMode")
-            if mode == 0 {
-                Text(L10n.tr("− 表示移除的行，+ 表示写入的行；其余行为上下文。"))
-                    .font(AppFont.metadata).foregroundStyle(.secondary)
+            ScrollView {
+                Text(content ?? L10n.tr("文件不存在"))
+                    .font(AppFont.code)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+                    .accessibilityIdentifier("templates.plan.ruleContent")
             }
-            Text(content ?? L10n.tr("文件不存在"))
-                .font(AppFont.code).textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(10).background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 8))
-                .accessibilityIdentifier("templates.plan.ruleContent")
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 8))
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }

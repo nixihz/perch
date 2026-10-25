@@ -20,7 +20,7 @@ struct PresetsView: View {
                         .accessibilityIdentifier("presets.new")
             }
             if let error = model.presetError {
-                Label(L10n.text(error), systemImage: "exclamationmark.circle").font(AppFont.secondary).foregroundStyle(.red)
+                Label(L10n.tr(error), systemImage: "exclamationmark.circle").font(AppFont.secondary).foregroundStyle(.red)
             }
             HStack(alignment: .top, spacing: AppLayout.columnSpacing) {
                 presetList.frame(width: AppLayout.listWidth)
