@@ -152,6 +152,10 @@ final class AppModel {
     private let executor: FileTransactionExecutor
     private let skillsShClient: SkillsShDirectoryClient
     private var service: SkillSetService?
+    @ObservationIgnored private var libraryGeneration: SkillLibraryGeneration?
+    @ObservationIgnored private var libraryReloadID = UUID()
+    @ObservationIgnored private var isCheckingLibrary = false
+    @ObservationIgnored private var libraryRefreshError: String?
 
     func report(_ message: LocalizedText) {
         actionMessage = message
@@ -394,8 +398,57 @@ final class AppModel {
         return removed
     }
 
-    private func reloadLibrary() throws {
-        let loaded = try libraryStore.loadLibrary()
+    /// 与窗口任务同生共灭；即使用户停留在其他页面，也要让配置列表使用最新技能库。
+    func observeLibraryChanges(interval: Duration = .seconds(2)) async {
+        while !Task.isCancelled {
+            await refreshLibraryIfChanged()
+            do { try await Task.sleep(for: interval) }
+            catch { return }
+        }
+    }
+
+    func refreshLibraryIfChanged() async {
+        guard !Task.isCancelled, !isCheckingLibrary, !isWorking else { return }
+        isCheckingLibrary = true
+        defer { isCheckingLibrary = false }
+        let paths = runtimePaths
+        let previous = libraryGeneration
+        let request = libraryReloadID
+        do {
+            let result = try await Task.detached(priority: .utility) {
+                let before = SkillLibraryGeneration.capture(paths: paths)
+                if before.isComplete, before == previous { return nil as (LoadedSkillLibrary, SkillLibraryGeneration)? }
+                let loaded = try paths.makeLibraryStore().loadLibrary()
+                let after = SkillLibraryGeneration.capture(paths: paths)
+                // 读取期间还有写入时留到下一轮，不能把旧内容记作最新文件身份。
+                guard before == after else { return nil }
+                return (loaded, after)
+            }.value
+            // 本机保存或删除优先于较早开始的后台读取；取消窗口任务后不再发布。
+            guard !Task.isCancelled, !isWorking, request == libraryReloadID, let (loaded, generation) = result else { return }
+            let selected = selectedSkill
+            try reloadLibrary(loaded: loaded)
+            libraryGeneration = generation
+            if libraryError == libraryRefreshError { libraryError = nil }
+            libraryRefreshError = nil
+            if !snapshot.catalog.entries.contains(where: { $0.id == selectedSkillID }) {
+                selectedSkillID = filteredSkills.first?.id
+            }
+            if selected != selectedSkill {
+                closeSkillFile()
+                await loadSelectedSkillDocumentInBackground()
+            }
+        } catch {
+            guard !Task.isCancelled, request == libraryReloadID else { return }
+            libraryRefreshError = UserFacingText.error(error)
+            libraryError = libraryRefreshError
+        }
+    }
+
+    private func reloadLibrary(loaded: LoadedSkillLibrary? = nil) throws {
+        libraryReloadID = UUID()
+        libraryGeneration = nil
+        let loaded = try loaded ?? libraryStore.loadLibrary()
         snapshot = baseSnapshot.replacingCatalog(loaded.catalog(merging: baseSnapshot.catalog))
         sourceOrigins = loaded.origins
         skillStorageURLs = loaded.packageURLs
@@ -410,7 +463,7 @@ final class AppModel {
             skillIDs: Set(snapshot.catalog.entries.map(\.id)),
             instructionIDs: Set(snapshot.templates.map(\.id))
         )
-        reloadTemplates()
+        reloadTemplates(updateService: false)
         refreshSkillIndexes()
         service = try SkillSetService(paths: runtimePaths, globalLocations: globalConfiguration.locations, library: loaded)
         updateQuery(query)
@@ -466,7 +519,7 @@ final class AppModel {
 
     private var templateStore: TemplateStore { TemplateStore(rootURL: runtimePaths.applicationSupportRoot) }
 
-    func reloadTemplates() {
+    func reloadTemplates(updateService: Bool = true) {
         do {
             snapshot = snapshot.replacingTemplates(try templateStore.list(merging: baseSnapshot.templates))
             if !snapshot.templates.contains(where: { $0.id == selectedTemplateID }) {
@@ -474,7 +527,9 @@ final class AppModel {
             }
             templateLibraryError = nil
             templateError = nil
-            service = try? SkillSetService(paths: runtimePaths, globalLocations: globalConfiguration.locations)
+            if updateService {
+                service = try? SkillSetService(paths: runtimePaths, globalLocations: globalConfiguration.locations)
+            }
             globalConfiguration.setAvailableReferences(
                 skillIDs: Set(snapshot.catalog.entries.map(\.id)),
                 instructionIDs: Set(snapshot.templates.map(\.id))

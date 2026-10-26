@@ -31,6 +31,7 @@ struct ContentView: View {
         .font(AppFont.body)
         .lineSpacing(2)
         .background(SplitDividerStyle())
+        .task { await model.observeLibraryChanges() }
     }
 }
 

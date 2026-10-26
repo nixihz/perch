@@ -78,6 +78,8 @@ AGENTS 片段的新建、编辑和删除开放在本机 UI 与 MCP，保存到�
 
 技能库的新增、编辑与移除开放在本机 UI 和 MCP，复用 `SkillLibraryStore`。跟随来源的条目可以移出库或通过 `skills_create(sourceSkillId, slug, document)` 创建完整个人副本，不能原地修改来源。`skills_search`、`skills_install` 与 `presets_install` 在技能包或本机库元数据变化后的下一次调用使用最新快照，不要求重启服务。新增、移除部署目标和复制部署更新仍须经过下述审批流程；已建立的软链按技能库约定实时跟随内容变化。
 
+应用主窗口存续期间每 2 秒在后台检查技能包和本机库文件的身份、时间与权限元数据，与 MCP 共用 `SkillLibraryGeneration`。文件未变时复用当前快照；检测到 MCP 或其他进程的新增、编辑、删除后重读技能库，更新列表、搜索、数量与当前详情，无需重启应用。读取失败保留上次成功的技能列表并在后续检查重试；读取期间仍有写入时延后发布，本机保存后的内容不会被较早开始的后台读取覆盖。窗口任务取消后停止检查，不改变既有计划和部署审批边界。
+
 ```text
 AI 调用 deployment_plan / mcp_config_plan / plugin_lifecycle_plan
     ↓

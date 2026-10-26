@@ -408,7 +408,7 @@ final class MCPStdioServer {
             let result = callTool(name: name, arguments: args, serviceOverride: current)
             if result["isError"] as? Bool != true { succeeded += 1 }
             results.append(["index": index, "name": name, "result": result])
-            let now = MCPLibraryGeneration.capture(paths: libraryCache.paths)
+            let now = SkillLibraryGeneration.capture(paths: libraryCache.paths)
             guard !now.isComplete || now != generation else { continue }
             do {
                 current = try libraryCache.reload()
