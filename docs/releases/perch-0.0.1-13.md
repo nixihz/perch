@@ -2,7 +2,7 @@
 
 状态：构建与本地 Sparkle 产物已完成；等待恢复 `APP-Notary-2026` 后公证，再发布至 `https://app.u1.fan`。线上仍为 build 12。
 
-本次递增 Sparkle 构建号，沿用 `com.xiezhixin.perch`、原公钥和新平台 feed；将黑曜、雪白、雾灰主题随新版通用包分发。项目新增 mattpocock/skills 的 handoff 技能链接。
+本次递增 Sparkle 构建号，沿用 `com.xiezhixin.perch`、原公钥和新平台 feed；新版通用包包含陶土红、黑曜、雪白三种主题色调，并移除雾灰。项目新增 mattpocock/skills 的 handoff 技能链接。
 
 发布 CLI 已升级到 0.1.3，管理员会话有效；约 29 MB 的旧发布包打包通过，预检报告为上传 200 MiB、解压 100 MiB。发布目录仅包含清单、官网、品牌图、本次 DMG 和 appcast，以及 CLI 生成的来源元数据。
 

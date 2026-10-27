@@ -30,7 +30,7 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         Label(L10n.text("主题色调"), systemImage: "circle.hexagongrid.fill")
                             .font(AppFont.heading)
-                        Text(L10n.text("用黑白灰的层次组织界面，选择会立即应用并保留。"))
+                        Text(L10n.text("用黑白中性色与陶土红的层次组织界面，选择会立即应用并保留。"))
                             .font(AppFont.secondary)
                             .foregroundStyle(.secondary)
                         HStack(spacing: 10) {

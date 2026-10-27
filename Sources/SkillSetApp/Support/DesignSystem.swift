@@ -44,6 +44,17 @@ struct AppThemePalette {
 
     static func forTheme(_ theme: AppTheme) -> Self {
         switch theme {
+        case .terracotta:
+            Self(accentLight: 0xA6472D, accentDark: 0xE6A48B,
+                 accentTextLight: 0xA6472D, accentTextDark: 0xE6A48B,
+                 accentSoftLight: 0xF7EAE3, accentSoftDark: 0x3C2C26,
+                 inkLight: 0x302B26, inkDark: 0xF1E9DF,
+                 surfaceLight: 0xFFFDFA, surfaceDark: 0x2B2927,
+                 borderLight: 0xE3DDD5, borderDark: 0x47413C,
+                 controlSurfaceLight: 0xFFFFFF, controlSurfaceDark: 0x242220,
+                 controlHoverLight: 0xF6F1EB, controlHoverDark: 0x36312D,
+                 selectionLight: 0xA6472D, selectionDark: 0xDC896B,
+                 onSelectionLight: 0xFFFFFF, onSelectionDark: 0x302B26)
         case .obsidian:
             Self(accentLight: 0x242424, accentDark: 0xE2E2E2,
                  accentTextLight: 0x242424, accentTextDark: 0xF0F0F0,
@@ -65,17 +76,6 @@ struct AppThemePalette {
                  controlSurfaceLight: 0xFFFFFF, controlSurfaceDark: 0x2E2E2E,
                  controlHoverLight: 0xF5F5F5, controlHoverDark: 0x3D3D3D,
                  selectionLight: 0x707070, selectionDark: 0xD0D0D0,
-                 onSelectionLight: 0xFFFFFF, onSelectionDark: 0x242424)
-        case .mist:
-            Self(accentLight: 0x808080, accentDark: 0xC6C6C6,
-                 accentTextLight: 0x626262, accentTextDark: 0xD7D7D7,
-                 accentSoftLight: 0xE9E9E9, accentSoftDark: 0x373737,
-                 inkLight: 0x202020, inkDark: 0xF0F0F0,
-                 surfaceLight: 0xFAFAFA, surfaceDark: 0x292929,
-                 borderLight: 0xD3D3D3, borderDark: 0x494949,
-                 controlSurfaceLight: 0xFFFFFF, controlSurfaceDark: 0x2D2D2D,
-                 controlHoverLight: 0xF0F0F0, controlHoverDark: 0x3C3C3C,
-                 selectionLight: 0x707070, selectionDark: 0xCACACA,
                  onSelectionLight: 0xFFFFFF, onSelectionDark: 0x242424)
         }
     }

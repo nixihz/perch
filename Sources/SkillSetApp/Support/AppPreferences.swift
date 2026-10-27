@@ -3,41 +3,41 @@ import Observation
 import Foundation
 
 enum AppTheme: String, CaseIterable, Identifiable, Sendable {
+    case terracotta
     case obsidian
     case snow
-    case mist
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
+        case .terracotta: "陶土红"
         case .obsidian: "黑曜"
         case .snow: "雪白"
-        case .mist: "雾灰"
         }
     }
 
     var detail: String {
         switch self {
+        case .terracotta: "温暖陶土与纸面"
         case .obsidian: "深墨与柔和高光"
         case .snow: "纸面与细边界"
-        case .mist: "中性灰与低对比"
         }
     }
 
     var symbolName: String {
         switch self {
+        case .terracotta: "circle.bottomhalf.filled"
         case .obsidian: "circle.fill"
         case .snow: "circle"
-        case .mist: "circle.lefthalf.filled"
         }
     }
 
     var swatch: Color {
         switch self {
+        case .terracotta: Color(red: 0.65, green: 0.28, blue: 0.18)
         case .obsidian: Color(red: 0.12, green: 0.12, blue: 0.12)
         case .snow: Color(red: 0.96, green: 0.96, blue: 0.96)
-        case .mist: Color(red: 0.55, green: 0.55, blue: 0.55)
         }
     }
 }
