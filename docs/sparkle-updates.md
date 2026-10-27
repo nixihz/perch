@@ -141,4 +141,4 @@ python3 -m unittest tests.test_update_packaging tests.test_ui_localization -v
 
 2026-10-27 正在准备 build 13：重新构建 Developer ID 通用包，沿用原 Sparkle 公钥与 feed。CLI 0.1.3 已通过约 29 MB 的 build 12 发布包预检，报告的上传限制为 200 MiB、解压限制为 100 MiB；build 13 最终结果见 [发布记录](releases/perch-0.0.1-13.md)。
 
-2026-10-27 build 14：恢复陶土红主题并移除雾灰，沿用 Sparkle 公钥与 feed；待完成公证后发布。
+2026-10-27 build 14 已发布：恢复陶土红主题并移除雾灰，沿用 Sparkle 公钥与 feed。App 公证 ID 为 `04394e56-ce30-4f60-a77a-72e54420ed47`，DMG 公证 ID 为 `0e0b3d7a-2365-4004-9c03-458b3de77767`；平台 release ID 为 `2ac9cccc-82c7-4311-b8e0-a304297425e5`。公网 appcast 与 DMG 已匿名逐字节校验通过，详见 [build 14 发布记录](releases/perch-0.0.1-14.md)。
