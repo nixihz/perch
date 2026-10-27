@@ -32,9 +32,9 @@ final class SidebarSelectionTests: XCTestCase {
             x: bitmap.pixelsWide - 12,
             y: bitmap.pixelsHigh / 2
         )?.usingColorSpace(.sRGB))
-        XCTAssertGreaterThan(
-            selectionPixel.redComponent, selectionPixel.blueComponent + 0.2,
-            "真实窗口的表格合成结果不能被系统蓝色高亮覆盖"
+        XCTAssertLessThan(
+            abs(selectionPixel.redComponent - selectionPixel.blueComponent), 0.04,
+            "真实窗口的表格合成结果应保持中性色，不应被系统蓝色高亮覆盖"
         )
         window.makeFirstResponder(table)
         let down = try XCTUnwrap(NSEvent.keyEvent(
@@ -69,7 +69,7 @@ final class SidebarSelectionTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(findTable(in: controller.view)).selectedRow, 2, "离开设置后应恢复工作区选择")
     }
 
-    func testSelectionDrawsTerracottaInBothAppearancesEvenWhenUnfocused() throws {
+    func testSelectionDrawsNeutralThemeToneInBothAppearancesEvenWhenUnfocused() throws {
         for name in [NSAppearance.Name.aqua, .darkAqua] {
             for emphasized in [true, false] {
                 let row = SidebarSelectionRow(frame: NSRect(x: 0, y: 0, width: 240, height: 52))
@@ -80,8 +80,8 @@ final class SidebarSelectionTests: XCTestCase {
                 let bitmap = try XCTUnwrap(row.bitmapImageRepForCachingDisplay(in: row.bounds))
                 row.cacheDisplay(in: row.bounds, to: bitmap)
                 let pixel = try XCTUnwrap(bitmap.colorAt(x: bitmap.pixelsWide / 2, y: bitmap.pixelsHigh / 2)?.usingColorSpace(.sRGB))
-                XCTAssertGreaterThan(pixel.redComponent, pixel.greenComponent + 0.15, "\(name) 选中底色必须为陶土红")
-                XCTAssertGreaterThan(pixel.redComponent, pixel.blueComponent + 0.2, "失焦后也不能回退成系统蓝或灰色")
+                XCTAssertLessThan(abs(pixel.redComponent - pixel.greenComponent), 0.04, "\(name) 选中底色必须保持中性灰阶")
+                XCTAssertLessThan(abs(pixel.redComponent - pixel.blueComponent), 0.04, "失焦后也不能回退成系统蓝")
             }
         }
     }

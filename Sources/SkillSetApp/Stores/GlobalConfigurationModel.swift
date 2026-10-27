@@ -275,7 +275,7 @@ final class GlobalConfigurationModel {
         let inheritanceRequest = inheritanceID
         error = nil
         skillSaveMessage = nil
-        let paths = paths, locations = locations
+        let paths = paths, locations = locations, takeOver = takeOverExisting
         let updatedDraft = next
         let result = await Task.detached(priority: .userInitiated) {
             let manager = GlobalConfigurationManager(paths: paths, locations: locations)
@@ -289,13 +289,13 @@ final class GlobalConfigurationModel {
                     throw DeploymentError.managedSkillDrift(skillPath)
                 }
                 var selection = observed.selection
-                if selection.skillIDs.isEmpty { selection.installMethod = previous.installMethod }
+                selection.installMethod = previous.installMethod
                 selection.skillIDs.removeAll { $0 == id }
                 if enabled { selection.skillIDs.append(id) }
                 selection.skillIDs.sort()
                 let service = try SkillSetService(paths: paths, globalLocations: locations)
                 let plan: StoredDeploymentPlan?
-                do { plan = try service.makeGlobalPlan(host: host, selection: selection) }
+                do { plan = try service.makeGlobalPlan(host: host, selection: selection, takeOverExisting: takeOver) }
                 catch DeploymentError.noChanges { plan = nil }
                 try manager.saveDraft(updatedDraft, host: host)
                 do {

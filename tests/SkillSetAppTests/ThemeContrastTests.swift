@@ -45,6 +45,24 @@ final class ThemeContrastTests: XCTestCase {
         XCTAssertLessThan(abs(emphasis - surface), 0.03, "强调应来自色相而非大面积亮度跳变")
     }
 
+    func testEveryThemeToneKeepsReadableTextAndSelectionContrast() throws {
+        defer { AppThemeRuntime.shared.update(.obsidian) }
+        for theme in AppTheme.allCases {
+            AppThemeRuntime.shared.update(theme)
+            for name in [NSAppearance.Name.aqua, .darkAqua] {
+                let appearance = try XCTUnwrap(NSAppearance(named: name))
+                XCTAssertGreaterThanOrEqual(
+                    try contrast(AppColor.onSelection, AppColor.selection, appearance: appearance), 4.5,
+                    "\(theme.rawValue) 在 \(name.rawValue) 下的选中态文字不可读"
+                )
+                XCTAssertGreaterThanOrEqual(
+                    try contrast(AppColor.accentText, AppColor.accentSoft, appearance: appearance), 4.5,
+                    "\(theme.rawValue) 在 \(name.rawValue) 下的强调文字不可读"
+                )
+            }
+        }
+    }
+
     private func contrast(_ foreground: Color, _ background: Color, appearance: NSAppearance) throws -> Double {
         let first = try luminance(foreground, appearance: appearance)
         let second = try luminance(background, appearance: appearance)

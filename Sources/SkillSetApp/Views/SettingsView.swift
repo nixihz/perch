@@ -27,6 +27,25 @@ struct SettingsView: View {
                         .accessibilityIdentifier("settings.appearance")
                     }
                     Divider()
+                    VStack(alignment: .leading, spacing: 10) {
+                        Label(L10n.text("主题色调"), systemImage: "circle.hexagongrid.fill")
+                            .font(AppFont.heading)
+                        Text(L10n.text("用黑白灰的层次组织界面，选择会立即应用并保留。"))
+                            .font(AppFont.secondary)
+                            .foregroundStyle(.secondary)
+                        HStack(spacing: 10) {
+                            ForEach(AppTheme.allCases) { theme in
+                                ThemeChoiceButton(theme: theme,
+                                                   isSelected: preferences.theme == theme) {
+                                    preferences.theme = theme
+                                }
+                            }
+                        }
+                        .accessibilityElement(children: .contain)
+                        .accessibilityLabel(L10n.text("主题色调"))
+                        .accessibilityValue(L10n.text(preferences.theme.title))
+                    }
+                    Divider()
                     HStack {
                         Label(L10n.text("语言"), systemImage: "globe")
                             .font(AppFont.heading)
@@ -73,5 +92,62 @@ struct SettingsView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+}
+
+private struct ThemeChoiceButton: View {
+    let theme: AppTheme
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(theme.swatch)
+                        .frame(width: 24, height: 24)
+                        .overlay(Circle().stroke(AppColor.border.opacity(0.8), lineWidth: 1))
+                    Text(L10n.text(theme.title))
+                        .font(AppFont.body.weight(.medium))
+                        .foregroundStyle(AppColor.ink)
+                    Spacer(minLength: 0)
+                    if isSelected {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(AppColor.accentText)
+                            .accessibilityHidden(true)
+                    }
+                }
+                Text(L10n.text(theme.detail))
+                    .font(AppFont.metadata)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(isSelected ? AppColor.accentSoft : AppColor.controlSurface,
+                        in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(isSelected ? AppColor.accent : AppColor.border,
+                            lineWidth: isSelected ? 1.5 : 1)
+            }
+        }
+        .buttonStyle(ThemeChoiceButtonStyle())
+        .accessibilityLabel(L10n.text(theme.title))
+        .accessibilityValue(isSelected ? L10n.text("已选择") : L10n.text("未选择"))
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+        .accessibilityIdentifier("settings.theme.\(theme.rawValue)")
+    }
+}
+
+private struct ThemeChoiceButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.985 : 1)
+            .opacity(configuration.isPressed ? 0.88 : 1)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: configuration.isPressed)
     }
 }

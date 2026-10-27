@@ -59,6 +59,23 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(recovered.language, .system)
     }
 
+    func testThemeTonePersistsAndInvalidValuesReturnToObsidian() throws {
+        let suite = "SkillSet.SettingsTests.Theme.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let preferences = AppPreferences(defaults: defaults)
+        XCTAssertEqual(preferences.theme, .obsidian)
+        XCTAssertNil(defaults.string(forKey: PreferenceKey.theme))
+
+        preferences.theme = .snow
+        XCTAssertEqual(defaults.string(forKey: PreferenceKey.theme), AppTheme.snow.rawValue)
+        XCTAssertEqual(AppPreferences(defaults: defaults).theme, .snow)
+
+        defaults.set("neon", forKey: PreferenceKey.theme)
+        XCTAssertEqual(AppPreferences(defaults: defaults).theme, .obsidian)
+    }
+
     func testSystemAppearanceRestoresCurrentSystemSchemeAfterExplicitOverride() async throws {
         let suite = "SkillSet.SettingsTests.Appearance.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

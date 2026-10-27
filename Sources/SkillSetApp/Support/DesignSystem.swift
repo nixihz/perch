@@ -20,30 +20,98 @@ enum AppFont {
     static let code = Font.system(size: 12, design: .monospaced)
 }
 
-enum AppColor {
-    // 沿用 Samantha 的明暗陶土红，避免固定浅色填充破坏深色窗口的对比度。
-    static let accent = Color("AccentColor", bundle: .module)
-    static let accentText = adaptive(light: 0xA6472D, dark: 0xE6A48B)
-    static let accentSoft = adaptive(light: 0xF7EAE3, dark: 0x3C2C26)
-    static let ink = adaptive(light: 0x302B26, dark: 0xF1E9DF)
-    static let surface = adaptive(light: 0xFFFDFA, dark: 0x2B2927)
-    static let border = adaptive(light: 0xE3DDD5, dark: 0x47413C)
-    static let controlSurface = adaptive(light: 0xFFFFFF, dark: 0x242220)
-    static let controlHover = adaptive(light: 0xF6F1EB, dark: 0x36312D)
-    static let positive = adaptive(light: 0x2D7050, dark: 0x88C5A0)
-    static let selection = adaptive(light: 0xA6472D, dark: 0xDC896B)
-    static let onSelection = adaptive(light: 0xFFFFFF, dark: 0x302B26)
+struct AppThemePalette {
+    let accentLight: UInt32
+    let accentDark: UInt32
+    let accentTextLight: UInt32
+    let accentTextDark: UInt32
+    let accentSoftLight: UInt32
+    let accentSoftDark: UInt32
+    let inkLight: UInt32
+    let inkDark: UInt32
+    let surfaceLight: UInt32
+    let surfaceDark: UInt32
+    let borderLight: UInt32
+    let borderDark: UInt32
+    let controlSurfaceLight: UInt32
+    let controlSurfaceDark: UInt32
+    let controlHoverLight: UInt32
+    let controlHoverDark: UInt32
+    let selectionLight: UInt32
+    let selectionDark: UInt32
+    let onSelectionLight: UInt32
+    let onSelectionDark: UInt32
 
-    private static func adaptive(light: UInt32, dark: UInt32) -> Color {
+    static func forTheme(_ theme: AppTheme) -> Self {
+        switch theme {
+        case .obsidian:
+            Self(accentLight: 0x242424, accentDark: 0xE2E2E2,
+                 accentTextLight: 0x242424, accentTextDark: 0xF0F0F0,
+                 accentSoftLight: 0xEEEEEE, accentSoftDark: 0x343434,
+                 inkLight: 0x171717, inkDark: 0xF2F2F2,
+                 surfaceLight: 0xFCFCFC, surfaceDark: 0x252525,
+                 borderLight: 0xD8D8D8, borderDark: 0x494949,
+                 controlSurfaceLight: 0xFFFFFF, controlSurfaceDark: 0x2B2B2B,
+                 controlHoverLight: 0xF1F1F1, controlHoverDark: 0x3A3A3A,
+                 selectionLight: 0x2A2A2A, selectionDark: 0xD8D8D8,
+                 onSelectionLight: 0xFFFFFF, onSelectionDark: 0x1E1E1E)
+        case .snow:
+            Self(accentLight: 0x707070, accentDark: 0xD7D7D7,
+                 accentTextLight: 0x555555, accentTextDark: 0xE1E1E1,
+                 accentSoftLight: 0xF1F1F1, accentSoftDark: 0x3A3A3A,
+                 inkLight: 0x252525, inkDark: 0xF0F0F0,
+                 surfaceLight: 0xFFFFFF, surfaceDark: 0x282828,
+                 borderLight: 0xDEDEDE, borderDark: 0x4B4B4B,
+                 controlSurfaceLight: 0xFFFFFF, controlSurfaceDark: 0x2E2E2E,
+                 controlHoverLight: 0xF5F5F5, controlHoverDark: 0x3D3D3D,
+                 selectionLight: 0x707070, selectionDark: 0xD0D0D0,
+                 onSelectionLight: 0xFFFFFF, onSelectionDark: 0x242424)
+        case .mist:
+            Self(accentLight: 0x808080, accentDark: 0xC6C6C6,
+                 accentTextLight: 0x626262, accentTextDark: 0xD7D7D7,
+                 accentSoftLight: 0xE9E9E9, accentSoftDark: 0x373737,
+                 inkLight: 0x202020, inkDark: 0xF0F0F0,
+                 surfaceLight: 0xFAFAFA, surfaceDark: 0x292929,
+                 borderLight: 0xD3D3D3, borderDark: 0x494949,
+                 controlSurfaceLight: 0xFFFFFF, controlSurfaceDark: 0x2D2D2D,
+                 controlHoverLight: 0xF0F0F0, controlHoverDark: 0x3C3C3C,
+                 selectionLight: 0x707070, selectionDark: 0xCACACA,
+                 onSelectionLight: 0xFFFFFF, onSelectionDark: 0x242424)
+        }
+    }
+}
+
+enum AppColor {
+    // 主题以中性色建立层次，避免强调色抢过内容本身；成功状态仍保留绿色语义。
+    static let accent = adaptive(light: { $0.accentLight }, dark: { $0.accentDark })
+    static let accentText = adaptive(light: { $0.accentTextLight }, dark: { $0.accentTextDark })
+    static let accentSoft = adaptive(light: { $0.accentSoftLight }, dark: { $0.accentSoftDark })
+    static let ink = adaptive(light: { $0.inkLight }, dark: { $0.inkDark })
+    static let surface = adaptive(light: { $0.surfaceLight }, dark: { $0.surfaceDark })
+    static let border = adaptive(light: { $0.borderLight }, dark: { $0.borderDark })
+    static let controlSurface = adaptive(light: { $0.controlSurfaceLight }, dark: { $0.controlSurfaceDark })
+    static let controlHover = adaptive(light: { $0.controlHoverLight }, dark: { $0.controlHoverDark })
+    static let positive = adaptive(light: 0x2D7050, dark: 0x88C5A0)
+    static let selection = adaptive(light: { $0.selectionLight }, dark: { $0.selectionDark })
+    static let onSelection = adaptive(light: { $0.onSelectionLight }, dark: { $0.onSelectionDark })
+
+    private static func adaptive(light: @escaping (AppThemePalette) -> UInt32,
+                                 dark: @escaping (AppThemePalette) -> UInt32) -> Color {
         Color(nsColor: NSColor(name: nil) { appearance in
+            let palette = AppThemePalette.forTheme(AppThemeRuntime.shared.current())
             let hex = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light
+            let value = hex(palette)
             return NSColor(
-                srgbRed: Double((hex >> 16) & 0xFF) / 255,
-                green: Double((hex >> 8) & 0xFF) / 255,
-                blue: Double(hex & 0xFF) / 255,
+                srgbRed: Double((value >> 16) & 0xFF) / 255,
+                green: Double((value >> 8) & 0xFF) / 255,
+                blue: Double(value & 0xFF) / 255,
                 alpha: 1
             )
         })
+    }
+
+    private static func adaptive(light: UInt32, dark: UInt32) -> Color {
+        adaptive(light: { _ in light }, dark: { _ in dark })
     }
 }
 

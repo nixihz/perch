@@ -165,12 +165,6 @@ struct ConfigurationResourceView: View {
 
     private var previewActions: some View {
         HStack(spacing: 8) {
-            if !isProject, tab == .skills {
-                Button(L10n.tr("预览 Agents")) { present(global.prepareDeployment(host: .agents)) }
-                    .buttonStyle(AppButtonStyle())
-                    .disabled(model.isWorking || !canEdit(.agents))
-                    .accessibilityIdentifier("global.preview.agents")
-            }
             ForEach(MCPHost.allCases) { host in
                 if tab == .plugins {
                     let pending = plugins.pending(host: host)
@@ -344,9 +338,8 @@ struct ConfigurationResourceView: View {
                         Toggle(L10n.tr("接管所选资源的已有同名内容，并保留原始备份"),
                                isOn: Binding(get: { global.takeOverExisting }, set: { global.takeOverExisting = $0 }))
                             .toggleStyle(AppCheckboxStyle())
-                        Text(L10n.tr("更改安装方式或接管已有内容后，预览并保存。"))
+                        Text(L10n.tr("更改安装方式或接管已有内容后，点击对应工具图标保存。"))
                             .font(AppFont.secondary).foregroundStyle(.secondary)
-                        previewActions
                     }
                     Text(L10n.tr("软链接指向 ~/.perch 中的固定版本；复制后的文件可独立编辑。"))
                         .font(AppFont.secondary).foregroundStyle(.secondary)

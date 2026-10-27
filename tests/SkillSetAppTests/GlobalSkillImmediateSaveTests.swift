@@ -64,6 +64,24 @@ final class GlobalSkillImmediateSaveTests: XCTestCase {
         XCTAssertNotNil(fixture.model.skillSaveMessage)
     }
 
+    func testClickAppliesInstallChoiceAndAdoptsExistingSkillWithoutPreview() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let target = fixture.locations.skillsRoot(.agents).appendingPathComponent("click-save")
+        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+        try "本机已有内容".write(to: target.appendingPathComponent("SKILL.md"), atomically: true, encoding: .utf8)
+        fixture.model.setInstallMethod(.copy, host: .agents)
+        fixture.model.takeOverExisting = true
+
+        let saved = await fixture.model.saveSkill(fixture.skill, enabled: true, host: .agents, catalog: fixture.entries)
+
+        XCTAssertTrue(saved, fixture.model.error ?? "")
+        XCTAssertEqual(try String(contentsOf: target.appendingPathComponent("SKILL.md"), encoding: .utf8),
+                       "---\nname: click-save\ndescription: 点击保存\n---\n点击保存正文\n")
+        XCTAssertFalse(try target.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink == true)
+        XCTAssertTrue(try fixture.manager.inspect(host: .agents).resources.contains { $0.path == target.path && $0.managed })
+    }
+
     func testModifiedInstalledFileBlocksRemovalAndKeepsSelectedState() async throws {
         let fixture = try Fixture()
         defer { fixture.remove() }
