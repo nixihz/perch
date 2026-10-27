@@ -60,7 +60,7 @@ final class PresetWorkflowUITests: XCTestCase {
         let world = try BDDWorld()
         defer { world.cleanup() }
         try world.registerProject(named: "preset-demo")
-        world.selectSkill("local-brian/research")
+        world.selectSkill("workspace/likec4-dsl")
         world.selectAgent("claude-code")
         try world.launchNativeUI()
         let ui = try XCTUnwrap(world.nativeUI)
@@ -97,7 +97,7 @@ final class PresetWorkflowUITests: XCTestCase {
         XCTAssertEqual(try ui.sidebarSelection().components(separatedBy: " | ").first, "项目")
         XCTAssertFalse(try ui.sheetPresent())
         let saved = try XCTUnwrap(store.load(projectID: registration.id))
-        XCTAssertEqual(saved.skillIDs, ["workspace/brian-working-style", "workspace/project-guide", "workspace/stc"])
+        XCTAssertEqual(saved.skillIDs, ["workspace/collaboration-style", "workspace/project-guide", "workspace/stc"])
         XCTAssertEqual(saved.instructionIDs, ["base-zh", "engineering"])
         XCTAssertEqual(saved.agents, ["claude-code"])
         XCTAssertTrue(try ui.planRecords().isEmpty)

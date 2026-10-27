@@ -4,8 +4,8 @@ import XCTest
 final class SkillSourceLabelTests: XCTestCase {
     func testCustomSourceUsesDirectoryNameDespiteImportProvenance() {
         for origin: String? in [
-            "/Users/brian/.perch/sources/local-imports/installed",
-            "/Users/brian/.perch/sources/custom",
+            "~/.perch/sources/local-imports/installed",
+            "~/.perch/sources/custom",
             "https://github.com/mattpocock/skills",
             nil
         ] {
@@ -27,11 +27,11 @@ final class SkillSourceLabelTests: XCTestCase {
     }
 
     func testLocalAndUnknownSourcesRetainIdentity() {
-        let path = "/Users/brian/.perch/sources/local-imports/example"
+        let path = "~/.perch/sources/local-imports/example"
         XCTAssertEqual(SkillSourceLabel.repository(path), path)
         XCTAssertEqual(SkillSourceLabel.repository("https://github.com"), "https://github.com")
         XCTAssertEqual(SkillSourceLabel.title(sourceID: "source-hash", origin: "https://github.com/mattpocock/skills", registeredTitle: nil), "mattpocock/skills")
-        XCTAssertEqual(SkillSourceLabel.title(sourceID: "local-brian", origin: nil, registeredTitle: "Brian 的本地技能库"), "Brian 的本地技能库")
+        XCTAssertEqual(SkillSourceLabel.title(sourceID: "external", origin: nil, registeredTitle: "外部来源"), "外部来源")
         XCTAssertEqual(SkillSourceLabel.title(sourceID: "personal", origin: nil, registeredTitle: nil), "personal")
     }
 }

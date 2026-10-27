@@ -7,7 +7,7 @@ final class PresetStoreTests: XCTestCase {
         try fixture { _, store in
             let initial = [
                 PresetRecord(id: "daily", name: "日常", revision: 4, skills: ["workspace/stc"], status: "draft"),
-                PresetRecord(id: "research", name: "研究", skills: ["local-brian/research"], status: "draft")
+                PresetRecord(id: "research", name: "研究", skills: ["workspace/project-guide"], status: "draft")
             ]
             let before = try store.list(merging: initial)
             XCTAssertEqual(before.map(\.id), ["daily", "research"])

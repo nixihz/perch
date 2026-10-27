@@ -8,7 +8,7 @@ final class SidebarSelectionTests: XCTestCase {
     func testNativeKeyboardSelectionSkipsHeadingsAndUpdatesBinding() async throws {
         var selected = NavigationItem.mcp
         let binding = Binding(get: { selected }, set: { selected = $0 })
-        let controller = NSHostingController(rootView: SidebarList(selection: binding, skillCount: 150))
+        let controller = NSHostingController(rootView: SidebarList(selection: binding, skillCount: 12))
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 260, height: 700),
             styleMask: [.titled], backing: .buffered, defer: false

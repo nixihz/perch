@@ -4,7 +4,7 @@ import OSLog
 import SkillSetCore
 
 enum UserFacingText {
-    private static let errorLogger = Logger(subsystem: "com.xiezhixin.perch", category: "ApplicationError")
+    private static let errorLogger = Logger(subsystem: "com.example.perch", category: "ApplicationError")
 
     @MainActor
     static func templateTitle(_ template: TemplateRecord, language: AppLanguage? = nil) -> String {

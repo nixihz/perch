@@ -1,26 +1,14 @@
 {
   "schemaVersion": 1,
-  "capturedOn": "2026-10-21",
+  "capturedOn": "public-template",
   "sources": [
     {
       "id": "workspace",
       "kind": "workspace",
-      "title": "skill-set · 自维护",
+      "title": "Perch · Maintained",
       "path": "skills",
-      "origin": "ssh://git@git.xiezhi.xin:2222/iamx/skill-set.git",
+      "origin": "",
       "trust": "local-owned"
-    },
-    {
-      "id": "local-brian",
-      "kind": "local-snapshot",
-      "title": "Brian 的本地技能库",
-      "origin": "ssh://git@git.xiezhi.xin:2222/brian/skills.git",
-      "importedFrom": "/opt/case/brian/skills",
-      "sourceCommit": "4536bbd230ced702613fe651bd5c390720a852c7",
-      "sourceDirty": true,
-      "snapshotPath": "vendor/local-brian",
-      "report": "registry/local-import.json",
-      "trust": "review-required"
     }
   ],
   "researchOnly": [

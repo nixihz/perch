@@ -45,11 +45,3 @@
     那么 操作失败，错误码为 "PLAN_STALE"
     而且 项目文件 "AGENTS.md" 内容为 "计划后新编辑"
     而且 项目路径 ".agents/skills/stc" 不存在
-
-  场景: 阻塞 Skill 不能进入部署计划
-    假设 已登记项目 "demo"
-    而且 草稿选择 Skill "local-brian/ponytail-review"
-    而且 目标 agent 为 "codex"
-    当 尝试生成部署计划
-    那么 操作失败，错误码为 "SKILL_BLOCKED"
-    而且 项目路径 "AGENTS.md" 不存在

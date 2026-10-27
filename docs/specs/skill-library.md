@@ -34,7 +34,7 @@
     SKILL.md
 
 ~/.perch/skills/library/
-  stc -> /Users/brian/.perch/sources/custom/stc
+  stc -> ~/.perch/sources/custom/stc
 ```
 
 ## 技能源
@@ -85,17 +85,17 @@
   README.md
 
 ~/.perch/skills/library/
-  stc -> /Users/brian/.perch/sources/custom/stc
-  skill-01 -> /Users/brian/.perch/sources/github.com/example/skills/skill-01
-  skill-02 -> /Users/brian/.perch/sources/github.com/example/skills/skill-02
-  skill-03 -> /Users/brian/.perch/sources/github.com/example/skills/skill-03
-  skill-04 -> /Users/brian/.perch/sources/github.com/example/skills/skill-04
-  skill-05 -> /Users/brian/.perch/sources/github.com/example/skills/skill-05
-  skill-06 -> /Users/brian/.perch/sources/github.com/example/skills/skill-06
-  skill-07 -> /Users/brian/.perch/sources/github.com/example/skills/skill-07
-  skill-08 -> /Users/brian/.perch/sources/github.com/example/skills/skill-08
-  skill-09 -> /Users/brian/.perch/sources/github.com/example/skills/skill-09
-  skill-10 -> /Users/brian/.perch/sources/github.com/example/skills/skill-10
+  stc -> ~/.perch/sources/custom/stc
+  skill-01 -> ~/.perch/sources/github.com/example/skills/skill-01
+  skill-02 -> ~/.perch/sources/github.com/example/skills/skill-02
+  skill-03 -> ~/.perch/sources/github.com/example/skills/skill-03
+  skill-04 -> ~/.perch/sources/github.com/example/skills/skill-04
+  skill-05 -> ~/.perch/sources/github.com/example/skills/skill-05
+  skill-06 -> ~/.perch/sources/github.com/example/skills/skill-06
+  skill-07 -> ~/.perch/sources/github.com/example/skills/skill-07
+  skill-08 -> ~/.perch/sources/github.com/example/skills/skill-08
+  skill-09 -> ~/.perch/sources/github.com/example/skills/skill-09
+  skill-10 -> ~/.perch/sources/github.com/example/skills/skill-10
 
 ~/.perch/skill-categories.json
   skill-01 … skill-10 均记为所选分类
@@ -130,17 +130,17 @@
     SKILL.md
 
 ~/.perch/skills/library/
-  stc -> /Users/brian/.perch/sources/custom/stc
-  skill-01 -> /Users/brian/.perch/sources/custom/skill-01
-  skill-02 -> /Users/brian/.perch/sources/custom/skill-02
-  skill-03 -> /Users/brian/.perch/sources/custom/skill-03
-  skill-04 -> /Users/brian/.perch/sources/custom/skill-04
-  skill-05 -> /Users/brian/.perch/sources/custom/skill-05
-  skill-06 -> /Users/brian/.perch/sources/custom/skill-06
-  skill-07 -> /Users/brian/.perch/sources/custom/skill-07
-  skill-08 -> /Users/brian/.perch/sources/custom/skill-08
-  skill-09 -> /Users/brian/.perch/sources/custom/skill-09
-  skill-10 -> /Users/brian/.perch/sources/custom/skill-10
+  stc -> ~/.perch/sources/custom/stc
+  skill-01 -> ~/.perch/sources/custom/skill-01
+  skill-02 -> ~/.perch/sources/custom/skill-02
+  skill-03 -> ~/.perch/sources/custom/skill-03
+  skill-04 -> ~/.perch/sources/custom/skill-04
+  skill-05 -> ~/.perch/sources/custom/skill-05
+  skill-06 -> ~/.perch/sources/custom/skill-06
+  skill-07 -> ~/.perch/sources/custom/skill-07
+  skill-08 -> ~/.perch/sources/custom/skill-08
+  skill-09 -> ~/.perch/sources/custom/skill-09
+  skill-10 -> ~/.perch/sources/custom/skill-10
 ```
 
 技能源里的技能若不在仓库根目录，检出仍保持仓库原样。库里的软链指向该技能自己的目录，库的这一层仍然只有技能名。

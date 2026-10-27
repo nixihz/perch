@@ -61,7 +61,7 @@ Tests/SkillSetCoreTests/        Swift Testing 行为测试
 
 首次初始化读取 Codex 与 Claude Code 的技能目录一次：跟随技能来源的软链留在来源检出，其余已安装技能复制进 `custom` 并在库存里留下同名软链。标记写在 `~/.perch/sources/.adopted-installed-skills`。之后的已安装技能扫描只接受调用方追加的目录，不再读取这些官方目录。
 
-`SkillSetService` 初始化时合并仓库 catalog 和本机索引；部署计划从索引解析本地包路径，仍由原计划审批、对象存储和文件事务落地。编辑不写 `registry/catalog.json`、`vendor/`、全局技能或项目配置。`SKILL.md` 编辑只提取 name、description 和 version 供展示，保留原文与未知字段，不宣称完成完整 YAML schema 校验。
+`SkillSetService` 初始化时合并仓库 catalog 和本机索引；部署计划从索引解析本地包路径，仍由原计划审批、对象存储和文件事务落地。编辑不写 `registry/catalog.json`、本机来源缓存、全局技能或项目配置。`SKILL.md` 编辑只提取 name、description 和 version 供展示，保留原文与未知字段，不宣称完成完整 YAML schema 校验。
 
 原生技能来源页通过列表标题的「＋」打开表单。编辑隔离预览时重新下载并固定版本，新记录保存成功后才移除旧记录；失败清理新隔离区并保留旧记录。删除按来源 UUID 移除 ~/.perch 内的对应缓存与搜索条目，不使用记录中的 `workspacePath` 作为删除目标，不改仓库 catalog。`requestedRef` 可选字段保存用户填写的分支、标签或提交，兼容不含该字段的旧记录。
 
@@ -79,14 +79,14 @@ Tests/SkillSetCoreTests/        Swift Testing 行为测试
 
 | 数据 | 权威位置 | 是否进入 Git |
 | --- | --- | --- |
-| Skill/Plugin/MCP 来源和不可变 revision | `registry/`、`vendor/`、对象 store | 是 |
+| Skill/Plugin/MCP 来源和不可变 revision | `registry/`、本机来源缓存、对象 store | 目录与 revision 是；来源内容否 |
 | 用户预设和规则片段 | `~/.perch/presets.json`、`~/.perch/templates.json` | 否 |
 | 项目期望/锁 | `~/.perch/project-state/<canonical-path-sha256>/` | 否 |
 | 项目 canonical realpath、旧 hash、备份、审批 | `~/.perch/` | 否 |
 | 凭据 | macOS Keychain；仓库只存引用名和状态 | 否 |
 | 外部 plugin/MCP 进程日志 | 本机操作目录，脱敏 | 否 |
 
-`registry/local-import.json` 是本仓私有迁移凭证，包含原始绝对路径和 dirty 事实；公开导出必须剥离机器信息、凭据线索和未核准版权内容。
+来源预览和导入记录保存在本机状态目录，不进入公开仓库；公开目录只保留可再分发且经过来源核查的内容。
 
 ## 4. 领域对象
 

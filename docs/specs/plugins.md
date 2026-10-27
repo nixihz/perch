@@ -121,5 +121,5 @@ applying
 - `含 hook`、`命令来源需人工审核`、`宿主能力未知`、`未锁定` 等风险常驻可见。
 - 未审查或有无解依赖的 plugin 不能进入项目部署选择。
 - 同名 plugin 来自不同 marketplace 时显示 namespace 和 precedence，禁止先到先得。
-- Alpha 展示真实缓存与安装索引，并在隔离 fixture 中验证固定参数、审批、状态漂移和 operation 回读。真实宿主生命周期仍需单次明确授权和版本记录，测试不得修改 Brian 的真实插件配置。
+- Alpha 展示真实缓存与安装索引，并在隔离 fixture 中验证固定参数、审批、状态漂移和 operation 回读。真实宿主生命周期仍需单次明确授权和版本记录，测试不得修改维护者或贡献者的真实插件配置。
 - 多版本缓存 fixture 必须验证：无摘要时拒绝；指定摘要时只选择该 manifest；执行前后 observation 保持同一目标摘要。

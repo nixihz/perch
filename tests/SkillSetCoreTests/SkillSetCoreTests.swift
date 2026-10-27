@@ -4,11 +4,11 @@ import Foundation
 
 struct SkillSetCoreTests {
     @Test
-    func snapshotLoadsTheRealCatalogAndPreservesBlockedEntries() {
+    func snapshotLoadsThePublicCatalog() {
         let snapshot = AppSnapshot.load()
-        #expect(snapshot.catalog.entries.count == 150)
+        #expect(snapshot.catalog.entries.count == 12)
         #expect(snapshot.catalog.entries.contains { $0.id == "workspace/stc" })
-        #expect(snapshot.catalog.entries.contains { $0.id == "local-brian/ponytail-review" && $0.isBlocked })
+        #expect(snapshot.catalog.entries.allSatisfy { !$0.isBlocked })
     }
 
     @Test
@@ -40,14 +40,14 @@ struct SkillSetCoreTests {
                 excludedPaths: []
             ),
             SkillEntry(
-                id: "local-brian/stc",
+                id: "fixture/stc",
                 slug: "stc",
                 declaredName: "stc",
                 description: "另一个来源",
                 declaredVersion: nil,
                 metadataReview: "reviewed",
-                sourceId: "local-brian",
-                path: "vendor/local-brian/stc",
+                sourceId: "fixture",
+                path: "fixtures/stc",
                 contentHash: "def",
                 fileCount: 1,
                 bytes: 10,
@@ -56,7 +56,7 @@ struct SkillSetCoreTests {
                 excludedPaths: []
             )
         ]
-        #expect(matchingSkills(entries, query: "LOCAL-BRIAN").map(\.id) == ["local-brian/stc"])
+        #expect(matchingSkills(entries, query: "FIXTURE").map(\.id) == ["fixture/stc"])
         #expect(matchingSkills(entries, query: "中文").map(\.id) == ["workspace/stc"])
         #expect(matchingSkills(entries, query: "").count == 2)
         #expect(SkillAssetCopier.sha256(Data("abc".utf8)) == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
@@ -433,10 +433,10 @@ struct SkillSetCoreTests {
         #expect(enterprise.cloneURL == "https://git.example.com/team/platform/skills.git")
         #expect(enterprise.namespace == "team-platform-skills")
 
-        let custom = try service.parseSource("https://git.xiezhi.xin/iamx/skill-set")
-        #expect(custom.cloneURL == "https://git.xiezhi.xin/iamx/skill-set.git")
-        let ssh = try service.parseSource("ssh://git@git.xiezhi.xin:2222/iamx/skill-set.git")
-        #expect(ssh.cloneURL == "ssh://git@git.xiezhi.xin:2222/iamx/skill-set.git")
+        let custom = try service.parseSource("https://github.com/example/skill-set")
+        #expect(custom.cloneURL == "https://github.com/example/skill-set.git")
+        let ssh = try service.parseSource("ssh://git@github.com:2222/example/skill-set.git")
+        #expect(ssh.cloneURL == "ssh://git@github.com:2222/example/skill-set.git")
         let scp = try service.parseSource("git@gitlab.com:team/subgroup/skills.git")
         #expect(scp.cloneURL == "ssh://git@gitlab.com/team/subgroup/skills.git")
         #expect(throws: SourcePreviewError.self) {

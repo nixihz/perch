@@ -82,7 +82,7 @@
 - `licenseHint`、`trustSignals`、`riskFlags`，明确“目录声明”与“本地核验”两个状态；
 - `resolvedCommit`、`contentHash` 仅在现有隔离预览成功后填写。
 
-目录快照进入 `~/.perch`，不写 `registry/catalog.json`、`vendor/` 或全局技能目录。缓存应有 TTL，目录删除/下线只影响发现结果，不删除已导入的本机包。
+目录快照进入 `~/.perch`，不写公开 `registry/catalog.json` 或全局技能目录。缓存应有 TTL，目录删除/下线只影响发现结果，不删除已导入的本机包。
 
 ### 接入流程
 
@@ -131,7 +131,7 @@
 
 ## 未完成项
 
-- 本报告没有安装或启用第三方 Skill，没有修改 `registry/catalog.json`、`vendor/`、全局技能或宿主配置。
+- 本报告没有安装或启用第三方 Skill，没有修改公开 `registry/catalog.json`、全局技能或宿主配置。
 - skills.sh 需要有效 Vercel OIDC token 才能验证真实返回字段和团队授权流程；本次只核验官方文档和未授权错误。
 - 聚合平台的排名、下载量、验证徽章是动态观察值，不应直接作为质量或安全证明。
 - 需要在实现前进一步核实各平台当前条款、配额、版本字段和 API 变化；目录结果的时间戳必须进入快照。

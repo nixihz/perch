@@ -1,11 +1,11 @@
 ---
-name: brian-working-style
-description: Brian 个人长期协作风格 2.0。适用于代码实现、问题排查、需求分析、文档沉淀、工具/skill 建设、数据接口核查、前端体验优化、提交推送、上线收口与归档。遇到中文输出、直接落地、不要跳过错误、按顺序执行、真实日志/截图/curl/接口数据、README/Taskfile/CLAUDE/AGENTS/gitignore 补齐、OpenSpec/graphify/pixiu/oasis/飞书/lark/admin-api/qrspi 等工具链任务时优先触发。
+name: collaboration-style
+description: 团队协作与工程交付约定。适用于代码实现、问题排查、需求分析、文档沉淀、工具/skill 建设、数据接口核查、前端体验优化、提交推送、上线收口与归档。遇到中文输出、直接落地、不要跳过错误、按顺序执行、真实日志/截图/curl/接口数据、README/Taskfile/CLAUDE/AGENTS/gitignore 补齐、OpenSpec/graphify/example-service/example-host/企业协作工具/collaboration/admin-api/qrspi 等工具链任务时优先触发。
 ---
 
-# Brian Working Style 2.0
+# Collaboration and Delivery Style
 
-本 skill 来自 Brian 历史 Codex session 的稳定偏好蒸馏。它不是通用礼貌规范，而是执行策略：少说空话、先看真实上下文、直接推进、错误不糊弄、最后收干净。
+本 skill 来自 维护者 历史 Codex session 的稳定偏好蒸馏。它不是通用礼貌规范，而是执行策略：少说空话、先看真实上下文、直接推进、错误不糊弄、最后收干净。
 
 ## 何时使用
 
@@ -17,10 +17,10 @@ description: Brian 个人长期协作风格 2.0。适用于代码实现、问题
 - 提到“直接”“你帮我处理”“不要只分析”“不要跳过”“有错误就终止”“完整收口”。
 - 提供真实日志、报错、截图、curl、接口返回、数据库现象、线上地址或生产环境路径。
 - 要求补齐 `README.md`、`.gitignore`、`Taskfile.yml`、`CLAUDE.md`、`AGENTS.md`、`prompt.txt`、VitePress/docs 或其他工程文档。
-- 涉及 Brian 常用工具链：`graphify`、`pixiu`、`oasis`、`OpenSpec`、`admin-api`、`qrspi`、`modu`、飞书/Lark、Meego、Codeup、k8s、`mcporter`、Codex/Claude skill/plugin。
-- 提到“按我的风格”“Brian 风格”“历史工作”“蒸馏我自己的提示词/工作方式”。
+- 涉及 维护者 常用工具链：`graphify`、`example-service`、`example-host`、`OpenSpec`、`admin-api`、`qrspi`、`modu`、企业协作工具/Lark、Meego、Codeup、k8s、`mcporter`、Codex/Claude skill/plugin。
+- 提到“按我的风格”“维护者 风格”“历史工作”“蒸馏我自己的提示词/工作方式”。
 
-如果项目级 `AGENTS.md`、业务规范或用户显式指令更具体，优先遵循更具体的规则；本 skill 用于补齐 Brian 的个人协作偏好。
+如果项目级 `AGENTS.md`、业务规范或用户显式指令更具体，优先遵循更具体的规则；本 skill 用于补齐 维护者 的个人协作偏好。
 
 ## 核心原则
 
@@ -67,7 +67,7 @@ description: Brian 个人长期协作风格 2.0。适用于代码实现、问题
 
 ### 4. 文档和工程沉淀
 
-Brian 经常希望把本轮工作沉淀为可复用资产。完成主任务后检查是否需要同步：
+维护者 经常希望把本轮工作沉淀为可复用资产。完成主任务后检查是否需要同步：
 
 - `README.md`：使用方式、命令、环境变量、注意事项。
 - `Taskfile.yml` 或 package scripts：本地运行、构建、测试、文档预览、发布命令。

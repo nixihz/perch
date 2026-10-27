@@ -4,7 +4,7 @@ import SkillSetCore
 
 @MainActor
 final class SourceImportWorkflowUITests: XCTestCase {
-    func testSynchronizedSourceAppearsInLibraryAndProjectPlan() throws {
+    func testSynchronizedSourceAppearsInLibraryAndProject() throws {
         guard NativeUIHarness.canRunInCurrentEnvironment else { throw XCTSkip(NativeUIHarness.unavailableReason) }
         let world = try BDDWorld()
         defer { world.cleanup() }
@@ -47,13 +47,14 @@ final class SourceImportWorkflowUITests: XCTestCase {
         XCTAssertTrue(try ui.hasEnabledButton("在技能库查看"))
         XCTAssertFalse(try ui.hasEnabledButton("加入技能库…"))
         try ui.selectSidebarItem("项目")
+        let registration = try XCTUnwrap(ProjectStore(rootURL: state).list().first)
+        // 来源页跳转后项目列表可能还在异步重载；显式选中项目，确保配置草稿属于本次夹具。
+        try ui.waitForButton("source-import-ui")
+        try ui.pressButton(identifier: "projects.select.\(registration.id.uuidString)")
         try ui.setText(fieldMatching: "projects.search", to: "import-ui")
         try ui.pressButton(identifier: "projects.skill.\(importedID).codex")
-        try ui.previewDeploymentPlan()
-        let plan = try ui.waitForSinglePlan()
-        XCTAssertTrue(plan.plan.changes.contains { $0.relativePath.contains("import-ui") })
-        try ui.pressEscapeToCancelPlan()
-        let registration = try XCTUnwrap(ProjectStore(rootURL: state).list().first)
-        XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: registration.canonicalPath).isEmpty)
+        try ui.waitForStaticText(containing: "已保存")
+        let projectFiles = try FileManager.default.subpathsOfDirectory(atPath: registration.canonicalPath)
+        XCTAssertTrue(projectFiles.contains { $0.contains("import-ui") })
     }
 }

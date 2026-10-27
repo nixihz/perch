@@ -82,7 +82,7 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<'PLIST'
     <key>CFBundleExecutable</key>
     <string>SkillSet</string>
     <key>CFBundleIdentifier</key>
-    <string>com.xiezhixin.perch</string>
+    <string>com.example.perch</string>
     <key>CFBundleName</key>
     <string>栖集</string>
     <key>CFBundleDisplayName</key>

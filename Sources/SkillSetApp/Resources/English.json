@@ -92,7 +92,7 @@
   "AI 接入": "AI Access",
   "AI 接入：AI 工具 → 栖集。让 AI 查询能力、准备计划。": "AI access: AI tool → Perch. Let AI discover capabilities and prepare plans.",
   "AI 请求 plan → 用户在本机 App 或 CLI 批准同一 plan digest → AI 才可调用 apply → 核心复核并写入。": "AI requests a plan → you approve its digest in the local app or CLI → AI may call apply → the core verifies and writes.",
-  "Brian 的本地技能库": "Brian’s Local Skill Library",
+  "外部技能库": "External Skill Library",
   "CLI 或 MCP 只能生成计划；批准动作仍在当前本机窗口完成。": "CLI and MCP can only prepare plans. Approve them in this local window.",
   "Codex MCP 仅支持用户作用域。": "Codex MCP supports user scope only.",
   "Codex 只替换带 skillset 标记的 TOML 块；Claude JSON 保留未知键但会按 JSON 重排对象键。两类配置不会跨宿主复制。": "Codex replaces only skillset-marked TOML blocks. Claude JSON preserves unknown keys but may reorder them. Configuration is never copied across hosts.",

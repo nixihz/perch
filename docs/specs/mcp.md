@@ -115,7 +115,7 @@ AI 调用 deployment_apply(planId, planDigest)
 - 扫描最多 12,000 个文件、512 MiB；解引用仍位于 checkout 根内的目录软链，越界和循环不跟随。
 - 只读取文本和计算内容指纹，不执行 scripts、hooks、postinstall、子模块或 archive 内容。
 - 预览记录兼容早期候选分类字段；原生 UI 按实际文件夹展示技能，不把目录名解释为成熟度或启用状态。许可文件只给迹象，不自动判定合规。
-- 预览保存到本机状态根的 `cache/sources/<uuid>/`，不会修改 `registry/`、`vendor/` 或项目。
+- 预览保存到本机状态根的 `cache/sources/<uuid>/`，不会修改公开 `registry/` 或项目。
 
 原生 UI 另提供隔离预览的编辑与删除；编辑成功后替换旧预览，读取失败时保留旧记录。MCP 通过 `sources_get`、`sources_update` 和 `sources_delete` 提供同等来源管理能力。
 

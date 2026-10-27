@@ -42,7 +42,7 @@ README 将插件自动更新与 editable files 安装明确分开，并警告同
 
 源码优先扫描根目录直接子层；`skills` 及已知 agent 容器最多下探三层。仅“完全未发现”或显式 `fullDepth` 时才递归回退，回退默认 maxDepth 为 5。发现一个 skill 后不再向其内部递归。普通目录遍历只接受 `Dirent.isDirectory()`。默认同名以 `seenNames` 去重，先发现者保留；内部可选择保留重复名供歧义检测。[skills.ts](https://github.com/vercel-labs/skills/blob/a80e4c9d12d607631249d4d7d059f835d4b2f13a/src/skills.ts)、[constants.ts](https://github.com/vercel-labs/skills/blob/a80e4c9d12d607631249d4d7d059f835d4b2f13a/src/constants.ts)
 
-**本项目结论（设计推断）：** 已有正常 skills 时，`vendor/local-brian/*` 不保证被从根安装的 CLI 默认发现；不要把 `npx skills add <本仓>` 描述为全库存安装。使用明确 catalog ID、source ID、revision 和路径选择，禁止按裸 name 自动覆盖。
+**本项目结论（设计推断）：** 外部来源不会因为被导入本机就成为仓库内置内容；不要把 `npx skills add <本仓>` 描述为第三方来源的全库存安装。使用明确 catalog ID、source ID、revision 和路径选择，禁止按裸 name 自动覆盖。
 
 ## 三、Agent Skills 标准不是版本管理协议
 
@@ -93,7 +93,7 @@ README 将插件自动更新与 editable files 安装明确分开，并警告同
 
 - 同名不同来源、branch 移动、tag 重指向、本地编辑后更新、许可证缺失，均不能静默覆盖。
 - 目录软链、文件软链、断链、循环、越界和同一真实目录多入口均有确定扫描结果；broken source 不生成可部署 revision。
-- 记录原始来源与已复制内容的独立身份，离线可复现锁定 revision，不依赖原 `/opt/case/brian/skills` 继续存在。
+- 记录原始来源与已复制内容的独立身份，离线可复现锁定 revision，不依赖来源目录持续存在。
 - 项目与预设锁定具体 revisions，预设升级不自动推进已应用项目；规则模板也有版本与差异预览。
 - Codex/Claude effective discovery 与真实客户端交叉核验；全局技能干扰有可见警告。
 - MCP 非授权写入、过期/重放 approval、计划后修改、并发 apply、进程中断恢复均有行为测试，不写仅断言常量相等的同义反复测试。

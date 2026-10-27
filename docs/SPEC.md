@@ -14,22 +14,21 @@ Skill Set 是一个**本地 macOS 桌面应用**和 Git 大仓，不是 Web 软�
 
 > 这个项目给哪些 agent 使用哪些能力？每项来自哪里、锁在哪个 revision、会写什么文件？AI 能帮我准备到哪一步，哪一步必须由我在本机批准？
 
-第一目标是 Brian 的单用户、多项目、本机工作流；团队协作通过 Git 仓库、清单和锁文件完成，不建设 SaaS、账号体系或技能市场。
+第一目标是个人用户的单用户、多项目、本机工作流；团队协作通过 Git 仓库、清单和锁文件完成，不建设 SaaS、账号体系或技能市场。
 
 ## 2. 已确认库存
 
 | 项 | 事实 |
 | --- | --- |
-| 自维护 skill | `skills/` 下 11 个 |
-| 外部快照 | `/opt/case/brian/skills` 下 139 个：115 个实体目录、24 个顶层软链 |
-| 本轮实体化 | `vendor/local-brian/`，139 包、916 文件、13,502,512 字节 |
-| 来源化记录 | `workspace/<slug>` 11 条 + `local-brian/<slug>` 139 条，共 150 条 |
-| 重名 | 6 组；同内容也保留不同 namespace |
-| 阻塞 | `local-brian/ponytail-review` 中 5 条断链，完整性为 `blocked`，禁止部署 |
-| 旧入口 | `.agents/skills` 和 `.claude/skills` 仍只有原来的 11 条；没有全量启用 |
-| 外部版本 | 旧库 Git HEAD `4536bbd…`，工作区 dirty；本轮以逐文件 manifest/hash 作为快照事实 |
+| 自维护 Skill | `skills/` 下 12 个 |
+| 内置外部快照 | 不随公开仓库发布；通过来源预览和导入流程按需加入本机库 |
+| 来源记录 | `workspace/<slug>` 只记录随仓库发布的自维护 Skill |
+| 重名 | 外部来源导入时按来源 ID 和 slug 识别，禁止静默覆盖 |
+| 阻塞 | 来源预览发现断链、越界或敏感内容时标为 `blocked`，禁止部署 |
+| 入口 | `.agents/skills` 和 `.claude/skills` 只包含随仓库发布的自维护入口 |
+| 版本 | 仓库目录、Skill 内容 hash、项目锁和本机导入版本分别管理 |
 
-`registry/catalog.json`、`registry/local-import.json` 和 `docs/research/local-inventory.md` 是本轮迁移证据。指纹通过不等于许可、安全或模型行为审核；外部内容先私用，公开发布前必须逐来源核查授权。
+`registry/catalog.json` 是随仓库发布内容的可核验目录。外部内容不会因为预览成功就获得再分发许可；导入本机前仍须核查来源授权、安全和模型行为。
 
 ## 3. 研究决策
 
@@ -55,7 +54,7 @@ Skill Set 是一个**本地 macOS 桌面应用**和 Git 大仓，不是 Web 软�
 
 - SwiftPM + SwiftUI 原生 macOS 应用，SwiftPM 产品名为 `SkillSetDesktop`，入口为 `script/build_and_run.sh` 生成并启动 `dist/SkillSet.app`。
 - 原生导航：项目、Skills、MCP Servers、Plugins、来源、预设、AGENTS 片段、AI 接入。
-- 载入真实 150 条 catalog、3 个预设、3 个 AGENTS 片段和 Matt 固定调研快照；搜索、详情、阻塞态、同名 namespace 可见。
+- 载入随仓库发布的 12 条 catalog、3 个预设、3 个 AGENTS 片段和 Matt 固定调研快照；搜索、详情和来源状态可见。
 - 项目 canonical path 登记、草稿持久化、preset 载入、项目观察、plan → 本机审批 → apply → journal → rollback；可同时写 Codex `.agents/skills` + `AGENTS.md` 与 Claude Code `.claude/skills` + `CLAUDE.md`。
 - 项目接入第一阶段：同时盘点两个宿主的项目技能，展示已有/受管归属；同内容不自动接管，不同内容同路径冲突与受管漂移阻塞。取消技能或宿主时只移除有本机记录且未漂移的受管技能与规则块；删除可撤销，规则块外编辑保留，空文件还原与恢复预检有行为覆盖。
 - 本机项目安装选择、版本记录、manifest digest、逐文件清单和内容寻址离线对象；源目录缺失时可以从锁与对象核验、恢复。
@@ -93,7 +92,7 @@ Skill Set 是一个**本地 macOS 桌面应用**和 Git 大仓，不是 Web 软�
 ## 5. 明确不做
 
 - 不做浏览器 Web UI、localhost API、云端同步、账号、支付或公开技能市场。
-- 不把整份 `vendor/` 当默认安装包，不把收录直接等同于启用。
+- 不把外部来源快照当默认安装包，不把收录直接等同于启用。
 - 不自动运行 skill/plugin 脚本、hooks、command source、npm postinstall、archive 内程序或子模块过滤器。
 - 不读取、打印、上传 API key/OAuth token，不从 Keychain 导出明文。
 - 不允许 AI 通过 `confirmed=true`、自然语言或 MCP annotation 自行授权；不静默改全局入口、宿主信任或未知插件。
@@ -130,8 +129,7 @@ Skill Set 是一个**本地 macOS 桌面应用**和 Git 大仓，不是 Web 软�
 
 ```text
 skills/                         自维护正文
-vendor/<source>/<skill>/         外部实体快照
-registry/                        来源、目录、manifest、导入凭证
+registry/                        来源、目录和 manifest
 objects/                         按内容寻址的 Skill 文件与 manifest
 presets/                         可复现预设 revision
 templates/agents/                AGENTS/CLAUDE 片段
@@ -148,7 +146,7 @@ Sources/SkillSetCLI/             CLI 与 stdio MCP
   previews/                      隔离来源 checkout 与预览记录
 ```
 
-项目安装选择与版本记录保存在 `~/.perch/project-state/<canonical-path-sha256>/`，分别表达期望和锁定具体 object、目标宿主及逐文件 hash；观察、归属和恢复信息同样只保存在应用数据目录。用户项目只写所选宿主实际需要的技能、规则与配置，不添加 `skillset.json`、`skillset.lock.json` 或 `.skillset-local/`。迁移凭证中的私有绝对路径仅限本仓私有使用，公开导出必须剥离。
+项目安装选择与版本记录保存在 `~/.perch/project-state/<canonical-path-sha256>/`，分别表达期望和锁定具体 object、目标宿主及逐文件 hash；观察、归属和恢复信息同样只保存在应用数据目录。用户项目只写所选宿主实际需要的技能、规则与配置，不添加 `skillset.json`、`skillset.lock.json` 或 `.skillset-local/`。
 
 ## 9. 当前交互边界
 
@@ -159,7 +157,7 @@ Sources/SkillSetCLI/             CLI 与 stdio MCP
 ## 10. 待决策
 
 - M1 使用 copy 还是只指向应用不可变 store 的 link：默认 copy，link 需先做宿主和备份验证。
-- 是否把旧 `/opt/case/brian/skills` 归档：不自动修改，先完成许可和阻塞审查。
+- 是否把本机外部 Skill 库归档：由使用者自行决定，Perch 不修改来源目录。
 - MCP modern 与 legacy 的 SDK 锁版本：必须以当前目标客户端的端到端证据决定。
 - 是否支持 Codex Plugin manifest：当前官方 schema 证据不足，先只显示 marketplace 和能力矩阵。
 - 公开发布范围：完成许可、脱敏、可执行内容审查前不发布外部快照。

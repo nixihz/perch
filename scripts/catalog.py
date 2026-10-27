@@ -155,8 +155,9 @@ def git_info(root):
     }
 
 
-def build_catalog(repo, source, allowed_roots, copy=False):
-    repo, source = Path(repo).resolve(), Path(source).resolve()
+def build_catalog(repo, source=None, allowed_roots=(), copy=False, include_local=False):
+    repo = Path(repo).resolve()
+    source = Path(source).resolve() if source else None
     catalog = {"schemaVersion": 1, "hashAlgorithm": "sha256:path-content-executable:v1", "entries": []}
     report = {
         "schemaVersion": 1, "sourceRoot": str(source), "sourceGit": git_info(source),
@@ -167,10 +168,10 @@ def build_catalog(repo, source, allowed_roots, copy=False):
             "正则扫描不能证明没有秘密；发布前仍须人工审核来源和许可。",
         ],
     }
-    for namespace, parent, destination_parent in (
-        ("workspace", repo / "skills", repo / "skills"),
-        ("local-brian", source, repo / "vendor" / "local-brian"),
-    ):
+    sources = [("workspace", repo / "skills", repo / "skills")]
+    if include_local and source:
+        sources.append(("local-snapshot", source, repo / "vendor" / "local-snapshot"))
+    for namespace, parent, destination_parent in sources:
         roots = [repo / "skills"] if namespace == "workspace" else allowed_roots
         for directory in sorted(parent.iterdir()):
             if directory.name.startswith(".") or not (directory / "SKILL.md").is_file():
@@ -192,7 +193,7 @@ def build_catalog(repo, source, allowed_roots, copy=False):
             destination = destination_parent / directory.name
             meta = metadata(directory / "SKILL.md")
             action = "workspace"
-            if namespace == "local-brian":
+            if namespace == "local-snapshot":
                 action = materialize(directory, destination, info, roots) if copy else "planned"
                 report["entries"].append({
                     "id": f"{namespace}/{directory.name}", "sourcePath": str(directory),
@@ -237,12 +238,14 @@ def verify(repo):
             failures.append(f'{entry["id"]}: 内容或可执行位与清单不符')
         if actual["links"]:
             failures.append(f'{entry["id"]}: 实体快照内仍存在软链')
-    report = json.loads((repo / "registry" / "local-import.json").read_text())
-    by_id = {entry["id"]: entry for entry in catalog["entries"]}
-    for item in report["entries"]:
-        entry = by_id.get(item["id"])
-        if not entry or item["contentHash"] != entry["contentHash"] or item["issues"] != entry["issues"]:
-            failures.append(f'{item["id"]}: 导入报告与目录清单不一致')
+    report_path = repo / "registry" / "local-import.json"
+    if report_path.exists():
+        report = json.loads(report_path.read_text())
+        by_id = {entry["id"]: entry for entry in catalog["entries"]}
+        for item in report["entries"]:
+            entry = by_id.get(item["id"])
+            if not entry or item["contentHash"] != entry["contentHash"] or item["issues"] != entry["issues"]:
+                failures.append(f'{item["id"]}: 导入报告与目录清单不一致')
     return failures
 
 
@@ -250,7 +253,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=("inventory", "import", "verify"))
     parser.add_argument("--repo", type=Path, default=Path(__file__).resolve().parents[1])
-    parser.add_argument("--source", type=Path, default=Path("/opt/case/brian/skills"))
+    parser.add_argument("--source", type=Path)
+    parser.add_argument("--include-local-snapshot", action="store_true",
+                        help="显式加入本机来源快照；公开仓库默认只收录自维护技能。")
     parser.add_argument("--allow-linked-root", action="append", type=Path, default=[])
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
@@ -262,11 +267,22 @@ def main():
             raise SystemExit(1)
         print("目录指纹核验通过；未验证许可证、运行依赖或模型行为。")
         return
-    roots = [args.source, *args.allow_linked_root]
-    catalog, report = build_catalog(args.repo, args.source, roots, copy=args.command == "import")
+    if args.include_local_snapshot and not args.source:
+        parser.error("--include-local-snapshot 需要同时提供 --source")
+    roots = [args.repo / "skills"]
+    if args.include_local_snapshot:
+        roots = [args.source, *args.allow_linked_root]
+    catalog, report = build_catalog(
+        args.repo,
+        args.source,
+        roots,
+        copy=args.command == "import",
+        include_local=args.include_local_snapshot,
+    )
     if args.command == "import":
         write_json(args.repo / "registry" / "catalog.json", catalog)
-        write_json(args.repo / "registry" / "local-import.json", report)
+        if args.include_local_snapshot:
+            write_json(args.repo / "registry" / "local-import.json", report)
     elif args.output:
         write_json(args.output, report)
     print(json.dumps({

@@ -407,50 +407,22 @@ public struct ProjectRecord: Identifiable, Hashable, Sendable {
 
     public static let demo: [ProjectRecord] = [
         ProjectRecord(
-            id: "skill-set",
-            name: "skill-set",
-            path: "/opt/case/iamx/skill-set",
+            id: "example-project",
+            name: "example-project",
+            path: "/path/to/your-project",
             adapter: "Codex",
-            inherited: "~/.agents/skills · 11 条全局入口",
+            inherited: "未发现全局覆盖",
             draftSkillIDs: [
-                "workspace/brian-working-style",
                 "workspace/project-guide",
                 "workspace/stc"
             ],
             appliedSkillIDs: [
-                "workspace/brian-working-style",
                 "workspace/project-guide"
             ],
-            agents: ["Codex", "Claude Code"],
-            fragments: ["base-zh", "engineering"],
-            pendingChanges: 2,
-            lockStatus: "absent"
-        ),
-        ProjectRecord(
-            id: "ai-trading-bot",
-            name: "ai-trading-bot",
-            path: "/opt/case/brian/ai-trading-bot",
-            adapter: "Codex",
-            inherited: "无已知项目覆盖",
-            draftSkillIDs: ["local-brian/ai-trading-bot"],
-            appliedSkillIDs: ["local-brian/ai-trading-bot"],
             agents: ["Codex"],
-            fragments: ["base-zh"],
-            pendingChanges: 0,
-            lockStatus: "valid"
-        ),
-        ProjectRecord(
-            id: "commerce",
-            name: "commerce",
-            path: "/opt/case/brian/commerce",
-            adapter: "Claude Code",
-            inherited: "父目录 CLAUDE.md · 待观察",
-            draftSkillIDs: ["workspace/stc", "workspace/project-guide"],
-            appliedSkillIDs: ["workspace/stc"],
-            agents: ["Claude Code"],
             fragments: ["base-zh", "engineering"],
             pendingChanges: 1,
-            lockStatus: "stale"
+            lockStatus: "absent"
         )
     ]
 }

@@ -16,7 +16,7 @@ final class PresetSelectionTests: XCTestCase {
             // 通过真实编辑入口建立 Claude 草稿，避免仅改展示字段留下 Codex 映射。
             model.toggleAgent(.codex)
             model.selectProjectHost(.claude)
-            for id in ["workspace/stc", "local-brian/research"] {
+            for id in ["workspace/stc", "workspace/likec4-dsl"] {
                 model.toggleSkill(try XCTUnwrap(model.snapshot.catalog.entries.first { $0.id == id }))
             }
             for id in ["base-zh", "ui-craft"] {
@@ -27,9 +27,9 @@ final class PresetSelectionTests: XCTestCase {
             let preset = try XCTUnwrap(model.snapshot.presets.first { $0.id == "personal-base" })
             let beforePreview = model.projects
             let preview = PresetDraftPreview(preset: preset, project: model.projects[index], snapshot: model.snapshot)
-            XCTAssertEqual(preview.skills.added, ["workspace/brian-working-style", "workspace/project-guide"])
+            XCTAssertEqual(preview.skills.added, ["workspace/collaboration-style", "workspace/project-guide"])
             XCTAssertEqual(preview.skills.retained, ["workspace/stc"])
-            XCTAssertEqual(preview.skills.removed, ["local-brian/research"])
+            XCTAssertEqual(preview.skills.removed, ["workspace/likec4-dsl"])
             XCTAssertEqual(preview.instructions.added, ["engineering"])
             XCTAssertEqual(preview.instructions.retained, ["base-zh"])
             XCTAssertEqual(preview.instructions.removed, ["ui-craft"])
@@ -42,7 +42,7 @@ final class PresetSelectionTests: XCTestCase {
             XCTAssertEqual(model.selectedProjectID, second)
             XCTAssertEqual(model.section, .projects)
             let saved = try XCTUnwrap(store.load(projectID: UUID(uuidString: second)!))
-            XCTAssertEqual(saved.skillIDs, ["workspace/brian-working-style", "workspace/project-guide", "workspace/stc"])
+            XCTAssertEqual(saved.skillIDs, ["workspace/collaboration-style", "workspace/project-guide", "workspace/stc"])
             XCTAssertEqual(saved.instructionIDs, ["base-zh", "engineering"])
             XCTAssertEqual(saved.agents, ["claude-code"])
             XCTAssertEqual(try store.load(projectID: UUID(uuidString: first)!), firstBefore)
@@ -67,27 +67,22 @@ final class PresetSelectionTests: XCTestCase {
 
             var conflict = PresetEditorDraft()
             conflict.name = "冲突组合"
-            conflict.skills = ["workspace/stc", "local-brian/stc"]
+            conflict.skills = ["fixture/stc", "fixture/other"]
             XCTAssertFalse(model.savePreset(conflict))
             let conflictMessage = L10n.tr(try XCTUnwrap(model.presetError))
-            XCTAssertTrue(conflictMessage.contains("同名冲突"))
-            XCTAssertTrue(conflictMessage.contains("stc（local-brian）"))
-            XCTAssertTrue(conflictMessage.contains("stc（workspace）"))
+            XCTAssertTrue(conflictMessage.contains("技能「stc」不在技能库。请从预设中移除这项引用。"))
             XCTAssertFalse(FileManager.default.fileExists(atPath: store.documentURL.path))
 
             preferences.language = .english
-            XCTAssertTrue(L10n.tr(try XCTUnwrap(model.presetError)).contains("Name conflict. Keep only one:"))
-            XCTAssertTrue(L10n.tr(try XCTUnwrap(model.presetError)).contains("stc（workspace）"))
+            XCTAssertTrue(L10n.tr(try XCTUnwrap(model.presetError)).contains("Skill “stc” is not in the library."))
             preferences.language = .chinese
 
-            var blocked = PresetEditorDraft()
-            blocked.name = "不可用技能"
-            blocked.skills = ["local-brian/ponytail-review"]
-            XCTAssertFalse(model.savePreset(blocked))
-            let blockedMessage = L10n.tr(try XCTUnwrap(model.presetError))
-            XCTAssertEqual(blockedMessage.components(separatedBy: "链接目标丢失或循环引用").count - 1, 1)
-            XCTAssertTrue(blockedMessage.contains("技能「ponytail-review」暂不可用"))
-            XCTAssertTrue(blockedMessage.contains("来源：local-brian"))
+            var unavailable = PresetEditorDraft()
+            unavailable.name = "不可用技能"
+            unavailable.skills = ["fixture/missing-skill"]
+            XCTAssertFalse(model.savePreset(unavailable))
+            let unavailableMessage = L10n.tr(try XCTUnwrap(model.presetError))
+            XCTAssertTrue(unavailableMessage.contains("技能「missing-skill」不在技能库。请从预设中移除这项引用。"))
 
             var missing = PresetEditorDraft()
             missing.name = "缺失规则"
@@ -131,8 +126,8 @@ final class PresetSelectionTests: XCTestCase {
             let diskBefore = try Data(contentsOf: store.documentURL)
             for preset in [
                 try makePreset(skills: ["workspace/stc", "missing/skill"]),
-                try makePreset(skills: ["local-brian/ponytail-review"]),
-                try makePreset(skills: ["workspace/stc", "local-brian/stc"]),
+                try makePreset(skills: ["fixture/missing-skill"]),
+                try makePreset(skills: ["fixture/stc", "fixture/other"]),
                 try makePreset(skills: ["workspace/stc"], instructions: ["missing-rule"])
             ] {
                 let preview = PresetDraftPreview(preset: preset, project: model.projects[0], snapshot: model.snapshot)

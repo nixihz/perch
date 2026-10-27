@@ -22,7 +22,7 @@ class UpdatePackagingTests(unittest.TestCase):
         self.plist_path = Path(self.temp.name) / "Info.plist"
         self.config = {"version": "1.2.3", "build": "42", "feedURL": "", "publicEDKey": ""}
         self.plist_path.write_bytes(plistlib.dumps({
-            "CFBundleIdentifier": "com.brian.skillset", "CFBundleExecutable": "SkillSet",
+            "CFBundleIdentifier": "com.example.perch", "CFBundleExecutable": "SkillSet",
             "SUFeedURL": "https://old.example.com/appcast.xml", "SUPublicEDKey": "old-key",
         }))
 
@@ -33,7 +33,7 @@ class UpdatePackagingTests(unittest.TestCase):
     def test_unconfigured_bundle_removes_stale_feed_and_preserves_identity(self):
         updates.apply_configuration(self.plist_path, self.load())
         result = plistlib.loads(self.plist_path.read_bytes())
-        self.assertEqual(result["CFBundleIdentifier"], "com.brian.skillset")
+        self.assertEqual(result["CFBundleIdentifier"], "com.example.perch")
         self.assertEqual(result["CFBundleExecutable"], "SkillSet")
         self.assertEqual(result["CFBundleShortVersionString"], "1.2.3")
         self.assertEqual(result["CFBundleVersion"], "42")

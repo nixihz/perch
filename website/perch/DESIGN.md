@@ -6,6 +6,6 @@
 
 公开页面仅包含产品介绍、品牌素材、公证安装包与 Sparkle 更新清单，不包含技能库存或仓库内容。版本来自 config/updates.json，新平台统一提供 DMG 下载；明确 macOS 14+、Intel / Apple Silicon 与预览版本。首次启用在线更新的构建须说明旧版需要手动安装一次，后续通过应用菜单检查更新。
 
-从桌面 build 4 起，官网挂载入口为 `https://app.u1.fan/x/perch/`，平台跳转至独立域名 `https://perch.u1.fan/`；资源、DMG 链接使用相对路径，兼容两种入口。下载区域明确说明旧版需手动安装一次迁移版，再使用应用内更新。新页面不引导用户到 keli.tech 获取更新。
+从桌面 build 4 起，官网挂载入口为 `https://updates.example.com/x/perch/`，平台跳转至独立域名 `https://perch.example.com/`；资源、DMG 链接使用相对路径，兼容两种入口。下载区域明确说明旧版需手动安装一次迁移版，再使用应用内更新。新页面不引导用户到 legacy.example.com 获取更新。
 
 新平台发布包上限为 25 MiB；官网统一使用 DMG，供手动安装和 Sparkle 更新共用。ZIP 可作为本地离线分发产物保留，不在新官网显示不可用的下载选项。

@@ -1,5 +1,0 @@
-interface:
-  display_name: "商业化后台接口 CLI"
-  short_description: "使用 apps-cli 查询七猫广告和七小猫后台 API，支持生产、测试与开发环境"
-  default_prompt: "使用 $admin-api-pixiu 查询七猫广告后台或七小猫后台接口。"
-  icon_small: "./assets/admin-api-pixiu.png"

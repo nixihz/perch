@@ -1,13 +1,13 @@
 # 栖集在线更新
 
-已接入 Sparkle 2.10.0，参考 `/opt/case/iamx/tod/apple/Sources/MacUpdates.swift` 的单更新器与设置交互。从迁移版 `0.0.1 (4)` 起，[官网](https://app.u1.fan/x/perch/)、下载包和更新清单均迁至 `app.u1.fan`，不再更新 keli.tech。旧版内置旧清单地址，须从新官网手动安装一次迁移版；之后使用新清单检查更新。下方 build 2 / 3 的 keli.tech 验收记录保留为历史，不作为后续发布入口。
+已接入 Sparkle 2.10.0，参考 `the Sparkle update reference implementation` 的单更新器与设置交互。从迁移版 `0.0.1 (4)` 起，[官网](https://updates.example.com/x/perch/)、下载包和更新清单均迁至 `updates.example.com`，不再更新 legacy.example.com。旧版内置旧清单地址，须从新官网手动安装一次迁移版；之后使用新清单检查更新。下方 build 2 / 3 的 legacy.example.com 验收记录保留为历史，不作为后续发布入口。
 
 首次启用的配置：
 
-- 当前清单：`https://app.u1.fan/x/perch/updates/macos/appcast.xml`。
-- 公钥：`3EB2chk/1iPXBBWYoCpL1IMTXf09D0IsFnH9oceg5oI=`；私钥保存在发布机登录钥匙串的 `com.xiezhixin.perch` account。
+- 当前清单：`https://updates.example.com/x/perch/updates/macos/appcast.xml`。
+- 公钥：`AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=`；私钥保存在发布机登录钥匙串的 `com.example.perch` account。
 - 已发布的 `0.0.1 (1)` 未包含 `SUFeedURL`、`SUPublicEDKey`，须手动安装一次启用版。旧下载地址继续保留，不覆盖原包。
-- 发布 CLI 0.1.3 的请求体上限为 200 MiB、解压上限为 100 MiB，官网与 Sparkle 统一使用 DMG；ZIP 仅保留为本地离线分发产物。见[网站部署说明](../website/perch/README.md)。清单引用同一应用挂载路径下唯一命名的 DMG。
+- 发布 CLI 0.1.3 的请求体上限为 200 MiB、解压上限为 100 MiB，官网与 Sparkle 统一使用 DMG；ZIP 仅保留为本地离线分发产物。见[网站部署说明](../your deployment documentation)。清单引用同一应用挂载路径下唯一命名的 DMG。
 - 不能仅凭 HTTP 200 判定 appcast 可用，必须核对 RSS XML 内容、enclosure、签名和实际下载字节；缺失静态路径可能回退到 HTML 首页。
 
 ## 客户端行为
@@ -44,17 +44,17 @@ PERCH_SIGNING_IDENTITY='Developer ID Application: <name> (<team>)' \
 
 输出默认是 `dist/栖集.app`。`PERCH_BUILD_PATH` 可指定独立 SwiftPM 构建目录；`PERCH_DIST_DIR` 可指定独立输出目录。框架来自已锁定的 SwiftPM artifact，用 `ditto` 保留软链与权限，应用通过包内 Frameworks runpath 加载。打包脚本按 XPC、Autoupdate、Updater.app、framework、Helpers 资源包、内置 CLI、主应用的顺序签名，并执行严格递归验签和仓库外 CLI/MCP 握手验证。
 
-当前发布 Bundle ID 为 `com.xiezhixin.perch`，内置 CLI 位于 `Contents/Helpers/skillset`。后续更新保持同一 Bundle ID 和稳定的安装路径，使宿主配置引用的内置 CLI 路径持续有效。
+当前发布 Bundle ID 为 `com.example.perch`，内置 CLI 位于 `Contents/Helpers/skillset`。后续更新保持同一 Bundle ID 和稳定的安装路径，使宿主配置引用的内置 CLI 路径持续有效。
 
 ## 后续发版步骤
 
 Sparkle 工具随依赖下载至 `<构建目录>/artifacts/sparkle/Sparkle/bin/`。发布机使用公证 profile：`APP-Notary-2026`；它由 notarytool 从钥匙串读取，不在仓库保存凭据。此前一次提交返回 profile lookup failure，后续 history 与 submit 均成功，最初失败的具体原因尚未确认；撤回此前“缺少 profile”的结论。
 
-1. 先核对发布机是否已有栖集专用的 Sparkle 密钥；有则沿用。尚未创建时，使用 `generate_keys --account com.xiezhixin.perch` 创建独立密钥。私钥保留在发布机 Keychain，并安排安全的独立备份；仅把输出公钥写入配置。之后 `generate_appcast` 使用同一 account。
+1. 先核对发布机是否已有栖集专用的 Sparkle 密钥；有则沿用。尚未创建时，使用 `generate_keys --account com.example.perch` 创建独立密钥。私钥保留在发布机 Keychain，并安排安全的独立备份；仅把输出公钥写入配置。之后 `generate_appcast` 使用同一 account。
 2. 配置独立 appcast 地址，递增构建号，以 Developer ID 签名构建 Release 通用包。核对 `codesign -dv --verbose=4` 的 TeamIdentifier、hardened runtime、包版本和公钥。
 3. 将应用打成 ZIP，使用 `xcrun notarytool submit --keychain-profile APP-Notary-2026 --wait` 完成 Apple 公证；执行 `xcrun stapler staple`、`xcrun stapler validate` 和 `spctl --assess --type execute --verbose=4`。将已装订应用与 `/Applications` 链接制作成 DMG，Developer ID 签名后再提交 DMG 公证并装订。官网下载 ZIP 从已装订应用重新生成。
-4. 使用 `python3 script/prepare_sparkle_update.py <已公证DMG> <新的输出目录>` 生成签名 appcast。脚本验证应用版本、公钥、地址、公证和系统信任，再调用 `generate_appcast --account com.xiezhixin.perch` 与 `sign_update --verify`，核对 enclosure URL、版本、长度、Ed25519 签名和最低 macOS 14。签名覆盖最终 DMG 字节，之后不能修改包；脚本拒绝覆盖既有输出目录，也不自动上传。
-5. 按[网站部署说明](../website/perch/README.md)，从干净源码提交组装官网、品牌图、唯一 DMG 与 appcast，在同一平台版本中发布；核对五个来源文件、生成元数据、包体积与隔离预览。发布后匿名核对完整下载 SHA-256、长度、GET/HEAD/Range，并独立执行官方 Sparkle 验签。清单应返回 `Cache-Control: no-cache`；旧版本保留在平台发布历史，不覆盖已经公开的构建。
+4. 使用 `python3 script/prepare_sparkle_update.py <已公证DMG> <新的输出目录>` 生成签名 appcast。脚本验证应用版本、公钥、地址、公证和系统信任，再调用 `generate_appcast --account com.example.perch` 与 `sign_update --verify`，核对 enclosure URL、版本、长度、Ed25519 签名和最低 macOS 14。签名覆盖最终 DMG 字节，之后不能修改包；脚本拒绝覆盖既有输出目录，也不自动上传。
+5. 按[网站部署说明](../your deployment documentation)，从干净源码提交组装官网、品牌图、唯一 DMG 与 appcast，在同一平台版本中发布；核对五个来源文件、生成元数据、包体积与隔离预览。发布后匿名核对完整下载 SHA-256、长度、GET/HEAD/Range，并独立执行官方 Sparkle 验签。清单应返回 `Cache-Control: no-cache`；旧版本保留在平台发布历史，不覆盖已经公开的构建。
 6. 用前一版正式安装包检查更新，完成下载、安装、重启，并验证项目数据与包内 CLI/MCP。记录签名、公证和线上校验结果后再宣称更新可用。
 
 首次启用需手动安装一个已经内置公钥与地址的版本；先前未包含 Sparkle 的应用无法自行发现此次更新。丢失私钥会影响旧客户端验签，不应直接生成新密钥并覆盖线上公钥。
@@ -82,7 +82,7 @@ python3 -m unittest tests.test_update_packaging tests.test_ui_localization -v
 - DMG：`Perch-0.0.1-2-universal.dmg`，25,097,611 字节，SHA-256：`46ba7ba9a4f3fabc8d058911e9d2efad2c02e4d2dbbebe114ba7fca21ce1c4db`。ZIP：20,869,967 字节，SHA-256：`a327f42ace8ba63d0ec190618abc54bc7e870d31d023c60bb7ccfa1011dc1729`。本地报告位于 `dist/release-v0.0.1-2/release-verification.json`。
 - 站点整包超过平台 25 MiB 上传上限；已改用既有 SSH 发布通道增量上传唯一命名 DMG 与 ZIP，服务器和公网完整下载的 SHA-256、长度一致，HEAD 返回 200，旧文件保留。站点对 Range 请求返回完整文件（200），当前不支持分段续传。公网下载检查报告保存在 `dist/release-v0.0.1-2/public-download-verification.json`。
 - 用户已批准两个签名工具访问栖集密钥，并在本机完成精确的 partition 授权修复；私钥未导出。`generate_appcast` 与 `sign_update --verify` 均成功。
-- 已发布签名 enclosure 的 [RSS 清单](https://perch.keli.tech/updates/macos/appcast.xml)，公网响应为 XML 内容并返回 `Cache-Control: no-cache`；清单字节与本地一致，SHA-256：`871bfc3897fcafc22eb35a260adae3599fd79144686dec2101ec174d369b9cc9`。官网已切换到 build 2 的 DMG 和 ZIP。验证报告：`dist/release-v0.0.1-2/public-appcast-verification.json`。
+- 已发布签名 enclosure 的 [RSS 清单](https://perch.example.com/updates/macos/appcast.xml)，公网响应为 XML 内容并返回 `Cache-Control: no-cache`；清单字节与本地一致，SHA-256：`871bfc3897fcafc22eb35a260adae3599fd79144686dec2101ec174d369b9cc9`。官网已切换到 build 2 的 DMG 和 ZIP。验证报告：`dist/release-v0.0.1-2/public-appcast-verification.json`。
 - 在仓库外、隔离的 `CFFIXED_USER_HOME` 中启动正式应用 `0.0.1 (2)`，设置页更新按钮可用；实际检查公网清单后，Sparkle 显示 “You’re up to date!”。未修改真实项目或宿主配置。
 - 待完成：两个正式版本之间的下载、安装、重启与数据保留验收；首次启用版不将旧 build 1 视为已具备更新能力。
 
@@ -103,13 +103,13 @@ python3 -m unittest tests.test_update_packaging tests.test_ui_localization -v
 
 2026-10-22 构建 `0.0.1 (4)` 新平台迁移与发布验证：
 
-- 目标平台为 `https://app.u1.fan`，应用 `perch`，内部挂载路由 `/x/perch/`；清单、enclosure 和官网链接均使用该挂载路径。`script/prepare_sparkle_update.py` 从清单地址计算官网路径，不再硬编码 keli.tech。
+- 目标平台为 `https://updates.example.com`，应用 `perch`，内部挂载路由 `/x/perch/`；清单、enclosure 和官网链接均使用该挂载路径。`script/prepare_sparkle_update.py` 从清单地址计算官网路径，不再硬编码 legacy.example.com。
 - 保留原 Bundle ID 与 Sparkle 公钥。应用及内置 CLI 均为 arm64 / x86_64，Developer ID、hardened runtime、严格递归验签、Apple 公证、装订和 Gatekeeper 检查通过。应用公证 ID：`045232b1-a0e9-4cd4-91e7-92bed53de886`；DMG 公证 ID：`c4a09e27-df3c-4155-821e-01c996b33b96`。
 - DMG：`Perch-0.0.1-4-universal.dmg`，25,210,037 字节，SHA-256：`e4b2f26e190f8ee89173f17e4a90a67e2e809607dfc9a64d89185506a30843e0`。签名清单 SHA-256：`8a066165f4bdbed3bc3ed149be09be664a53a7c63dd7e868872546f5ecea6ea3`，`sign_update --verify` 通过。ZIP 保留为本地离线产物，不进入新站发布包。
 - Python 31 项、Swift 更新与设置 7 项通过；包内及独立 CLI 均完成仓库外 MCP 验证（17 个工具）。`app-platform package` 的完整文件清单和逐文件字节一致；真实隔离预览的首页、图片、DMG、appcast 共 4 个文件 HTTP 与 SHA-256 核验通过，预览退出后临时数据已清理。预览 Range 返回完整文件（200）。
 - 平台发布目录：`dist/perch-app-platform-v0.0.1-4/`；上传 ZIP 为 `dist/perch-app-platform-v0.0.1-4.zip`，23,325,935 字节，低于平台 25 MiB 上限。CLI 会排除 `.zip` 文件，改为 `.download` 后 DMG 与 ZIP 合包仍超限，因此官网统一使用 DMG。
-- 已通过现有管理员 CLI 登录发布，新平台 release ID 为 `407bf84e-1cfc-4d5e-b5da-83b46d84de57`。登录数据位于本机 `~/data`；CLI 默认按当前工作目录查找 `data`，发布时须显式复用有效目录。旧 keli.tech 站点未修改。完整报告：`dist/release-v0.0.1-4/release-verification.json`。
-- 平台设置了独立应用根域，`https://app.u1.fan/x/perch/` 及其资源会以 308 跳转到 `https://perch.u1.fan/`。发布后补齐了 Perch 专用 Nginx 入口，复用已有有效通配证书；未修改平台应用根域、证书或其他应用配置。配置见 `website/perch/perch.u1.fan.nginx.conf`，服务器维护记录：`/root/deploy-backups/perch-hosting-build4-20261022T0655Z/`。
+- 已通过现有管理员 CLI 登录发布，新平台 release ID 为 `407bf84e-1cfc-4d5e-b5da-83b46d84de57`。登录数据位于本机 `~/data`；CLI 默认按当前工作目录查找 `data`，发布时须显式复用有效目录。旧 legacy.example.com 站点未修改。完整报告：`dist/release-v0.0.1-4/release-verification.json`。
+- 平台设置了独立应用根域，`https://updates.example.com/x/perch/` 及其资源会以 308 跳转到 `https://perch.example.com/`。发布后补齐了 Perch 专用 Nginx 入口，复用已有有效通配证书；未修改平台应用根域、证书或其他应用配置。配置见 `your hosting configuration`，服务器维护记录：`/root/deploy-backups/perch-hosting-build4-20261022T0655Z/`。
 - 匿名 HTTPS 验证首页、图片、appcast 和完整 DMG，最终地址均为 Perch 子域；4 个文件长度与 SHA-256 均与发布目录一致。公网 DMG 的 `sign_update --verify` 通过；清单保持新平台 enclosure、build 4、macOS 14 与原公钥，返回 `Cache-Control: no-cache`。HEAD 返回 200 和长度 25,210,037；Range 返回完整文件（200），不支持分段续传。报告：`dist/release-v0.0.1-4/public-platform-verification.json`。
 - Nginx 配置检查及 reload 通过，既有平台与 Capslock Bye 配置逐字节保持原样；平台、Capslock Bye 及同机两个站点的公网首页摘要在变更前后一致。HTTP 到 HTTPS 跳转保留路径与查询参数。浏览器自动化工具超时，未完成本轮浏览器视觉复核；已通过真实公网匿名 HTTP 与文件校验。
 - 待完成：手动安装迁移版后，两个正式版本之间的应用内下载、安装、重启与数据保留验收。旧版内置旧 feed，不会自行发现新平台，本次不修改旧清单。通配证书沿用平台现有手工 DNS-01 续期安排，到期时间为 2027-01-20；本次未更改续期策略。
@@ -121,9 +121,9 @@ python3 -m unittest tests.test_update_packaging tests.test_ui_localization -v
 - 最终完整回归通过：128 项 Swift Testing、73 项 XCTest、317 项 BDD 步骤；Python 31 项、Node 5 项、skill 结构和目录指纹检查通过。保留初次失败日志，最终结果见 `dist/release-v0.0.1-5/swift-tests-final.log`。App 与内置 CLI 均为 arm64 / x86_64，严格递归验签、hardened runtime 和包内／独立 CLI 仓库外 MCP 握手通过（各 17 个工具）。
 - App 与 DMG 均使用原 Developer ID 签名、公证并装订，Gatekeeper 返回 `Notarized Developer ID`。App 公证 ID：`b9b85bff-fd8c-49ae-9189-4a0ec16738d0`；DMG 公证 ID：`3ffcbb6b-d1f7-4d1b-a435-bd7fd83ef797`。保留原 Bundle ID、公钥与新平台 feed。
 - DMG：`Perch-0.0.1-5-universal.dmg`，25,241,863 字节，SHA-256：`6d95558c0721d36a4a8f5a4329d10908a676b9bfe963217cd4899fadc6591371`。签名清单 SHA-256：`2b2a9efd67291897eae08298ae9c33c5341b117463bbb2fb4925c43db8ae1b74`。离线 ZIP 保留在本地，官网与 Sparkle 共用 DMG。
-- 新平台发布包 24,439,554 字节，完整文件集合与逐文件字节一致；独立临时预览的首页、图片、DMG 和清单共 4 文件核验通过，预览退出后临时数据已清理。使用有效管理员登录执行 `publish --update`，平台 release ID：`4b4ee2af-fd9c-4ced-8cf0-78f6ff30fbbe`；本次未修改平台基础设施或旧 keli.tech 站点。
+- 新平台发布包 24,439,554 字节，完整文件集合与逐文件字节一致；独立临时预览的首页、图片、DMG 和清单共 4 文件核验通过，预览退出后临时数据已清理。使用有效管理员登录执行 `publish --update`，平台 release ID：`4b4ee2af-fd9c-4ced-8cf0-78f6ff30fbbe`；本次未修改平台基础设施或旧 legacy.example.com 站点。
 - 公网匿名 HTTPS 下载 4 文件与发布目录逐字节一致，线上 DMG 的 Sparkle 验签通过；清单为 build 5 并返回 `Cache-Control: no-cache`。HEAD 返回 200 和正确长度，Range 返回完整文件 200。完整报告：`dist/release-v0.0.1-5/release-verification.json` 与 `public-platform-verification.json`。
-- 待完成：build 4 → build 5 的应用内下载、安装、重启与数据保留验收；本次文件校验不等同于完成安装升级。仍使用旧 keli.tech 清单的客户端须手动安装一次迁移版。
+- 待完成：build 4 → build 5 的应用内下载、安装、重启与数据保留验收；本次文件校验不等同于完成安装升级。仍使用旧 legacy.example.com 清单的客户端须手动安装一次迁移版。
 
 
 2026-10-23 已发布 `0.0.1 (6)`：独立 Harness 配置、MCP 使用入口及配置关系图。App 与 DMG 均通过 Developer ID 签名、公证、装订和 Gatekeeper；公网清单与完整安装包匹配本地字节，官方 Sparkle 验签通过。平台 release ID 为 `8175cd1d-0cd5-4de5-9431-eb90e95b8b59`。源码、tag、校验值、测试及待验收边界见 [build 6 发布记录](releases/perch-0.0.1-6.md)。

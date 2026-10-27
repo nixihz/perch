@@ -80,4 +80,4 @@ tasks:
   inventory:
     desc: 只盘点外部技能，不复制、不安装
     cmds:
-      - python3 scripts/catalog.py inventory --allow-linked-root /Users/brian/.config/magpie/library/skills
+      - python3 scripts/catalog.py inventory --source /path/to/skills --include-local-snapshot
