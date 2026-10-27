@@ -7,7 +7,7 @@
 - 当前清单：`https://app.u1.fan/x/perch/updates/macos/appcast.xml`。
 - 公钥：`3EB2chk/1iPXBBWYoCpL1IMTXf09D0IsFnH9oceg5oI=`；私钥保存在发布机登录钥匙串的 `com.xiezhixin.perch` account。
 - 已发布的 `0.0.1 (1)` 未包含 `SUFeedURL`、`SUPublicEDKey`，须手动安装一次启用版。旧下载地址继续保留，不覆盖原包。
-- 新平台单次发布包上限为 25 MiB，官网与 Sparkle 统一使用 DMG；ZIP 仅保留为本地离线分发产物。见[网站部署说明](../website/perch/README.md)。清单引用同一应用挂载路径下唯一命名的 DMG。
+- 发布 CLI 0.1.3 的请求体上限为 200 MiB、解压上限为 100 MiB，官网与 Sparkle 统一使用 DMG；ZIP 仅保留为本地离线分发产物。见[网站部署说明](../website/perch/README.md)。清单引用同一应用挂载路径下唯一命名的 DMG。
 - 不能仅凭 HTTP 200 判定 appcast 可用，必须核对 RSS XML 内容、enclosure、签名和实际下载字节；缺失静态路径可能回退到 HTML 首页。
 
 ## 客户端行为
@@ -20,7 +20,7 @@
 
 ## 配置与构建
 
-公开配置放在 `config/updates.json`。当前线上构建为 `0.0.1 (11)`；源码配置已推进到 build 12，待本机完成公证和平台发布。发布仍保留原 Bundle ID 与 Sparkle 公钥，使用新平台清单地址重新签名、公证；每次正式发包都递增 `build`，同一个构建号不能重发不同内容。此版本是桌面整包版本，与 skill revision、项目锁版本无关。
+公开配置放在 `config/updates.json`。当前线上构建为 `0.0.1 (12)`；源码配置已推进到 build 13，待完成构建、公证和平台发布。发布仍保留原 Bundle ID 与 Sparkle 公钥，使用新平台清单地址重新签名、公证；每次正式发包都递增 `build`，同一个构建号不能重发不同内容。此版本是桌面整包版本，与 skill revision、项目锁版本无关。
 
 可直接修改该 JSON，或通过以下环境变量覆盖：
 
@@ -138,3 +138,5 @@ python3 -m unittest tests.test_update_packaging tests.test_ui_localization -v
 
 2026-10-26 build 10 已发布并安装本机。解锁后恢复公证凭据读取，App 与 DMG 公证、装订和 Gatekeeper 检查通过；修正旧测试流程后完整 Swift 与原生 BDD 回归全绿。官网、Sparkle 清单及公网完整 DMG 字节与官方验签通过，平台 release ID 为 `c8c17552-c8b4-4232-8b61-9409af5689eb`；本机界面确认 101 个技能、0 个不可用，真实更新检查显示当前为最新版。详见 [build 10 发布记录](releases/perch-0.0.1-10.md)。
 2026-10-27 build 12 已完成主题色调与设置页改动。App 与 DMG 已通过 Developer ID 签名、Apple 公证、装订和 Gatekeeper 检查；Sparkle appcast 已在本地生成并通过 `sign_update --verify`，尚未上传平台，线上仍为 build 11。详见 [build 12 准备记录](releases/perch-0.0.1-12.md)。
+
+2026-10-27 正在准备 build 13：重新构建 Developer ID 通用包，沿用原 Sparkle 公钥与 feed。CLI 0.1.3 已通过约 29 MB 的 build 12 发布包预检，报告的上传限制为 200 MiB、解压限制为 100 MiB；build 13 最终结果见 [发布记录](releases/perch-0.0.1-13.md)。

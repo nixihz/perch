@@ -6,15 +6,15 @@
 
 页面源码位于受版本管理的 `index.html`；发布时复制为 `dist/index.html`，品牌图片与已公证安装包随静态应用包发布；不包含技能库存、凭据或本机数据。设计约定见 `DESIGN.md`。静态资源和下载链接使用相对路径，支持 `/x/perch/` 挂载。
 
-Sparkle 清单为 `https://app.u1.fan/x/perch/updates/macos/appcast.xml`，唯一命名的 DMG 位于同一目录；新平台单次发布包上限为 25 MiB，因此官网与 Sparkle 共用同一 DMG；ZIP 仅作为本地离线产物保留，不在新站提供 ZIP 下载。使用 `script/prepare_sparkle_update.py` 生成并验证签名清单，下载 URL 与客户端内置地址必须一致。客户端公钥与发布机 Keychain account 见[在线更新说明](../../docs/sparkle-updates.md)。更换托管地址保留原公钥和 Bundle ID，递增桌面构建号并重新签名、公证。
+Sparkle 清单为 `https://app.u1.fan/x/perch/updates/macos/appcast.xml`，唯一命名的 DMG 位于同一目录；CLI 0.1.3 的上传上限为 200 MiB、解压上限为 100 MiB；官网与 Sparkle 共用同一 DMG；ZIP 仅作为本地离线产物保留，不在新站提供 ZIP 下载。使用 `script/prepare_sparkle_update.py` 生成并验证签名清单，下载 URL 与客户端内置地址必须一致。客户端公钥与发布机 Keychain account 见[在线更新说明](../../docs/sparkle-updates.md)。更换托管地址保留原公钥和 Bundle ID，递增桌面构建号并重新签名、公证。
 
 ## 打包与发布
 
 遵循 `app-platform-dev` skill，显式指定平台，不能沿用 keli-cli 或旧平台 SSH 发布路径：
 
 ```sh
-# 使用之前成功登录时的目录；本机本次为 ~/data。
-PLATFORM_CLI_DATA="$HOME/data"
+# 显式复用本机已登录目录。
+PLATFORM_CLI_DATA="$HOME/.local/share/perch-app-platform-cli"
 app-platform --data "$PLATFORM_CLI_DATA" --server https://app.u1.fan whoami
 app-platform --data "$PLATFORM_CLI_DATA" package <发布目录> --output dist/perch-app-platform.zip
 # app.u1.fan 首次安装 perch
@@ -23,13 +23,13 @@ app-platform --data "$PLATFORM_CLI_DATA" --server https://app.u1.fan publish <�
 app-platform --data "$PLATFORM_CLI_DATA" --server https://app.u1.fan publish <发布目录> --update
 ```
 
-CLI 的 `--data` 默认为当前目录下的 `data`；不同工作目录会读取不同登录状态。先用已登录时的同一目录运行 `whoami`，确认具有管理员权限。本机本次复用了 `~/data`，无需重复登录。
+发布前用同一客户端数据目录运行 `whoami`，确认具有管理员权限。CLI 0.1.3 支持 `--client-data`；本机已有会话仍通过兼容参数 `--data` 显式复用，避免读取其他目录的登录状态。
 
 平台已设置应用根域 `https://u1.fan`，会将 `/x/perch/` 跳转到 `perch.u1.fan`。已新增本站专用 [Nginx 配置](perch.u1.fan.nginx.conf)，复用服务器已有 `*.u1.fan` 证书和平台反代；固定清单路径返回 `Cache-Control: no-cache`。此配置由服务器运维安装，不放入应用包。通配证书沿用平台现有 DNS-01 续期安排，本次未签发或修改证书。
 
 发布目录只包含一份 `apps.yaml`、页面、品牌素材、正式分发包与签名清单。输出 ZIP 保存在发布目录之外，避免递归打包。官网页面、清单、下载包在同一平台发布版本中交付；不要直接修改平台发布目录。只保留该平台仍被清单或网页引用的历史文件，移除当前包中的历史版本前先核对引用。旧 keli.tech 站点保持原样，不依靠修改旧清单迁移客户端。
 
-发布后通过实际挂载 URL 验证首页、图片、公开访问、完整下载 SHA-256、长度、HEAD/Range、appcast XML、版本、公钥签名及缓存行为；不能仅凭 200 判断成功。CLI 会排除 `.zip` 文件，且 DMG 与 ZIP 合包超过平台 25 MiB 上限；不要改后缀绕过排除后直接发布超限包。打包核验须比较完整预期文件清单，不能只检查 ZIP 内已有条目。发布回滚恢复平台上一版本的文件，不更改用户本机数据。
+发布后通过实际挂载 URL 验证首页、图片、公开访问、完整下载 SHA-256、长度、HEAD/Range、appcast XML、版本、公钥签名及缓存行为；不能仅凭 200 判断成功。CLI 会排除 `.zip` 文件；官网继续只提供 DMG，不改后缀绕过排除规则。打包核验须比较完整预期文件清单，不能只检查 ZIP 内已有条目。发布回滚恢复平台上一版本的文件，不更改用户本机数据。
 
 2026-10-22 已发布 build 4，平台 release ID 为 `407bf84e-1cfc-4d5e-b5da-83b46d84de57`。首页、图片、appcast 与 DMG 匿名 HTTPS 完整下载均与发布目录逐字节一致；公网 DMG 的 Sparkle 验签通过。HEAD 返回 200 和正确长度；Range 返回完整文件（200）。旧站未修改，跨版本安装尚未验收。
 
@@ -49,3 +49,5 @@ CLI 的 `--data` 默认为当前目录下的 `data`；不同工作目录会读�
 
 2026-10-26 已更新至 `0.0.1 (10)`，当前平台 release ID 为 `c8c17552-c8b4-4232-8b61-9409af5689eb`。来源为 build 10 标签对应的干净检出，五个来源文件及生成元数据逐字节核验通过；平台 ZIP 为 24,450,946 字节。App 与 DMG 已公证装订，匿名公网文件核验和官方 Sparkle 验签通过，本机已安装并验证真实更新检查。产物、测试与安装证据见 [build 10 发布记录](../../docs/releases/perch-0.0.1-10.md)。
 2026-10-27 build 12 发布：主题色调改为黑曜、雪白、雾灰三种黑白灰方案；App 与 DMG 已公证装订，Sparkle appcast 与 DMG 将随本次平台更新一起交付。
+
+2026-10-27 正在准备 `0.0.1 (13)`，官网入口已递增，须与本次公证 DMG 和签名清单一起发布。验证与平台 release ID 见 [build 13 发布记录](../../docs/releases/perch-0.0.1-13.md)。
