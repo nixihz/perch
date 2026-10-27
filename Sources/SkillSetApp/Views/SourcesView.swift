@@ -22,7 +22,7 @@ struct SourcesView: View {
                     browsingSkillsSh = true
                 } label: {
                     Label("skills.sh", systemImage: "sparkle.magnifyingglass")
-                        .frame(minHeight: 32)
+                        .frame(minHeight: AppControl.height)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(AppButtonStyle(kind: .quiet))
@@ -34,7 +34,7 @@ struct SourcesView: View {
                     editor = SourceEditorDraft()
                 } label: {
                     Label(L10n.tr("添加技能来源"), systemImage: "plus")
-                        .frame(minHeight: 32)
+                        .frame(minHeight: AppControl.height)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(AppButtonStyle(kind: .primary))
@@ -171,7 +171,7 @@ struct SourcesView: View {
                         HStack(alignment: .top) {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(preview.canonicalURL)
-                                    .font(AppFont.title.weight(.bold))
+                                    .font(AppFont.title)
                                     .textSelection(.enabled)
                                 Text(L10n.tr("固定于 \(preview.resolvedCommit.prefix(16))…"))
                                     .font(AppFont.secondary.monospaced())
@@ -195,7 +195,7 @@ struct SourcesView: View {
                                 ])
                             } label: {
                                 Text(L10n.tr("在 Finder 中显示预览文件"))
-                                    .frame(minHeight: 32)
+                                    .frame(minHeight: AppControl.height)
                             }
                             .buttonStyle(AppButtonStyle())
                             .accessibilityIdentifier("sources.preview.reveal")
@@ -204,7 +204,7 @@ struct SourcesView: View {
                                     editor = SourceEditorDraft(preview: preview)
                                 } label: {
                                     Label(L10n.tr("编辑来源"), systemImage: "pencil")
-                                        .frame(minHeight: 32)
+                                        .frame(minHeight: AppControl.height)
                                 }
                                 .disabled(model.isWorking)
                                 .accessibilityIdentifier("sources.preview.edit")
@@ -213,11 +213,12 @@ struct SourcesView: View {
                                     deletePreviewAction(preview)
                                 } label: {
                                     Label(L10n.tr("更多操作"), systemImage: "ellipsis")
-                                        .frame(minHeight: 32)
+                                        .frame(minHeight: AppControl.height)
                                         .padding(.horizontal, 8)
                                         .contentShape(Rectangle())
                                 }
-                                .menuStyle(.borderlessButton)
+                                .menuStyle(.button)
+                                .buttonStyle(AppButtonStyle(kind: .quiet))
                                 .fixedSize()
                                 .help(L10n.tr("更多操作"))
                                 .accessibilityLabel(L10n.tr("更多操作"))
@@ -299,8 +300,7 @@ struct SourcesView: View {
                 )) {
                     Text(L10n.tr("勾选技能") + " " + candidate.declaredName)
                 }
-                .labelsHidden()
-                .toggleStyle(.checkbox)
+                .toggleStyle(AppCheckboxStyle(showsLabel: false))
                 .accessibilityIdentifier("sources.check.\(candidate.path)")
                 .padding(.top, 2)
             }

@@ -21,15 +21,12 @@ struct SourceSkillImportSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(L10n.tr(addedID == nil ? "加入技能库" : "已加入技能库")).font(AppFont.title.weight(.bold))
+            Text(L10n.tr(addedID == nil ? "加入技能库" : "已加入技能库")).font(AppFont.title)
             if addedID == nil {
                 Text(L10n.tr("软链接跟随来源更新；复制保留独立文件。加入时不会运行脚本。"))
                     .font(AppFont.secondary).foregroundStyle(.secondary)
-                Picker(L10n.tr("存放方式"), selection: $draft.mode) {
-                    Text(L10n.tr("软链接")).tag(SkillInstallMethod.symlink)
-                    Text(L10n.tr("复制")).tag(SkillInstallMethod.copy)
-                }
-                .pickerStyle(.segmented)
+                AppSegmentedPicker(title: L10n.tr("存放方式"), selection: $draft.mode,
+                    options: [(SkillInstallMethod.symlink, L10n.tr("软链接")), (.copy, L10n.tr("复制"))])
                 .accessibilityIdentifier("sources.import.mode")
                 HStack {
                     Text(L10n.tr("分类"))

@@ -83,8 +83,8 @@ extension AppModel {
         }
         let global = GlobalConfigurationManager(paths: paths, locations: locations)
         for host in MCPHost.allCases {
-            let inDraft = try global.draft(host: host).instructionIDs.contains(id)
-            let selection = try global.appliedSelection(host: host)
+            let inDraft = try global.draft(host: SkillConfigurationTarget(host)).instructionIDs.contains(id)
+            let selection = try global.appliedSelection(host: SkillConfigurationTarget(host))
             let applied = selection.instructionIDs.contains(id)
             let expectedBodies = selection.instructionIDs.compactMap { selectedID in
                 snapshot.templates.first { $0.id == selectedID }?.body
@@ -117,7 +117,7 @@ extension AppModel {
                 selectedProjectID = id
                 selectProjectHost(host == .codex ? .codex : .claude, projectID: id)
                 section = .projects
-            case .global(let host): globalConfiguration.selectHost(host); section = .globalConfiguration
+            case .global(let host): globalConfiguration.selectHost(SkillConfigurationTarget(host)); section = .globalConfiguration
             }
         }
     }
@@ -162,7 +162,7 @@ extension AppModel {
             }
             projectDraft = draft
         case .global(let host):
-            var draft = try service.globalConfiguration.draft(host: host)
+            var draft = try service.globalConfiguration.draft(host: SkillConfigurationTarget(host))
             draft.instructionIDs = Array(Set(draft.instructionIDs + [templateID])).sorted()
             globalDraft = draft
             ids = draft.instructionIDs

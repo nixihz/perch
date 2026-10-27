@@ -1,16 +1,4 @@
-# skill-set 协作约定
-
-- 始终使用中文回复；代码标识符使用英文，注释用中文解释原因。
-- 分析需求、项目和技术文档时加载 `stc` skill。
-- 新增 UI 前先读 `DESIGN.md`；缺少时先提醒并补齐设计约定。
-- `skills/` 是自维护内容；`vendor/` 是带来源的实体快照。修改外部快照前先看 `registry/local-import.json`，不要直接批量同步或覆盖。
-- 收录不等于启用。只有用户选择的 skill 才能写入项目发现目录；本轮原型不写真实项目、全局 skills 或 agent 配置。
-- 变更 skill 内容后核对 `registry/catalog.json` 指纹；仅从可信的本地来源重新生成目录，不运行来源中的脚本。
-- 修改来源导入、部署或 MCP 时，先读 `docs/specs/architecture.md` 和 `docs/specs/mcp.md`；实现仍以 SPEC 中的里程碑为界。
-- 单元测试检查可观察行为和失败路径，严禁同义反复测试。
-- PR/MR 创建后将当前会话标题前缀设为 ✅；合并后改为 🚀。
-- 完成时报告验证结果、未完成项和使用过的 skill；若 skill 有改进空间，说明具体建议，不擅自修改外部 skill。
-
+<!-- skillset:begin id=project-rules schema=1 -->
 ## Agent skills
 
 ### Issue tracker
@@ -20,3 +8,17 @@
 ### Domain docs
 
 采用 single-context：根目录 `GLOSSARY.md` 和 `docs/adr/`。探索代码、讨论领域术语或架构决策前，先读 `docs/agents/domain.md`。
+
+
+- PR/MR 创建后，修改当前会话标题，前面加上 ✅；PR/MR 合并完成，修改当前会话标题，前面改成 🚀
+- 单元测试规则：No tautological tests（严禁同义反复测试）
+- 注释全部使用中文（除非项目已声明其他语言），只解释为什么这么做，不复述代码在做什么
+- 变量名使用描述性命名
+- git commit message 不添加 Co-Authored-By 等 AI 署名
+- 分析需求、项目和技术文档时加载 `stc` skill。
+
+
+- 涉及 UI 界面相关的应用，必须要有 DESIGN.md，否则提示用户去生成
+- 设计 UI 界面时，调用 emil 相关 skill
+- 开发 iOS 应用时，完成开发后远程安装到我的 iPhone 17 Pro Max
+<!-- skillset:end id=project-rules -->

@@ -83,7 +83,7 @@ final class PresetConfigurationTests: XCTestCase {
             let scrolls = descendants(controller.view).compactMap { $0 as? NSScrollView }
             let table = try XCTUnwrap(descendants(controller.view).compactMap { $0 as? NSTableView }.first)
             let content = scrolls.filter { $0 !== table.enclosingScrollView }
-            let selector = try XCTUnwrap(content.first { $0.bounds.height <= 40 })
+            let selector = try XCTUnwrap(content.first { $0.bounds.height >= 44 && $0.bounds.height <= 48 })
             let resources = try XCTUnwrap(content.first { $0.bounds.height > 100 })
             let selectionRect = selector.convert(selector.bounds, to: controller.view)
             let resourceRect = resources.convert(resources.bounds, to: controller.view)

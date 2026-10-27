@@ -14,6 +14,8 @@ struct SidebarList: NSViewRepresentable {
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("destination"))
         table.addTableColumn(column)
         table.headerView = nil
+        // 导航分组无需悬浮，避免首个分组下出现系统吸顶分隔线。
+        table.floatsGroupRows = false
         // sourceList 在真实窗口中会叠加系统高亮，plain 才能让自定义行完整控制品牌选中态。
         table.style = .plain
         table.selectionHighlightStyle = .regular
@@ -86,7 +88,7 @@ struct SidebarList: NSViewRepresentable {
         }
 
         func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
-            Self.rows[row].item == nil ? 30 : 40
+            Self.rows[row].item == nil ? 26 : AppControl.height
         }
 
         func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
@@ -101,7 +103,7 @@ struct SidebarList: NSViewRepresentable {
                 return cell
             }
             let label = NSTextField(labelWithString: L10n.text(entry.heading ?? ""))
-            label.font = .systemFont(ofSize: 13, weight: .semibold)
+            label.font = .systemFont(ofSize: 12, weight: .semibold)
             label.textColor = .secondaryLabelColor
             return label
         }
@@ -130,6 +132,7 @@ struct SidebarList: NSViewRepresentable {
 
         private func configure(_ cell: SidebarDestinationCell, item: NavigationItem, selected: Bool) {
             cell.titleLabel.stringValue = item.title
+            cell.titleLabel.font = .systemFont(ofSize: 13, weight: selected ? .medium : .regular)
             cell.setAccessibilityLabel(item.title)
             cell.toolTip = item.title
             cell.icon.image = NSImage(systemSymbolName: item.systemImage, accessibilityDescription: nil)
@@ -144,7 +147,7 @@ final class SidebarSelectionRow: NSTableRowView {
 
     override func drawSelection(in dirtyRect: NSRect) {
         NSColor(AppColor.selection).setFill()
-        NSBezierPath(roundedRect: bounds.insetBy(dx: 4, dy: 1), xRadius: 7, yRadius: 7).fill()
+        NSBezierPath(roundedRect: bounds.insetBy(dx: 4, dy: 1), xRadius: 6, yRadius: 6).fill()
     }
 }
 
@@ -154,7 +157,7 @@ final class SidebarDestinationCell: NSTableCellView {
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        titleLabel.font = .systemFont(ofSize: 15, weight: .medium)
+        titleLabel.font = .systemFont(ofSize: 13)
         for label in [titleLabel] {
             label.lineBreakMode = .byTruncatingTail
             label.maximumNumberOfLines = 1
@@ -171,8 +174,8 @@ final class SidebarDestinationCell: NSTableCellView {
         NSLayoutConstraint.activate([
             icon.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
             icon.centerYAnchor.constraint(equalTo: centerYAnchor),
-            icon.widthAnchor.constraint(equalToConstant: 19),
-            icon.heightAnchor.constraint(equalToConstant: 19),
+            icon.widthAnchor.constraint(equalToConstant: 16),
+            icon.heightAnchor.constraint(equalToConstant: 16),
             labels.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 10),
             labels.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
             // 让文本字段跟随行宽收缩，省略号才能在实际可见边界内绘制。

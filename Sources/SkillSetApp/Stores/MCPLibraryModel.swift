@@ -31,6 +31,8 @@ final class MCPLibraryModel {
     private(set) var candidates: [MCPLibraryScanCandidate] = []
     private(set) var usageTargets: [MCPLibraryUsageTarget] = []
     private(set) var usageError: String?
+    private(set) var isSaving = false
+    private(set) var saveMessage: String?
     private var usageRefreshID = UUID()
     private var preferredUsageTargetID: String?
     private var approvedOverwriteNames: Set<OverwriteApprovalKey> = []
@@ -128,6 +130,50 @@ final class MCPLibraryModel {
             error = nil
             return true
         } catch { self.error = UserFacingText.error(error); return false }
+    }
+
+    @discardableResult
+    func saveSelection(_ id: UUID, name: String, enabled: Bool, host: MCPHost, projectID: UUID?, overwritingNames: Set<String> = []) async -> Bool {
+        guard !isSaving else { return false }
+        let previousIDs = selectedIDs(host: host, projectID: projectID)
+        guard select(id, enabled: enabled, host: host, projectID: projectID) else { return false }
+        isSaving = true
+        error = nil
+        saveMessage = nil
+        let paths = paths, locations = locations
+        let overwrite = overwritingNames.union(takeApprovedOverwriteNames(host: host, projectID: projectID))
+        let result = await Task.detached(priority: .userInitiated) {
+            do {
+                let service = try SkillSetService(paths: paths, globalLocations: locations)
+                let plan: StoredDeploymentPlan?
+                do {
+                    plan = try service.makeMCPLibraryPlan(host: host, projectID: projectID, overwritingNames: overwrite)
+                } catch DeploymentError.noChanges {
+                    plan = nil
+                }
+                if let plan {
+                    try service.approve(planID: plan.id, digest: plan.plan.digest)
+                    _ = try service.apply(planID: plan.id, digest: plan.plan.digest)
+                }
+                let usage = try Self.readUsage(paths: paths, locations: locations)
+                return (usage, nil as String?)
+            } catch {
+                return ([], UserFacingText.error(error))
+            }
+        }.value
+        isSaving = false
+        if let failure = result.1 {
+            if !failure.contains("同名") && !failure.contains("冲突") {
+                _ = try? store.saveSelection(previousIDs, host: host, projectID: projectID)
+                selections[store.selectionKey(host: host, projectID: projectID)] = previousIDs
+            }
+            error = failure
+            refreshUsage()
+            return false
+        }
+        applyUsage(Result.success(result.0))
+        saveMessage = L10n.tr("已保存：\(host.displayName) · \(name)")
+        return true
     }
 
     nonisolated private static func readUsage(paths: SkillSetRuntimePaths, locations: GlobalConfigurationLocations?) throws -> [MCPLibraryUsageTarget] {

@@ -9,14 +9,15 @@ enum AppLayout {
 }
 
 enum AppFont {
-    // macOS 的 caption 仅约 10–11pt，持续阅读的内容不能沿用脚注字号。
-    static let body = Font.system(size: 15)
-    static let secondary = Font.system(size: 14)
-    static let metadata = Font.system(size: 13)
-    static let heading = Font.system(size: 17, weight: .semibold)
-    static let title = Font.system(size: 22, weight: .semibold)
-    static let pageTitle = Font.system(size: 30, weight: .semibold)
-    static let code = Font.system(size: 13, design: .monospaced)
+    // 工作台保持紧凑，长文单独保留阅读字号；中文辅助信息不降到系统 caption 的 10–11pt。
+    static let body = Font.system(size: 13)
+    static let secondary = Font.system(size: 12)
+    static let metadata = Font.system(size: 12)
+    static let heading = Font.system(size: 14, weight: .semibold)
+    static let title = Font.system(size: 18, weight: .semibold)
+    static let pageTitle = Font.system(size: 24, weight: .semibold)
+    static let reading = Font.system(size: 14)
+    static let code = Font.system(size: 12, design: .monospaced)
 }
 
 enum AppColor {
@@ -52,7 +53,7 @@ struct StatusBadge: View {
 
     var body: some View {
         Text(text)
-            .font(AppFont.metadata.weight(.semibold))
+            .font(AppFont.metadata.weight(.medium))
             .lineLimit(1)
             .foregroundStyle(tone.color)
             .padding(.horizontal, 8)
@@ -97,7 +98,7 @@ struct PageHeader: View {
         VStack(alignment: .leading, spacing: 7) {
             Text(eyebrow.uppercased())
                 .font(AppFont.metadata.weight(.semibold))
-                .tracking(1.1)
+                .tracking(0.8)
                 .foregroundStyle(AppColor.accentText)
             Text(title)
                 .font(AppFont.pageTitle)
@@ -197,7 +198,7 @@ struct FullRowDisclosureGroupStyle: DisclosureGroupStyle {
                     configuration.label
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
+                .frame(maxWidth: .infinity, minHeight: AppControl.height, alignment: .leading)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -230,6 +231,7 @@ struct FullRowDisclosureGroupStyle: DisclosureGroupStyle {
 extension View {
     func selectionRow(_ selected: Bool) -> some View {
         self
+            .frame(minHeight: AppControl.height)
             .background(selected ? AppColor.accentSoft : Color.clear, in: RoundedRectangle(cornerRadius: 8))
             .overlay {
                 RoundedRectangle(cornerRadius: 8)
@@ -238,4 +240,3 @@ extension View {
             .accessibilityAddTraits(selected ? [.isSelected] : [])
     }
 }
-

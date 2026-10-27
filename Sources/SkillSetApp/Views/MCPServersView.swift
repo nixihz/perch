@@ -137,7 +137,7 @@ struct MCPObservedServersView: View {
                             HStack {
                                 VStack(alignment: .leading, spacing: 5) {
                                     Text(server.name)
-                                        .font(AppFont.title.weight(.bold))
+                                        .font(AppFont.title)
                                     Text(L10n.text(server.note))
                                         .font(AppFont.body)
                                         .foregroundStyle(.secondary)
@@ -238,7 +238,7 @@ struct MCPConfigSheet: View {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(L10n.tr("生成 MCP 配置计划"))
-                        .font(AppFont.title.weight(.bold))
+                        .font(AppFont.title)
                     Text(L10n.tr("填写连接信息和环境变量名称。先预览计划，批准后才会修改 AI 工具配置。"))
                         .font(AppFont.body)
                         .foregroundStyle(.secondary)

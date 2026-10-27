@@ -14,6 +14,17 @@
 task app
 ```
 
+构建与安装也可分开执行（安装会替换目标目录中的 `栖集.app`，不会自动启动）：
+
+```bash
+task macos-build         # 只构建并打包到 dist/栖集.app
+task macos-install-only  # 只安装已有产物到 /Applications/栖集.app
+task macos-install       # 先构建，再安装
+task macos-install -- --release  # 构建 Release 并安装
+```
+
+`PERCH_DIST_DIR` 可指定构建产物目录；`MACOS_INSTALL_DIR` 可指定已存在的安装目录，例如 `task macos-install-only MACOS_INSTALL_DIR="$HOME/Applications"`。
+
 构建结果为 `dist/栖集.app`，Dock 显示“栖集”，英文名为 Perch；Bundle ID、`skillset` CLI 和原数据目录不变。启动后在原生窗口中使用：
 
 首次使用从「项目」开始：添加项目目录，选择 AI 工具，再选择技能和规则，或点「使用预设…」载入常用组合。点击「预览变更」核对目标文件，批准后才会写入。也可以先用空态中的「浏览技能库」「查看预设」了解现有内容。
@@ -169,15 +180,17 @@ npx skills add ssh://git@git.xiezhi.xin:2222/iamx/skill-set.git
 
 这会按该 CLI 自己的发现和安装策略操作，**不等于安装本仓 150 条完整库存**，也不经过本管理器的计划/审批。需要可审计写入时使用 `skillset`；完整版本锁、来源收录和宿主适配边界见 SPEC。
 
-技能库是栖集私有库存 `~/.perch/skills/library/`，里面只留软链，技能实体放在 `~/.perch/sources/custom/` 或来源检出。`~/.agents/skills` 只是通用安装目录，栖集不再往里写东西。
+技能库是栖集私有库存 `~/.perch/skills/library/`，里面只留软链，技能实体放在 `~/.perch/sources/custom/` 或来源检出。`~/.agents/skills` 是共享安装目录，只在全局配置中点击 Agents 图标保存后写入，不再作为私有技能库。
 
-首次初始化会读取 Codex、Claude Code 的技能目录，把尚未入库存、且不是跟随技能来源的技能复制到 `~/.perch/sources/custom/<技能名>/`，并在私有库存里留下同名软链。之后「扫描已安装技能…」只扫描手动追加的目录，不再读取这些官方目录。原安装保持原样。同名技能不覆盖。旧的 `~/.perch/sources/local-imports` 会在启动时迁入 `custom` 后删除。
+首次初始化会读取 Agents、Codex、Claude Code 的技能目录，把尚未入库存、且不是跟随技能来源的技能复制到 `~/.perch/sources/custom/<技能名>/`，并在私有库存里留下同名软链。之后「扫描已安装技能…」只扫描手动追加的目录，不再读取这些官方目录。原安装保持原样。同名技能不覆盖。旧的 `~/.perch/sources/local-imports` 会在启动时迁入 `custom` 后删除。
 
-全局配置采用单栏草稿：在技能、AGENTS 片段、MCP 服务和插件标签中点击资源右侧的 Codex / Claude Code 图标，按工具预览后在计划页保存。技能与片段一起保存，MCP 与插件分别审阅；插件仅支持其所属宿主。全局文件现状与还原历史入口已从此页隐藏，备份与恢复能力仍保留。
+全局配置采用单栏草稿：在技能标签中点击 Agents / Codex / Claude Code 开关，其他资源使用 Codex / Claude Code 图标；技能图标点击即保存，再次点击取消；成功给出反馈，失败保留原选择。其他资源按目标预览后保存，安装方式与接管已有内容在安装选项中预览；插件仅支持其所属宿主。全局文件现状与还原历史入口已从此页隐藏，备份与恢复能力仍保留。
 
-全局、项目和预设的技能标签下均展示已选技能 pill，搜索不会隐藏已选项。全局与项目可在 pill 内独立切换 Codex / Claude Code，× 从两个工具草稿中取消；预设的 × 只移除组合中的该技能。大量选择在已选区独立滚动，修改仍须预览后保存。
+全局、项目和预设的技能标签下均展示已选技能 pill，搜索不会隐藏已选项。全局 pill 可独立切换三个技能目标，项目 pill 仍切换 Codex / Claude Code；× 从当前范围的所有目标草稿中取消；预设的 × 只移除组合中的该技能。大量选择在已选区独立滚动；全局技能胶囊点击图标或 × 即保存，项目与预设仍按草稿流程保存。
 
 系统不要求用户审查技能许可。许可证原文随来源和技能包保留，导入与保存不增加许可审查步骤。
+
+全局技能配置并列提供 **Agents / Codex / Claude Code**：分别保存到 `~/.agents/skills`、`${CODEX_HOME:-~/.codex}/skills` 与 `${CLAUDE_CONFIG_DIR:-~/.claude}/skills`，草稿、安装方式与管理记录独立。Agents 只配置共享技能；规则、MCP 和插件仍按工具配置。Codex 也会加载 Agents 技能，取消 Codex 勾选不会停用共享目录中的内容。同名技能会显示提示，预览中可核对另一个目录的路径。
 
 项目页与全局配置共用同一资源草稿组件，顶部增加紧凑项目选择区。点击项目名切换下面的配置；技能与片段、MCP、插件按项目和工具分别保存草稿，预览后点击“保存”提交当前计划。路径、继承、文件现状与待批准计划可从“项目详情…”查看。 共用技能、规则或安装方式需要同时更新两个工具时，项目预览会展示关联变更，点击“保存”一并执行；另一个工具的未部署草稿继续保留。
 

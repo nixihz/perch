@@ -44,7 +44,7 @@ final class AppModel {
                let host = MCPHost(rawValue: project.editingAgent), let projectID = UUID(uuidString: project.id) {
                 mcpLibrary.preferUsageTarget(host: host, projectID: projectID)
             } else {
-                mcpLibrary.preferUsageTarget(host: globalConfiguration.host, projectID: nil)
+                mcpLibrary.preferUsageTarget(host: globalConfiguration.host.mcpHost ?? .codex, projectID: nil)
             }
         }
     }
@@ -120,6 +120,7 @@ final class AppModel {
     var isWorking = false
     var libraryError: String?
     private(set) var skillRemovalError: String?
+    var projectSaveMessage: String?
     var sourceImportError: String?
     var sourceOrigins: [String: SourceSkillOrigin] = [:]
     /// 技能实体的真实存放位置。自建和复制导入在 sources/custom，跟随来源的指向来源检出目录。
@@ -618,9 +619,9 @@ final class AppModel {
                 try reloadProjects(preferredID: id)
             case .global(let host):
                 guard let draft = latest.globalDraft else { throw DeploymentError.invalidPlan }
-                plan = try fresh.makeGlobalPlan(host: host, selection: draft)
-                try fresh.globalConfiguration.saveDraft(draft, host: host)
-                globalConfiguration.selectHost(host)
+                plan = try fresh.makeGlobalPlan(host: SkillConfigurationTarget(host), selection: draft)
+                try fresh.globalConfiguration.saveDraft(draft, host: SkillConfigurationTarget(host))
+                globalConfiguration.selectHost(SkillConfigurationTarget(host))
             }
             service = fresh
             preparedPlan = plan
@@ -809,6 +810,130 @@ final class AppModel {
         proposed.harnessSelections[host.rawValue] = selection
         proposed.selectEditingAgent(proposed.editingAgent)
         persistDraft(for: proposed)
+    }
+
+    @discardableResult
+    func saveProjectSkill(_ skill: SkillEntry, enabled: Bool, host: MCPHost) async -> Bool {
+        guard !enabled || !skill.isBlocked else {
+            let message: LocalizedText = "\(skill.slug) 未通过文件检查，请到技能库查看原因。"
+            if let project = selectedProject {
+                setProjectPlanNotice(ProjectPlanNotice(message: host.displayName + " · " + L10n.tr(message), tone: .error), for: project.id)
+            }
+            report(message)
+            return false
+        }
+        if enabled, let project = selectedProject,
+           let selected = project.harnessSelections[host.rawValue]?.skillIDs,
+           snapshot.catalog.entries.contains(where: { $0.id != skill.id && $0.slug == skill.slug && selected.contains($0.id) }) {
+            let message: LocalizedText = "\(skill.slug) 已选了另一个来源，请先取消同名技能。"
+            setProjectPlanNotice(ProjectPlanNotice(message: host.displayName + " · " + L10n.tr(message), tone: .error), for: project.id)
+            report(message)
+            return false
+        }
+        return await saveProjectSkill(skill.id, name: skill.slug, enabled: enabled, host: host)
+    }
+
+    @discardableResult
+    func saveProjectSkill(_ id: String, name: String, enabled: Bool, host: MCPHost) async -> Bool {
+        guard let project = selectedProject, let projectUUID = UUID(uuidString: project.id), !isWorking else { return false }
+        let previousSelection = project.harnessSelections[host.rawValue] ?? ProjectHarnessSelection()
+        var updatedSelection = previousSelection
+        updatedSelection.skillIDs.removeAll { $0 == id }
+        if enabled { updatedSelection.skillIDs.append(id); updatedSelection.skillIDs.sort() }
+        var proposed = project
+        proposed.harnessSelections[host.rawValue] = updatedSelection
+        proposed.selectEditingAgent(proposed.editingAgent)
+        persistDraft(for: proposed)
+        isWorking = true
+        projectSaveMessage = nil
+        defer { isWorking = false }
+        do {
+            guard let service else { throw SkillSetServiceError.repositoryNotFound }
+            let plan: StoredDeploymentPlan?
+            do {
+                plan = try service.makeHarnessPlan(projectID: projectUUID, agent: host.rawValue, selection: updatedSelection,
+                                                   installMethod: skillInstallMethod, allowRelatedHarnessUpdates: true)
+            } catch let error as DeploymentError where error == .noChanges {
+                plan = nil
+            }
+            if let plan {
+                let approved = try planStore.approve(id: plan.id, digest: plan.plan.digest)
+                _ = try service.apply(planID: approved.id, digest: approved.plan.digest)
+            }
+            try reloadProjects(preferredID: projectUUID)
+            setProjectPlanNotice(nil, for: project.id)
+            projectSaveMessage = L10n.tr("已保存：\(host.displayName) · \(name)")
+            report("已保存：\(host.displayName) · \(name)")
+            return true
+        } catch {
+            var restored = project
+            restored.harnessSelections[host.rawValue] = previousSelection
+            restored.selectEditingAgent(restored.editingAgent)
+            persistDraft(for: restored)
+            var notice = ProjectPlanNotice(message: UserFacingText.error(error), tone: .error)
+            if case let DeploymentError.symlinkDetected(path) = error {
+                notice.relatedPath = path
+                let projectRoot = URL(fileURLWithPath: project.path)
+                if path == projectRoot.appendingPathComponent(".claude/skills").path,
+                   URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+                    == projectRoot.appendingPathComponent(".agents/skills").resolvingSymlinksInPath().path {
+                    notice = ProjectPlanNotice(message: "Claude Code 和 Codex 共用技能文件夹，暂时无法分别保存。请改用独立文件夹。",
+                        tone: .error, relatedPath: path)
+                }
+            }
+            setProjectPlanNotice(notice, for: project.id)
+            reportKey(UserFacingText.error(error))
+            return false
+        }
+    }
+
+    @discardableResult
+    func saveProjectInstruction(_ template: TemplateRecord, enabled: Bool, host: MCPHost) async -> Bool {
+        await saveProjectInstruction(template.id, title: UserFacingText.templateTitle(template), enabled: enabled, host: host)
+    }
+
+    @discardableResult
+    func saveProjectInstruction(_ id: String, title: String, enabled: Bool, host: MCPHost) async -> Bool {
+        guard let project = selectedProject, let projectUUID = UUID(uuidString: project.id), !isWorking else { return false }
+        let previousSelection = project.harnessSelections[host.rawValue] ?? ProjectHarnessSelection()
+        var updatedSelection = previousSelection
+        updatedSelection.instructionIDs.removeAll { $0 == id }
+        if enabled { updatedSelection.instructionIDs.append(id); updatedSelection.instructionIDs.sort() }
+        var proposed = project
+        proposed.harnessSelections[host.rawValue] = updatedSelection
+        proposed.selectEditingAgent(proposed.editingAgent)
+        persistDraft(for: proposed)
+        isWorking = true
+        projectSaveMessage = nil
+        defer { isWorking = false }
+        do {
+            guard let service else { throw SkillSetServiceError.repositoryNotFound }
+            let plan: StoredDeploymentPlan?
+            do {
+                plan = try service.makeHarnessPlan(projectID: projectUUID, agent: host.rawValue, selection: updatedSelection,
+                                                   installMethod: skillInstallMethod, allowRelatedHarnessUpdates: true)
+            } catch let error as DeploymentError where error == .noChanges {
+                plan = nil
+            }
+            if let plan {
+                let approved = try planStore.approve(id: plan.id, digest: plan.plan.digest)
+                _ = try service.apply(planID: approved.id, digest: approved.plan.digest)
+            }
+            try reloadProjects(preferredID: projectUUID)
+            setProjectPlanNotice(nil, for: project.id)
+            projectSaveMessage = L10n.tr("已保存：\(host.displayName) · \(title)")
+            report("已保存：\(host.displayName) · \(title)")
+            return true
+        } catch {
+            var restored = project
+            restored.harnessSelections[host.rawValue] = previousSelection
+            restored.selectEditingAgent(restored.editingAgent)
+            persistDraft(for: restored)
+            let notice = ProjectPlanNotice(message: UserFacingText.error(error), tone: .error)
+            setProjectPlanNotice(notice, for: project.id)
+            reportKey(UserFacingText.error(error))
+            return false
+        }
     }
 
     func selectProjectHost(_ host: AgentHost, projectID: String? = nil) {
@@ -1066,7 +1191,7 @@ final class AppModel {
             preparedPlan = applied
             let planType = applied.plan.metadata?["planType"] ?? "skill-deployment"
             if planType == "global-configuration" {
-                if let raw = applied.plan.metadata?["globalHost"], let host = MCPHost(rawValue: raw), host != globalConfiguration.host {
+                if let raw = applied.plan.metadata?["globalHost"], let host = SkillConfigurationTarget(rawValue: raw), host != globalConfiguration.host {
                     globalConfiguration.selectHost(host)
                 }
                 globalConfiguration.didApply()

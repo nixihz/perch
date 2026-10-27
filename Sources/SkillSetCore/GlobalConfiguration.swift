@@ -29,24 +29,32 @@ public struct GlobalConfigurationLocations: Sendable {
         )
     }
 
-    public func skillsRoot(_ host: MCPHost) -> URL {
+    public func skillsRoot(_ host: SkillConfigurationTarget) -> URL {
         configuredSkillsRoot(host).resolvingSymlinksInPath().standardizedFileURL
     }
 
-    public func configuredSkillsRoot(_ host: MCPHost) -> URL {
-        (host == .codex ? codexRoot : claudeRoot).appendingPathComponent("skills")
+    public func configuredSkillsRoot(_ host: SkillConfigurationTarget) -> URL {
+        switch host {
+        case .agents: home.appendingPathComponent(".agents/skills")
+        case .codex: codexRoot.appendingPathComponent("skills")
+        case .claudeCode: claudeRoot.appendingPathComponent("skills")
+        }
     }
 
     public func rulesURL(_ host: MCPHost) -> URL {
         (host == .codex ? codexRoot : claudeRoot).appendingPathComponent(host == .codex ? "AGENTS.md" : "CLAUDE.md")
     }
 
-    func stateURL(_ host: MCPHost) -> URL { stateRoot.appendingPathComponent("global/\(host.rawValue).json") }
-    func draftURL(_ host: MCPHost) -> URL { stateRoot.appendingPathComponent("global/\(host.rawValue)-draft.json") }
+    public func rulesURL(for target: SkillConfigurationTarget) -> URL? {
+        target.mcpHost.map { rulesURL($0) }
+    }
+
+    func stateURL(_ host: SkillConfigurationTarget) -> URL { stateRoot.appendingPathComponent("global/\(host.rawValue).json") }
+    func draftURL(_ host: SkillConfigurationTarget) -> URL { stateRoot.appendingPathComponent("global/\(host.rawValue)-draft.json") }
 
     // 事务根只用于相对路径与 journal；服务还会按宿主精确校验目标白名单。
-    func transactionRoot(_ host: MCPHost) -> URL {
-        let urls = [skillsRoot(host), rulesURL(host), stateURL(host)]
+    func transactionRoot(_ host: SkillConfigurationTarget) -> URL {
+        let urls = [skillsRoot(host), stateURL(host)] + [rulesURL(for: host)].compactMap { $0 }
         var root = urls[0].deletingLastPathComponent()
         while !urls.allSatisfy({ $0.path.hasPrefix(root.path == "/" ? "/" : root.path + "/") }) {
             root.deleteLastPathComponent()
@@ -56,6 +64,7 @@ public struct GlobalConfigurationLocations: Sendable {
 }
 
 public enum GlobalVerificationReason: String, Sendable {
+    case unsupportedResources = "Agents 共享目录只支持技能，不能保存 AGENTS 片段"
     case invalidDraft = "全局草稿格式无效或缺少必需字段"
     case invalidState = "全局管理记录格式无效或缺少必需字段"
     case unsupportedSchema = "全局管理记录的数据版本不受支持"
@@ -116,7 +125,7 @@ struct GlobalManagedResource: Codable, Hashable {
 struct GlobalConfigurationState: Codable {
     var schemaVersion = 1
     var revision = UUID()
-    let host: MCPHost
+    let host: SkillConfigurationTarget
     var skillsPath: String
     var rulesPath: String
     var selection: GlobalConfigurationDraft
@@ -139,7 +148,7 @@ public struct GlobalResourceObservation: Identifiable, Sendable {
 }
 
 public struct GlobalConfigurationInspection: Sendable {
-    public let host: MCPHost
+    public let host: SkillConfigurationTarget
     public let skillsPath: String
     public let rulesPath: String
     public let resources: [GlobalResourceObservation]
@@ -171,12 +180,18 @@ public struct GlobalConfigurationManager {
         self.locations = locations ?? .detect(stateRoot: paths.applicationSupportRoot)
     }
 
+    func validateSelection(_ selection: GlobalConfigurationDraft, host: SkillConfigurationTarget) throws {
+        guard host != .agents || selection.instructionIDs.isEmpty else {
+            throw GlobalConfigurationError.verificationFailed(.unsupportedResources, path: locations.draftURL(host).path)
+        }
+    }
+
     /// 引用盘点只需已落盘选择，避免为每个片段重复核验全部全局技能包。
-    public func appliedSelection(host: MCPHost) throws -> GlobalConfigurationDraft {
+    public func appliedSelection(host: SkillConfigurationTarget) throws -> GlobalConfigurationDraft {
         try loadState(host)?.selection ?? GlobalConfigurationDraft()
     }
 
-    public func inspect(host: MCPHost) throws -> GlobalConfigurationInspection {
+    public func inspect(host: SkillConfigurationTarget) throws -> GlobalConfigurationInspection {
         try validateSkillsRoot(host)
         let state = try loadState(host)
         let root = locations.transactionRoot(host)
@@ -194,41 +209,47 @@ public struct GlobalConfigurationManager {
             }
         }
         // 用户手工删除的受管包仍需显示，以便解释后续计划为何冲突。
-        for (path, _) in state?.managed ?? [:] where path != locations.rulesURL(host).path && !resources.contains(where: { $0.path == path }) {
+        for (path, _) in state?.managed ?? [:] where path != (locations.rulesURL(for: host)?.path ?? "") && !resources.contains(where: { $0.path == path }) {
             resources.append(GlobalResourceObservation(path: path, managed: true, modified: true, symbolicLink: false))
         }
-        let rules = locations.rulesURL(host)
-        try check(rules, root: root)
-        if let data = try dataIfPresent(rules) {
-            let body = try ruleBody(data, path: rules.path)
-            let record = state?.managed[rules.path]
-            resources.append(GlobalResourceObservation(path: rules.path, managed: record != nil,
-                modified: record.map { $0.hash != body.map { SkillAssetCopier.sha256(Data($0.utf8)) } } ?? false,
-                symbolicLink: false))
-        } else if state?.managed[rules.path] != nil {
-            resources.append(GlobalResourceObservation(path: rules.path, managed: true, modified: true, symbolicLink: false))
+        if let rules = locations.rulesURL(for: host) {
+            try check(rules, root: root)
+            if let data = try dataIfPresent(rules) {
+                let body = try ruleBody(data, path: rules.path)
+                let record = state?.managed[rules.path]
+                resources.append(GlobalResourceObservation(path: rules.path, managed: record != nil,
+                    modified: record.map { $0.hash != body.map { SkillAssetCopier.sha256(Data($0.utf8)) } } ?? false,
+                    symbolicLink: false))
+            } else if state?.managed[rules.path] != nil {
+                resources.append(GlobalResourceObservation(path: rules.path, managed: true, modified: true, symbolicLink: false))
+            }
         }
-        return GlobalConfigurationInspection(host: host, skillsPath: skillsRoot.path, rulesPath: rules.path,
+        return GlobalConfigurationInspection(host: host, skillsPath: skillsRoot.path, rulesPath: locations.rulesURL(for: host)?.path ?? "",
             resources: resources, selection: state?.selection ?? GlobalConfigurationDraft(),
             hasManagement: !(state?.managed.isEmpty ?? true) || !(state?.selection.skillIDs.isEmpty ?? true) || !(state?.selection.instructionIDs.isEmpty ?? true))
     }
 
-    public func draft(host: MCPHost) throws -> GlobalConfigurationDraft {
+    public func draft(host: SkillConfigurationTarget) throws -> GlobalConfigurationDraft {
         let url = locations.draftURL(host)
         try check(url, root: locations.transactionRoot(host))
         guard let data = try dataIfPresent(url) else { return try loadState(host)?.selection ?? GlobalConfigurationDraft() }
-        do { return try JSONDecoder().decode(GlobalConfigurationDraft.self, from: data) }
+        do {
+            let draft = try JSONDecoder().decode(GlobalConfigurationDraft.self, from: data)
+            try validateSelection(draft, host: host)
+            return draft
+        }
         catch { throw GlobalConfigurationError.verificationFailed(.invalidDraft, path: url.path) }
     }
 
-    public func saveDraft(_ draft: GlobalConfigurationDraft, host: MCPHost) throws {
+    public func saveDraft(_ draft: GlobalConfigurationDraft, host: SkillConfigurationTarget) throws {
+        try validateSelection(draft, host: host)
         let url = locations.draftURL(host)
         try check(url, root: locations.transactionRoot(host))
         try fileManager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try encode(draft).write(to: url, options: .atomic)
     }
 
-    public func history(host: MCPHost) throws -> [GlobalOperationRecord] {
+    public func history(host: SkillConfigurationTarget) throws -> [GlobalOperationRecord] {
         let currentHash = try hash(locations.stateURL(host))
         return try journals(host).sorted { $0.createdAt > $1.createdAt }.map { journal in
             let statePath = relativeIfInside(locations.stateURL(host), root: URL(fileURLWithPath: journal.projectPath))
@@ -239,7 +260,7 @@ public struct GlobalConfigurationManager {
         }
     }
 
-    func loadState(_ host: MCPHost) throws -> GlobalConfigurationState? {
+    func loadState(_ host: SkillConfigurationTarget) throws -> GlobalConfigurationState? {
         let url = locations.stateURL(host)
         try check(url, root: locations.transactionRoot(host))
         let history = try journals(host)
@@ -256,9 +277,10 @@ public struct GlobalConfigurationManager {
         }
         try require(state.schemaVersion == 1, .unsupportedSchema)
         try require(state.host == host, .hostMismatch)
+        try validateSelection(state.selection, host: host)
         let rawHash = SkillAssetCopier.sha256(data)
         let hasPathMismatch = state.skillsPath != locations.skillsRoot(host).path
-            || state.rulesPath != locations.rulesURL(host).path
+            || state.rulesPath != (locations.rulesURL(for: host)?.path ?? "")
         if hasPathMismatch {
             // 路径变更只有在原始状态仍由本机已完成事务签发时才自动修复。
             // 这样可以兼容宿主目录迁移，同时继续拒绝直接篡改管理记录。
@@ -274,7 +296,7 @@ public struct GlobalConfigurationManager {
         return state
     }
 
-    func journals(_ host: MCPHost) throws -> [FileTransactionJournal] {
+    func journals(_ host: SkillConfigurationTarget) throws -> [FileTransactionJournal] {
         guard fileManager.fileExists(atPath: paths.operationsRoot.path) else { return [] }
         let executor = FileTransactionExecutor(operationsRoot: paths.operationsRoot)
         return try fileManager.contentsOfDirectory(at: paths.operationsRoot, includingPropertiesForKeys: nil).compactMap { url in
@@ -287,7 +309,7 @@ public struct GlobalConfigurationManager {
         }
     }
 
-    func hasStateReceipt(_ stateHash: String, host: MCPHost, journals: [FileTransactionJournal]) -> Bool {
+    func hasStateReceipt(_ stateHash: String, host: SkillConfigurationTarget, journals: [FileTransactionJournal]) -> Bool {
         journals.contains { journal in
             guard journal.state == "applied",
                   journal.metadata?["globalHost"] == host.rawValue,
@@ -300,14 +322,15 @@ public struct GlobalConfigurationManager {
 
     /// 将旧版状态中的宿主路径迁移到当前解析结果，受管资源路径一并迁移。
     /// 调用方应先核对状态收据；此函数本身不写盘。
-    func canonicalizeStatePaths(_ state: GlobalConfigurationState, host: MCPHost, path: String) throws -> GlobalConfigurationState {
+    func canonicalizeStatePaths(_ state: GlobalConfigurationState, host: SkillConfigurationTarget, path: String) throws -> GlobalConfigurationState {
         let currentSkills = locations.skillsRoot(host).path
-        let currentRules = locations.rulesURL(host).path
-        guard state.skillsPath.hasPrefix("/"), state.rulesPath.hasPrefix("/") else {
+        let currentRules = (locations.rulesURL(for: host)?.path ?? "")
+        guard state.skillsPath.hasPrefix("/"),
+              host == .agents ? state.rulesPath.isEmpty : state.rulesPath.hasPrefix("/") else {
             throw GlobalConfigurationError.verificationFailed(.invalidState, path: path)
         }
         let oldSkills = URL(fileURLWithPath: state.skillsPath).standardizedFileURL.path
-        let oldRules = URL(fileURLWithPath: state.rulesPath).standardizedFileURL.path
+        let oldRules = state.rulesPath.isEmpty ? "" : URL(fileURLWithPath: state.rulesPath).standardizedFileURL.path
         guard oldSkills != "/", oldRules != "/" else {
             throw GlobalConfigurationError.verificationFailed(.unmanagedPath, path: path)
         }
@@ -315,7 +338,7 @@ public struct GlobalConfigurationManager {
         var mapped: [String: GlobalManagedResource] = [:]
         for (resourcePath, resource) in state.managed {
             let canonical: String
-            if resourcePath == oldRules {
+            if !oldRules.isEmpty, resourcePath == oldRules {
                 canonical = currentRules
             } else if resourcePath.hasPrefix(oldSkills + "/") {
                 canonical = currentSkills + String(resourcePath.dropFirst(oldSkills.count))
@@ -337,15 +360,15 @@ public struct GlobalConfigurationManager {
         return repaired
     }
 
-    func allowedResource(_ url: URL, host: MCPHost) -> Bool {
-        url.path == locations.rulesURL(host).path
+    func allowedResource(_ url: URL, host: SkillConfigurationTarget) -> Bool {
+        url.path == (locations.rulesURL(for: host)?.path ?? "")
             || (url.deletingLastPathComponent().path == locations.skillsRoot(host).path
                 && url.lastPathComponent.range(of: #"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$"#, options: .regularExpression) != nil)
     }
 
     /// 全局事务根可能包含宿主自定义目录；执行前仍只接受这两类资源和本机状态文件。
     public func validate(plan: DeploymentPlan) throws {
-        guard let raw = plan.metadata?["globalHost"], let host = MCPHost(rawValue: raw) else {
+        guard let raw = plan.metadata?["globalHost"], let host = SkillConfigurationTarget(rawValue: raw) else {
             throw DeploymentError.invalidPlan
         }
         // 只解析宿主技能根目录；批准后入口改指其他目录时，旧计划不能继续写入。
@@ -373,7 +396,7 @@ public struct GlobalConfigurationManager {
         }
     }
 
-    func validateSkillsRoot(_ host: MCPHost) throws {
+    func validateSkillsRoot(_ host: SkillConfigurationTarget) throws {
         let configured = locations.configuredSkillsRoot(host)
         let resolved = locations.skillsRoot(host)
         var directory: ObjCBool = false
@@ -392,8 +415,8 @@ public struct GlobalConfigurationManager {
             libraryRoot: paths.libraryDirectoryURL, sourcesRoot: paths.sourcesRoot
         ) { return hash }
         // 只在已配置的目录边界内检查，不能把 macOS 的 /var 系统别名误判为用户置换。
-        let roots = [locations.home, locations.stateRoot, locations.codexRoot, locations.claudeRoot,
-                     locations.skillsRoot(.codex), locations.skillsRoot(.claudeCode)]
+        let roots = [locations.home, locations.stateRoot, locations.codexRoot, locations.claudeRoot]
+            + SkillConfigurationTarget.allCases.map { locations.skillsRoot($0) }
         guard let root = roots.first(where: { url.path.hasPrefix($0.path + "/") }) else {
             throw DeploymentError.pathOutsideRoot(url.path)
         }

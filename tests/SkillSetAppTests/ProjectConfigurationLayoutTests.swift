@@ -212,7 +212,7 @@ final class ProjectConfigurationLayoutTests: XCTestCase {
             let scrolls = descendants(controller.view).compactMap { $0 as? NSScrollView }
             let table = try XCTUnwrap(descendants(controller.view).compactMap { $0 as? NSTableView }.first)
             let content = scrolls.filter { $0 !== table.enclosingScrollView }
-            let selector = try XCTUnwrap(content.first { $0.bounds.height <= 40 })
+            let selector = try XCTUnwrap(content.first { $0.bounds.height >= 32 && $0.bounds.height <= 36 })
             let resources = try XCTUnwrap(content.first { $0.bounds.height > 100 })
             let selectorRect = selector.convert(selector.bounds, to: controller.view)
             let resourceRect = resources.convert(resources.bounds, to: controller.view)
@@ -251,6 +251,42 @@ final class ProjectConfigurationLayoutTests: XCTestCase {
         XCTAssertTrue(restarted.selected(plugin))
         XCTAssertFalse(restarted.acknowledgedRisk)
         XCTAssertTrue(try DeploymentPlanStore(rootURL: paths.plansRoot).list().isEmpty)
+    }
+
+    func testProjectResourceImmediateSaveWritesFilesDirectly() async throws {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let (paths, locations) = try seed(root)
+        let model = AppModel(runtimePaths: paths, globalLocations: locations)
+        let project = root.appendingPathComponent("project")
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        XCTAssertTrue(model.registerProject(project))
+        let skill = try XCTUnwrap(model.snapshot.catalog.entries.first)
+        let snippet = try XCTUnwrap(model.snapshot.templates.first)
+
+        // 即时保存项目技能
+        let skillSaved = await model.saveProjectSkill(skill, enabled: true, host: .codex)
+        XCTAssertTrue(skillSaved)
+        let installedSkill = project.appendingPathComponent(".agents/skills/fixture/SKILL.md")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: installedSkill.path))
+
+        // 即时保存项目规则片段到 AGENTS.md
+        let instructionSaved = await model.saveProjectInstruction(snippet, enabled: true, host: .codex)
+        XCTAssertTrue(instructionSaved)
+        let agentsFile = project.appendingPathComponent("AGENTS.md")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: agentsFile.path))
+        XCTAssertTrue(try String(contentsOf: agentsFile, encoding: .utf8).contains("提交前运行相关测试。"))
+
+        // 即时取消规则片段
+        let instructionCancelled = await model.saveProjectInstruction(snippet, enabled: false, host: .codex)
+        XCTAssertTrue(instructionCancelled)
+        let updatedAgents = (try? String(contentsOf: agentsFile, encoding: .utf8)) ?? ""
+        XCTAssertFalse(updatedAgents.contains("提交前运行相关测试。"))
+
+        // 即时取消项目技能
+        let skillCancelled = await model.saveProjectSkill(skill, enabled: false, host: .codex)
+        XCTAssertTrue(skillCancelled)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: installedSkill.path))
     }
 
     private func fixture(_ body: (URL, SkillSetRuntimePaths, GlobalConfigurationLocations, AppModel) throws -> Void) throws {

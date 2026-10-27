@@ -3,6 +3,27 @@ import Testing
 @testable import SkillSetCore
 
 struct InstalledSkillScanTests {
+    @Test func firstInitializationCollectsAllThreeTargetsWithoutWritingBackOrRescanning() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).resolvingSymlinksInPath()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let paths = SkillSetRuntimePaths(applicationSupportRoot: root.appendingPathComponent("state"), repositoryRoot: nil)
+        let locations = GlobalConfigurationLocations(home: root.appendingPathComponent("home"), stateRoot: paths.applicationSupportRoot,
+            codexRoot: root.appendingPathComponent("custom-codex"), claudeRoot: root.appendingPathComponent("custom-claude"))
+        for target in SkillConfigurationTarget.allCases {
+            let skill = locations.configuredSkillsRoot(target).appendingPathComponent(target.rawValue)
+            try FileManager.default.createDirectory(at: skill, withIntermediateDirectories: true)
+            try Data("---\nname: \(target.rawValue)\ndescription: first initialization\n---\n\(target.rawValue)".utf8)
+                .write(to: skill.appendingPathComponent("SKILL.md"))
+        }
+        let service = try SkillSetService(paths: paths, globalLocations: locations)
+        #expect(Set(service.skills(query: "").map(\.slug)) == ["agents", "codex", "claude-code"])
+        #expect(try service.scanInstalledSkills().isEmpty)
+        for target in SkillConfigurationTarget.allCases {
+            let root = locations.configuredSkillsRoot(target)
+            #expect(try FileManager.default.contentsOfDirectory(atPath: root.path) == [target.rawValue])
+        }
+    }
+
     @Test func separateCollectionsShareOneFixedLocalImportSource() throws {
         let fm = FileManager.default
         let root = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString).resolvingSymlinksInPath()

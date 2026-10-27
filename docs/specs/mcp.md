@@ -55,6 +55,8 @@
 
 技能库删除不移除项目中的链接或引用，但依赖该库条目的软链部署会失效；custom 中的实体文件也会删除，跟随来源的条目只移除库内软链。原地编辑 custom 正文会立即改变软链部署看到的内容，不产生不可变新版本；复制部署不变。来源编辑失败保留旧记录；成功同步会更新跟随来源的库条目和软链部署，删除来源会使这些链接失效，独立复制到 custom 或目标目录的实体内容保留。上述编辑、删除成功响应同时在文本和 `structuredContent.warnings` 说明影响，不能据此宣称所有已部署内容不变。片段、预设和其他配置库删除保留现有部署及引用，后续部署遇到缺失引用会拒绝。删除后不能恢复隐藏条目。`projects_delete` 只取消登记，已批准计划仍遵循既有执行时路径与归属检查。
 
+`global_config_get` 与 `global_config_plan` 的 `host` 额外支持 `agents`，用于共享技能目录；其 `instructionIds` 必须为空。其他工具的宿主枚举仍只有 `codex` / `claude-code`。
+
 `templates_apply_plan` 是追加操作；需要替换或移除片段时，使用 `deployment_harness_plan` 或 `global_config_plan` 提供完整选择。`presets_apply_draft` 可载入混合预设，插件和 MCP 组件仍须分别生成计划；`presets_install` 保留原有混合预设拒绝行为，避免产生部分安装。插件来源条目与宿主已安装插件分开管理，不通过编辑 manifest 实现插件更新。
 
 所有新增 `*_plan` 返回 `status: awaiting-approval`、完整 digest 和下一步调用参数；不会签发批准。库管理和草稿保存无需批准，写宿主继续通过本机批准及 `deployment_apply`。MCP 仍不提供 approve。扫描 MCP/插件入库、全局历史恢复和宿主 marketplace 浏览不在本轮接口内，仍按已有本机能力或后续里程碑处理。

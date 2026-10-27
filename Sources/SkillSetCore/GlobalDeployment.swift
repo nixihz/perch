@@ -2,14 +2,15 @@ import Foundation
 
 extension GlobalConfigurationManager {
     public func makeDeploymentPlan(
-        host: MCPHost, selection: GlobalConfigurationDraft, catalog: CatalogDocument,
+        host: SkillConfigurationTarget, selection: GlobalConfigurationDraft, catalog: CatalogDocument,
         sourceURLs: [String: URL], fragments: [String: String], takeOverExisting: Bool = false,
         installMethod: SkillInstallMethod = .copy
     ) throws -> StoredDeploymentPlan {
+        try validateSelection(selection, host: host)
         guard selection.skillIDs.count <= 200 else { throw SkillSetServiceError.tooManySelections(selection.skillIDs.count) }
         let current = try loadState(host)
         var next = current ?? GlobalConfigurationState(host: host,
-            skillsPath: locations.skillsRoot(host).path, rulesPath: locations.rulesURL(host).path,
+            skillsPath: locations.skillsRoot(host).path, rulesPath: (locations.rulesURL(for: host)?.path ?? ""),
             selection: GlobalConfigurationDraft(), managed: [:])
         next.selection = selection
         let builder = try GlobalPlanBuilder(manager: self, host: host, action: "deploy")
@@ -23,6 +24,13 @@ extension GlobalConfigurationManager {
             guard !entry.isBlocked else { throw DeploymentError.skillBlocked(id) }
             let target = locations.skillsRoot(host).appendingPathComponent(entry.slug)
             guard allowedResource(target, host: host), slugs.insert(entry.slug).inserted else { throw DeploymentError.invalidPlan }
+            if host == .agents || host == .codex {
+                let other: SkillConfigurationTarget = host == .agents ? .codex : .agents
+                let otherSkill = locations.skillsRoot(other).appendingPathComponent(entry.slug)
+                if fileManager.fileExists(atPath: otherSkill.path) {
+                    builder.warnings.append("\(other.displayName) 中已有同名技能：\(otherSkill.path)。Codex 也会加载 Agents 目录，请在工具中核对来源。")
+                }
+            }
             desired.insert(target.path)
             let actual = try builder.observe(target)
             // 私有库存归栖集自己所有，宿主安装目标不能落在库存里。
@@ -87,8 +95,7 @@ extension GlobalConfigurationManager {
             return body
         }
         let body = bodies.joined(separator: "\n\n").trimmingCharacters(in: .whitespacesAndNewlines)
-        let rules = locations.rulesURL(host)
-        if !body.isEmpty {
+        if let rules = locations.rulesURL(for: host), !body.isEmpty {
             desired.insert(rules.path)
             _ = try builder.observe(rules)
             let original = try dataIfPresent(rules)
@@ -128,7 +135,7 @@ extension GlobalConfigurationManager {
         return try builder.finish(state: next)
     }
 
-    public func makeRestorePlan(host: MCPHost, mode: GlobalRestoreMode) throws -> StoredDeploymentPlan {
+    public func makeRestorePlan(host: SkillConfigurationTarget, mode: GlobalRestoreMode) throws -> StoredDeploymentPlan {
         guard let current = try loadState(host) else { throw DeploymentError.noChanges }
         let builder = try GlobalPlanBuilder(manager: self, host: host, action: mode.rawValue)
         defer { builder.cleanup() }
@@ -149,9 +156,9 @@ extension GlobalConfigurationManager {
 
     func baselineURL(_ id: UUID) -> URL { locations.stateRoot.appendingPathComponent("global-baselines/\(id.uuidString)") }
 
-    func restore(_ resource: GlobalManagedResource, at target: URL, host: MCPHost, builder: GlobalPlanBuilder) throws {
+    func restore(_ resource: GlobalManagedResource, at target: URL, host: SkillConfigurationTarget, builder: GlobalPlanBuilder) throws {
         let actual = try builder.observe(target)
-        if target == locations.rulesURL(host) {
+        if target == locations.rulesURL(for: host) {
             let current = try dataIfPresent(target)
             guard current != nil else {
                 if builder.action == "deploy" { builder.warnings.append("原规则文件已删除，跳过恢复并清理管理记录：\(target.path)") }
@@ -193,7 +200,7 @@ extension GlobalConfigurationManager {
 
 final class GlobalPlanBuilder {
     let manager: GlobalConfigurationManager
-    let host: MCPHost
+    let host: SkillConfigurationTarget
     let action: String
     let id = UUID()
     let root: URL
@@ -204,7 +211,7 @@ final class GlobalPlanBuilder {
     var newBaselines: [URL] = []
     var saved = false
 
-    init(manager: GlobalConfigurationManager, host: MCPHost, action: String) throws {
+    init(manager: GlobalConfigurationManager, host: SkillConfigurationTarget, action: String) throws {
         self.manager = manager
         self.host = host
         self.action = action
@@ -264,7 +271,9 @@ final class GlobalPlanBuilder {
         let digest = DeploymentPlanner.calculateDigest(projectPath: root.path, changes: changes,
             selectedSkills: [], metadata: metadata, observations: dependencies)
         let plan = DeploymentPlan(id: id, projectPath: root.path, createdAt: Date(), digest: digest,
-            changes: changes, warnings: ["此操作影响当前用户在该 AI 工具中的全部项目。"] + warnings,
+            changes: changes, warnings: [host == .agents
+                ? "Agents 是共享技能目录；Codex 也会加载其中的技能，其他支持此目录的工具也可能使用。"
+                : "此操作影响当前用户在该 AI 工具中的全部项目。"] + warnings,
             metadata: metadata, observations: dependencies)
         try manager.validate(plan: plan)
         let stored = try DeploymentPlanStore(rootURL: manager.paths.plansRoot).save(plan: plan, stagingPath: stage.path)

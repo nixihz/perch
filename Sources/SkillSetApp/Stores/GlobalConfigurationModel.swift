@@ -5,20 +5,22 @@ import SkillSetCore
 @MainActor
 @Observable
 final class GlobalConfigurationModel {
-    var host: MCPHost = .codex
+    var host: SkillConfigurationTarget = .codex
     private(set) var draft = GlobalConfigurationDraft()
     private(set) var inspection: GlobalConfigurationInspection?
     private(set) var operations: [GlobalOperationRecord] = []
     private(set) var error: String?
     var query = ""
     var takeOverExisting = false
-    private(set) var inheritedResources: [MCPHost: [GlobalResourceObservation]] = [:]
-    private(set) var inheritanceErrors: [MCPHost: String] = [:]
-    private(set) var skillEditingErrors: [MCPHost: String] = [:]
+    private(set) var inheritedResources: [SkillConfigurationTarget: [GlobalResourceObservation]] = [:]
+    private(set) var inheritanceErrors: [SkillConfigurationTarget: String] = [:]
+    private(set) var skillEditingErrors: [SkillConfigurationTarget: String] = [:]
     private(set) var isRefreshing = false
+    private(set) var isSavingSkill = false
+    private(set) var skillSaveMessage: String?
     private var refreshID = UUID()
     private var inheritanceID = UUID()
-    private var skillDrafts: [MCPHost: GlobalConfigurationDraft] = [:]
+    private var skillDrafts: [SkillConfigurationTarget: GlobalConfigurationDraft] = [:]
     private var availableSkillIDs: Set<String>?
     private var availableInstructionIDs: Set<String>?
     let locations: GlobalConfigurationLocations
@@ -31,7 +33,7 @@ final class GlobalConfigurationModel {
 
     private var manager: GlobalConfigurationManager { GlobalConfigurationManager(paths: paths, locations: locations) }
 
-    func selectHost(_ host: MCPHost, inBackground: Bool = false) {
+    func selectHost(_ host: SkillConfigurationTarget, inBackground: Bool = false) {
         self.host = host
         takeOverExisting = false
         inspection = nil
@@ -50,7 +52,7 @@ final class GlobalConfigurationModel {
     }
 
     private struct HostSnapshot: Sendable {
-        let host: MCPHost
+        let host: SkillConfigurationTarget
         let inspection: Result<GlobalConfigurationInspection, Error>
         let draft: Result<GlobalConfigurationDraft, Error>
         let history: Result<[GlobalOperationRecord], Error>
@@ -58,7 +60,7 @@ final class GlobalConfigurationModel {
 
     nonisolated private static func read(paths: SkillSetRuntimePaths, locations: GlobalConfigurationLocations) -> [HostSnapshot] {
         let manager = GlobalConfigurationManager(paths: paths, locations: locations)
-        return MCPHost.allCases.map { host in
+        return SkillConfigurationTarget.allCases.map { host in
             HostSnapshot(host: host, inspection: Result { try manager.inspect(host: host) },
                          draft: Result { try manager.draft(host: host) },
                          history: Result { try manager.history(host: host) })
@@ -66,6 +68,7 @@ final class GlobalConfigurationModel {
     }
 
     func refresh() {
+        guard !isSavingSkill else { return }
         refreshID = UUID()
         inheritanceID = UUID()
         isRefreshing = false
@@ -74,7 +77,7 @@ final class GlobalConfigurationModel {
 
     /// 页面进入只发起后台读取；保留上次结果，避免切页时闪空和阻塞导航。
     func refreshInBackground() async {
-        guard !Task.isCancelled else { return }
+        guard !Task.isCancelled, !isSavingSkill else { return }
         let id = UUID()
         refreshID = id
         let inheritanceRequest = UUID()
@@ -132,10 +135,10 @@ final class GlobalConfigurationModel {
     func setAvailableReferences(skillIDs: Set<String>, instructionIDs: Set<String>) {
         availableSkillIDs = skillIDs
         availableInstructionIDs = instructionIDs
-        for host in MCPHost.allCases { reconcileDraftIfNeeded(host: host) }
+        for host in SkillConfigurationTarget.allCases { reconcileDraftIfNeeded(host: host) }
     }
 
-    private func reconcileDraftIfNeeded(host: MCPHost) {
+    private func reconcileDraftIfNeeded(host: SkillConfigurationTarget) {
         guard var next = skillDrafts[host] else { return }
         guard let availableSkillIDs, let availableInstructionIDs else { return }
         let skills = next.skillIDs.filter(availableSkillIDs.contains)
@@ -160,9 +163,9 @@ final class GlobalConfigurationModel {
     }
 
     nonisolated private static func readInheritance(paths: SkillSetRuntimePaths, locations: GlobalConfigurationLocations)
-        -> [MCPHost: Result<[GlobalResourceObservation], Error>] {
+        -> [SkillConfigurationTarget: Result<[GlobalResourceObservation], Error>] {
         let manager = GlobalConfigurationManager(paths: paths, locations: locations)
-        return Dictionary(uniqueKeysWithValues: MCPHost.allCases.map { host in
+        return Dictionary(uniqueKeysWithValues: SkillConfigurationTarget.allCases.map { host in
             (host, Result { try manager.inspect(host: host).resources })
         })
     }
@@ -179,7 +182,7 @@ final class GlobalConfigurationModel {
         applyInheritance(result)
     }
 
-    private func applyInheritance(_ results: [MCPHost: Result<[GlobalResourceObservation], Error>]) {
+    private func applyInheritance(_ results: [SkillConfigurationTarget: Result<[GlobalResourceObservation], Error>]) {
         for (host, result) in results {
             do {
                 inheritedResources[host] = try result.get()
@@ -195,9 +198,9 @@ final class GlobalConfigurationModel {
         setInstallMethod(method, host: host)
     }
 
-    func selection(host: MCPHost) -> GlobalConfigurationDraft? { skillDrafts[host] }
+    func selection(host: SkillConfigurationTarget) -> GlobalConfigurationDraft? { skillDrafts[host] }
 
-    func setInstallMethod(_ method: SkillInstallMethod, host: MCPHost) {
+    func setInstallMethod(_ method: SkillInstallMethod, host: SkillConfigurationTarget) {
         guard var next = skillDrafts[host] else { return }
         next.installMethod = method
         save(next, host: host)
@@ -207,28 +210,117 @@ final class GlobalConfigurationModel {
         setSkill(id, enabled: enabled, host: host)
     }
 
-    func isSkillSelected(_ id: String, host: MCPHost) -> Bool {
+    func isSkillSelected(_ id: String, host: SkillConfigurationTarget) -> Bool {
         skillDrafts[host]?.skillIDs.contains(id) == true
     }
 
-    func canEditSkills(host: MCPHost) -> Bool {
-        !isRefreshing && skillDrafts[host] != nil && skillEditingErrors[host] == nil
+    func canEditSkills(host: SkillConfigurationTarget) -> Bool {
+        !isRefreshing && !isSavingSkill && skillDrafts[host] != nil && skillEditingErrors[host] == nil
     }
 
-    func setSkill(_ skill: SkillEntry, enabled: Bool, host: MCPHost, catalog: [SkillEntry]) {
+    func duplicateSkillNotice(_ skill: SkillEntry, catalog: [SkillEntry]) -> String? {
+        func names(_ entry: SkillEntry) -> Set<String> {
+            Set([entry.slug, entry.declaredName.isEmpty ? entry.slug : entry.declaredName].map {
+                $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            })
+        }
+        let matchingNames = names(skill)
+        let targets = [SkillConfigurationTarget.agents, .codex].filter { target in
+            let selected = Set(skillDrafts[target]?.skillIDs ?? [])
+            return catalog.contains { selected.contains($0.id) && !names($0).isDisjoint(with: matchingNames) }
+                || (inheritedResources[target] ?? []).contains {
+                    matchingNames.contains(URL(fileURLWithPath: $0.path).lastPathComponent.lowercased())
+                        && URL(fileURLWithPath: $0.path).deletingLastPathComponent() == locations.skillsRoot(target)
+                }
+        }
+        guard targets.count == 2 else { return nil }
+        return L10n.tr("Agents 与 Codex 中有同名技能，请核对来源；加载优先级由 Codex 决定。")
+    }
+
+    func setSkill(_ skill: SkillEntry, enabled: Bool, host: SkillConfigurationTarget, catalog: [SkillEntry]) {
+        guard validateSkill(skill, enabled: enabled, host: host, catalog: catalog) else { return }
+        setSkill(skill.id, enabled: enabled, host: host)
+    }
+
+    private func validateSkill(_ skill: SkillEntry, enabled: Bool, host: SkillConfigurationTarget, catalog: [SkillEntry]) -> Bool {
         guard !enabled || !skill.isBlocked else {
             error = L10n.tr("\(skill.slug) 未通过文件检查，请到技能库查看原因。")
-            return
+            return false
         }
         if enabled, let selected = skillDrafts[host]?.skillIDs,
            catalog.contains(where: { $0.id != skill.id && $0.slug == skill.slug && selected.contains($0.id) }) {
             error = L10n.tr("\(skill.slug) 已选了另一个来源，请先取消同名技能。")
-            return
+            return false
         }
-        setSkill(skill.id, enabled: enabled, host: host)
+        return true
     }
 
-    func setSkill(_ id: String, enabled: Bool, host: MCPHost) {
+    @discardableResult
+    func saveSkill(_ skill: SkillEntry, enabled: Bool, host: SkillConfigurationTarget, catalog: [SkillEntry]) async -> Bool {
+        skillSaveMessage = nil
+        guard validateSkill(skill, enabled: enabled, host: host, catalog: catalog) else { return false }
+        return await saveSkill(skill.id, name: skill.slug, enabled: enabled, host: host)
+    }
+
+    @discardableResult
+    func saveSkill(_ id: String, name: String, enabled: Bool, host: SkillConfigurationTarget) async -> Bool {
+        guard canEditSkills(host: host), let previous = skillDrafts[host] else { return false }
+        var next = previous
+        next.skillIDs.removeAll { $0 == id }
+        if enabled { next.skillIDs.append(id) }
+        next.skillIDs.sort()
+        isSavingSkill = true
+        refreshID = UUID()
+        inheritanceID = UUID()
+        let inheritanceRequest = inheritanceID
+        error = nil
+        skillSaveMessage = nil
+        let paths = paths, locations = locations
+        let updatedDraft = next
+        let result = await Task.detached(priority: .userInitiated) {
+            let manager = GlobalConfigurationManager(paths: paths, locations: locations)
+            var failure: String?
+            do {
+                // 单次点击只改变该技能，不能顺带部署其他技能或规则的待保存草稿。
+                let observed = try manager.inspect(host: host)
+                let skillPath = locations.skillsRoot(host).appendingPathComponent(name).path
+                if observed.resources.contains(where: { $0.path == skillPath && $0.managed && $0.modified }) {
+                    // 无预览的取消操作不能静默保留修改后的文件并解除管理。
+                    throw DeploymentError.managedSkillDrift(skillPath)
+                }
+                var selection = observed.selection
+                if selection.skillIDs.isEmpty { selection.installMethod = previous.installMethod }
+                selection.skillIDs.removeAll { $0 == id }
+                if enabled { selection.skillIDs.append(id) }
+                selection.skillIDs.sort()
+                let service = try SkillSetService(paths: paths, globalLocations: locations)
+                let plan: StoredDeploymentPlan?
+                do { plan = try service.makeGlobalPlan(host: host, selection: selection) }
+                catch DeploymentError.noChanges { plan = nil }
+                try manager.saveDraft(updatedDraft, host: host)
+                do {
+                    if let plan {
+                        try service.approve(planID: plan.id, digest: plan.plan.digest)
+                        _ = try service.apply(planID: plan.id, digest: plan.plan.digest)
+                    }
+                } catch {
+                    let applyFailure = UserFacingText.error(error)
+                    do { try manager.saveDraft(previous, host: host) }
+                    catch { throw NSError(domain: "GlobalSkillSaving", code: 1, userInfo: [NSLocalizedDescriptionKey:
+                        applyFailure + "\n" + UserFacingText.error(error)]) }
+                    throw error
+                }
+            } catch { failure = UserFacingText.error(error) }
+            return (Self.read(paths: paths, locations: locations), failure)
+        }.value
+        isSavingSkill = false
+        apply(result.0, inheritanceRequest: inheritanceRequest)
+        if let failure = result.1 { error = failure; return false }
+        skillSaveMessage = L10n.tr("已保存：\(host.displayName) · \(name)")
+        return true
+    }
+
+    func setSkill(_ id: String, enabled: Bool, host: SkillConfigurationTarget) {
         guard canEditSkills(host: host), var next = skillDrafts[host] else {
             error = skillEditingErrors[host]
             return
@@ -244,18 +336,76 @@ final class GlobalConfigurationModel {
         setInstruction(id, enabled: enabled, host: host)
     }
 
-    func isInstructionSelected(_ id: String, host: MCPHost) -> Bool {
+    func isInstructionSelected(_ id: String, host: SkillConfigurationTarget) -> Bool {
         skillDrafts[host]?.instructionIDs.contains(id) == true
     }
 
-    func setInstruction(_ id: String, enabled: Bool, host: MCPHost) {
-        guard canEditSkills(host: host), var next = skillDrafts[host] else { return }
+    func setInstruction(_ id: String, enabled: Bool, host: SkillConfigurationTarget) {
+        guard host != .agents, canEditSkills(host: host), var next = skillDrafts[host] else { return }
         next.instructionIDs.removeAll { $0 == id }
         if enabled { next.instructionIDs.append(id) }
         save(next, host: host)
     }
 
-    private func save(_ next: GlobalConfigurationDraft, host: MCPHost) {
+    @discardableResult
+    func saveInstruction(_ template: TemplateRecord, enabled: Bool, host: SkillConfigurationTarget) async -> Bool {
+        await saveInstruction(template.id, title: UserFacingText.templateTitle(template), enabled: enabled, host: host)
+    }
+
+    @discardableResult
+    func saveInstruction(_ id: String, title: String, enabled: Bool, host: SkillConfigurationTarget) async -> Bool {
+        guard host != .agents, canEditSkills(host: host), let previous = skillDrafts[host] else { return false }
+        var next = previous
+        next.instructionIDs.removeAll { $0 == id }
+        if enabled { next.instructionIDs.append(id) }
+        isSavingSkill = true
+        refreshID = UUID()
+        inheritanceID = UUID()
+        let inheritanceRequest = inheritanceID
+        error = nil
+        skillSaveMessage = nil
+        let paths = paths, locations = locations, takeOver = takeOverExisting
+        let updatedDraft = next
+        let result = await Task.detached(priority: .userInitiated) {
+            let manager = GlobalConfigurationManager(paths: paths, locations: locations)
+            var failure: String?
+            do {
+                let observed = try manager.inspect(host: host)
+                if let rulesPath = locations.rulesURL(for: host)?.path,
+                   observed.resources.contains(where: { $0.path == rulesPath && $0.managed && $0.modified }) {
+                    throw DeploymentError.managedRuleDrift(rulesPath)
+                }
+                var selection = observed.selection
+                selection.instructionIDs.removeAll { $0 == id }
+                if enabled { selection.instructionIDs.append(id) }
+                let service = try SkillSetService(paths: paths, globalLocations: locations)
+                let plan: StoredDeploymentPlan?
+                do { plan = try service.makeGlobalPlan(host: host, selection: selection, takeOverExisting: takeOver) }
+                catch DeploymentError.noChanges { plan = nil }
+                try manager.saveDraft(updatedDraft, host: host)
+                do {
+                    if let plan {
+                        try service.approve(planID: plan.id, digest: plan.plan.digest)
+                        _ = try service.apply(planID: plan.id, digest: plan.plan.digest)
+                    }
+                } catch {
+                    let applyFailure = UserFacingText.error(error)
+                    do { try manager.saveDraft(previous, host: host) }
+                    catch { throw NSError(domain: "GlobalInstructionSaving", code: 1, userInfo: [NSLocalizedDescriptionKey:
+                        applyFailure + "\n" + UserFacingText.error(error)]) }
+                    throw error
+                }
+            } catch { failure = UserFacingText.error(error) }
+            return (Self.read(paths: paths, locations: locations), failure)
+        }.value
+        isSavingSkill = false
+        apply(result.0, inheritanceRequest: inheritanceRequest)
+        if let failure = result.1 { error = failure; return false }
+        skillSaveMessage = L10n.tr("已保存：\(host.displayName) · \(title)")
+        return true
+    }
+
+    private func save(_ next: GlobalConfigurationDraft, host: SkillConfigurationTarget) {
         guard canEditSkills(host: host) else {
             error = skillEditingErrors[host]
             return
@@ -272,7 +422,7 @@ final class GlobalConfigurationModel {
         prepareDeployment(host: host)
     }
 
-    func prepareDeployment(host: MCPHost) -> StoredDeploymentPlan? {
+    func prepareDeployment(host: SkillConfigurationTarget) -> StoredDeploymentPlan? {
         guard canEditSkills(host: host), let selection = skillDrafts[host] else {
             error = skillEditingErrors[host]
             return nil

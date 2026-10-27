@@ -22,7 +22,7 @@ struct SkillEditorSheet: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
                 Text(L10n.text(isEditing ? "编辑技能" : draft.original == nil ? "新增技能" : "复制并编辑"))
-                    .font(AppFont.title.weight(.bold))
+                    .font(AppFont.title)
                 Spacer()
                 StatusBadge(text: L10n.tr("本机技能库"), tone: .accent)
             }
@@ -42,11 +42,8 @@ struct SkillEditorSheet: View {
             HStack {
                 Text("SKILL.md").font(AppFont.heading)
                 Spacer()
-                Picker(L10n.tr("编辑视图"), selection: $showsPreview) {
-                    Text(L10n.tr("编辑")).tag(false)
-                    Text(L10n.tr("预览")).tag(true)
-                }
-                .pickerStyle(.segmented)
+                AppSegmentedPicker(title: L10n.tr("编辑视图"), selection: $showsPreview,
+                    options: [(false, L10n.tr("编辑")), (true, L10n.tr("预览"))])
                 .labelsHidden()
                 .fixedSize()
                 .accessibilityIdentifier("skills.editor.mode")

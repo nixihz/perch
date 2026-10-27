@@ -13,7 +13,7 @@ struct PluginScanSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(L10n.tr("扫描本机插件")).font(AppFont.title.weight(.bold))
+            Text(L10n.tr("扫描本机插件")).font(AppFont.title)
             Text(L10n.tr("只读扫描 Codex、Claude Code 缓存和已登记项目。勾选后复制完整包，保留原始安装位置；不会启用、卸载或运行插件。"))
                 .font(AppFont.secondary).foregroundStyle(.secondary)
             if busy { ProgressView().controlSize(.small) }
@@ -25,7 +25,7 @@ struct PluginScanSheet: View {
                                 if $0 { selected.insert(candidate.id) } else { selected.remove(candidate.id) }
                             })) {
                                 Text(candidate.records[0].name).font(AppFont.body.weight(.semibold))
-                            }.toggleStyle(.checkbox).disabled(!candidate.canImport)
+                            }.toggleStyle(AppCheckboxStyle()).disabled(!candidate.canImport)
                             ForEach(candidate.records) { record in
                                 Text(record.host.displayName + " · " + L10n.text(UserFacingText.pluginState(record)))
                                     .font(AppFont.secondary).foregroundStyle(.secondary)

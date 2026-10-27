@@ -142,14 +142,8 @@ struct SkillsView: View {
                     }
                     .accessibilityIdentifier("skills.sourceFilter")
                 }
-                if filter != .all || !sourceKey.isEmpty || !model.query.isEmpty {
-                    Button(L10n.tr("清空筛选")) {
-                        filter = .all; sourceKey = ""; model.updateQuery("")
-                    }
-                    .accessibilityIdentifier("skills.clearFilters")
-                }
                 if visibleSkills.isEmpty {
-                    Text(L10n.tr("没有匹配的技能，请清空筛选或调整搜索。"))
+                    Text(L10n.tr("没有匹配的技能，请调整搜索或筛选条件。"))
                         .font(AppFont.secondary).foregroundStyle(.secondary)
                 }
                 HStack {
@@ -181,9 +175,7 @@ struct SkillsView: View {
                                 )) {
                                     Text(L10n.tr("勾选技能") + " " + skill.slug)
                                 }
-                                .labelsHidden()
-                                .toggleStyle(.checkbox)
-                                .padding(.top, 12)
+                                .toggleStyle(AppCheckboxStyle(showsLabel: false))
                                 .accessibilityIdentifier("skills.check.\(skill.id)")
                                 Button {
                                     model.selectedSkillID = skill.id
@@ -237,7 +229,7 @@ struct SkillsView: View {
                         VStack(alignment: .leading, spacing: 9) {
                             HStack {
                                 Text(skill.slug)
-                                    .font(AppFont.title.weight(.bold))
+                                    .font(AppFont.title)
                                 Spacer()
                                 StatusBadge(
                                     text: L10n.text(UserFacingText.metadata(skill.integrity, field: .integrity)),
@@ -368,17 +360,18 @@ private struct UserSkillInstallSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text(L10n.tr("安装到本机")).font(AppFont.title)
-            Text(L10n.tr("安装后用于所选 AI 工具的全部项目。栖集已管理的技能会保留，并改用这次选择的安装方式。"))
+            Text(L10n.tr("选择 Agents 共享目录或工具目录，预览保存后安装。栖集已管理的技能会保留，并改用这次选择的安装方式。"))
                 .font(AppFont.secondary).foregroundStyle(.secondary)
-            AppPicker(title: L10n.tr("目标 AI 工具"), selection: $host,
-                      valueLabel: host == "codex" ? "Codex · ~/.codex/skills" : "Claude Code · ~/.claude/skills") {
-                Text("Codex · ~/.codex/skills").tag("codex")
-                Text("Claude Code · ~/.claude/skills").tag("claude-code")
+            AppPicker(title: L10n.tr("技能配置目标"), selection: $host,
+                      valueLabel: (SkillConfigurationTarget(rawValue: host)?.displayName ?? host) + " · "
+                        + model.globalConfiguration.locations.configuredSkillsRoot(SkillConfigurationTarget(rawValue: host) ?? .codex).path) {
+                ForEach(SkillConfigurationTarget.allCases) { target in
+                    Text(target.displayName + " · " + model.globalConfiguration.locations.configuredSkillsRoot(target).path)
+                        .tag(target.rawValue)
+                }
             }
-            Picker(L10n.tr("技能安装方式"), selection: $method) {
-                Text(L10n.tr("软链接（推荐）")).tag(SkillInstallMethod.symlink)
-                Text(L10n.tr("复制独立文件")).tag(SkillInstallMethod.copy)
-            }.pickerStyle(.segmented)
+            AppSegmentedPicker(title: L10n.tr("技能安装方式"), selection: $method,
+                options: [(SkillInstallMethod.symlink, L10n.tr("软链接（推荐）")), (.copy, L10n.tr("复制独立文件"))])
             Text(model.runtimePaths.versionsRoot.path).font(AppFont.metadata.monospaced()).textSelection(.enabled)
             Toggle(L10n.tr("迁移同内容的现有目录（先备份，再替换）"), isOn: $adoptExisting)
             Text(L10n.tr("迁移前可把现有 skills 目录添加为本地来源，完整复制到栖集。内容不同的同名技能会阻止安装。"))

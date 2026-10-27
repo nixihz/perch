@@ -9,7 +9,7 @@ struct MCPLibraryScanSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(L10n.tr(imported ? "已加入 MCP 配置库" : "扫描已有 MCP 配置")).font(AppFont.title.weight(.bold))
+            Text(L10n.tr(imported ? "已加入 MCP 配置库" : "扫描已有 MCP 配置")).font(AppFont.title)
             Text(L10n.tr(imported
                 ? "已加入配置库。请到「全局配置」或「项目」选择服务，预览后保存。"
                 : "扫描 Codex、Claude Code 的全局配置和已登记项目。只提取命令、参数、地址和环境变量名称；凭据值及其他扩展配置不会复制。"))
@@ -65,7 +65,7 @@ struct MCPLibraryScanSheet: View {
                             Toggle(isOn: Binding(get: { selected.contains(candidate.id) }, set: { value in
                                 selected = library.updatingScanSelection(selected, candidateID: candidate.id, enabled: value)
                             })) { Text(candidate.name).font(AppFont.body.weight(.semibold)) }
-                            .toggleStyle(.checkbox).disabled(candidate.entry == nil || library.duplicate(candidate))
+                            .toggleStyle(AppCheckboxStyle()).disabled(candidate.entry == nil || library.duplicate(candidate))
                             Spacer()
                             StatusBadge(text: L10n.tr(library.duplicate(candidate) ? "已在配置库" : candidate.entry == nil ? "暂不可加入" : "可加入"),
                                 tone: candidate.entry == nil ? .warning : .neutral)

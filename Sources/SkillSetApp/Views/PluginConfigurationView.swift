@@ -105,7 +105,7 @@ struct PluginConfigurationView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     SurfaceCard(emphasis: true) {
                         VStack(alignment: .leading, spacing: 10) {
-                            Text(plugin.name).font(AppFont.title.weight(.bold))
+                            Text(plugin.name).font(AppFont.title)
                             if let marketplace = plugin.marketplaceID, !marketplace.isEmpty {
                                 Text(marketplace).font(AppFont.secondary).foregroundStyle(.secondary)
                             }
@@ -154,7 +154,7 @@ struct PluginConfigurationView: View {
                 Text(L10n.tr("插件操作")).font(AppFont.heading)
                 if !plugin.installed || host == .claudeCode {
                     Toggle(L10n.tr("我已核对插件中的自动运行脚本、命令和其他可运行内容。"), isOn: $acknowledgedExecutableRisk)
-                        .toggleStyle(.checkbox).font(AppFont.secondary)
+                        .toggleStyle(AppCheckboxStyle()).font(AppFont.secondary)
                     if !acknowledgedExecutableRisk {
                         Text(L10n.tr("请先核对并勾选上方说明，再预览安装或更新计划。"))
                             .font(AppFont.secondary).foregroundStyle(.secondary)

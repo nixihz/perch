@@ -48,7 +48,7 @@ final class SelectedSkillPillsTests: XCTestCase {
                 XCTAssertLessThanOrEqual(controller.view.fittingSize.height, 701, "\(section)")
                 let scrolls = descendants(controller.view).compactMap { $0 as? NSScrollView }
                 let pills = try XCTUnwrap(scrolls.first {
-                    $0.bounds.height >= 34 && $0.bounds.height <= 125
+                    $0.bounds.height >= 28 && $0.bounds.height <= 125
                         && ($0.documentView?.bounds.height ?? 0) > $0.contentView.bounds.height
                 }, "大量选择必须在已选区域独立滚动：\(section)")
                 let document = try XCTUnwrap(pills.documentView)

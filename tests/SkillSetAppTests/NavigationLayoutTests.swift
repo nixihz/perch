@@ -6,6 +6,32 @@ import SkillSetCore
 
 @MainActor
 final class NavigationLayoutTests: XCTestCase {
+    func testSidebarToggleKeepsDetailInsideWindowAfterRepeatedAnimations() async throws {
+        let model = AppModel(snapshot: AppSnapshot.load())
+        model.section = .settings
+        let controller = NSHostingController(rootView: ContentView(model: model))
+        let window = makeWindow(controller, size: NSSize(width: 1280, height: 820))
+        defer { window.close() }
+        try await settle(controller.view)
+        let split = try XCTUnwrap(descendants(of: controller.view).compactMap { $0 as? NSSplitView }.first)
+        let splitController = try XCTUnwrap(split.delegate as? NSSplitViewController)
+        let sidebar = try XCTUnwrap(splitController.splitViewItems.first)
+        let detail = try XCTUnwrap(splitController.splitViewItems.last?.viewController.view)
+        let originalWindowFrame = window.frame
+        for collapsed in [true, false, true, false] {
+            sidebar.animator().isCollapsed = collapsed
+            try await Task.sleep(for: .milliseconds(450))
+            controller.view.layoutSubtreeIfNeeded()
+            let detailFrame = detail.convert(detail.bounds, to: controller.view)
+            XCTAssertEqual(window.frame.width, originalWindowFrame.width, accuracy: 1,
+                           "边栏开关不能改变主窗口宽度")
+            XCTAssertGreaterThanOrEqual(detailFrame.minX, -1)
+            XCTAssertEqual(detailFrame.maxX, controller.view.bounds.maxX, accuracy: 1,
+                           "展开后详情必须重新适配可用宽度，不能滑出窗口")
+            XCTAssertEqual(model.section, .settings)
+        }
+    }
+
     func testMainSplitUsesThinDividerForToolbarAlignment() async throws {
         let model = AppModel(snapshot: AppSnapshot.load())
         let controller = NSHostingController(rootView: ContentView(model: model))

@@ -26,6 +26,8 @@ def verify(executable):
             environment.pop(key, None)
         # 技能库在状态目录的 skills/library。不隔离时会读到使用者的真实技能。
         environment["SKILLSET_HOME"] = str(root / "home")
+        environment["CODEX_HOME"] = str(root / "home/.codex")
+        environment["CLAUDE_CONFIG_DIR"] = str(root / "home/.claude")
         messages = [
             {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
                 "protocolVersion": "2025-11-25", "capabilities": {},

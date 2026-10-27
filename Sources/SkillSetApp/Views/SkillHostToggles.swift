@@ -1,10 +1,11 @@
 import SwiftUI
 import SkillSetCore
 
-/// 两个工具共享同一行，但各自读写独立草稿；控件本身不执行部署。
+/// 工具资源仍只接受实际宿主，不能把共享目录用于 MCP 或插件。
 struct SkillHostToggles: View {
     let skillName: String
     let identifierPrefix: String
+    var savesImmediately = false
     let isSelected: (MCPHost) -> Bool
     let isEnabled: (MCPHost) -> Bool
     let setSelected: (MCPHost, Bool) -> Void
@@ -12,54 +13,89 @@ struct SkillHostToggles: View {
     init(
         skillName: String,
         identifierPrefix: String,
+        savesImmediately: Bool = false,
         isSelected: @escaping (MCPHost) -> Bool,
         isEnabled: @escaping (MCPHost) -> Bool = { _ in true },
         setSelected: @escaping (MCPHost, Bool) -> Void
     ) {
         self.skillName = skillName
         self.identifierPrefix = identifierPrefix
+        self.savesImmediately = savesImmediately
         self.isSelected = isSelected
         self.isEnabled = isEnabled
         self.setSelected = setSelected
     }
 
     var body: some View {
-        HStack(spacing: 6) {
-            ForEach([MCPHost.codex, .claudeCode]) { host in
-                hostButton(host)
-            }
+        SkillTargetToggles(skillName: skillName, identifierPrefix: identifierPrefix,
+            targets: MCPHost.allCases.map(SkillConfigurationTarget.init),
+            savesImmediately: savesImmediately,
+            isSelected: { $0.mcpHost.map(isSelected) ?? false },
+            isEnabled: { $0.mcpHost.map(isEnabled) ?? false },
+            setSelected: { target, enabled in
+                if let host = target.mcpHost { setSelected(host, enabled) }
+            })
+    }
+}
+
+struct SkillTargetIcon: View {
+    let target: SkillConfigurationTarget
+
+    private var assetName: String {
+        switch target {
+        case .agents: "AgentsLogo"
+        case .codex: "CodexLogo"
+        case .claudeCode: "ClaudeLogo"
         }
-        .fixedSize()
     }
 
-    private func hostButton(_ host: MCPHost) -> some View {
+    var body: some View {
+        Image(assetName, bundle: .module)
+            .resizable().renderingMode(.template).scaledToFit()
+            .accessibilityHidden(true)
+    }
+}
+
+/// 配置目标独立选择；共享目录不改变另一个工具的草稿。
+struct SkillTargetToggles: View {
+    let skillName: String
+    let identifierPrefix: String
+    let targets: [SkillConfigurationTarget]
+    var savesImmediately = false
+    let isSelected: (SkillConfigurationTarget) -> Bool
+    var isEnabled: (SkillConfigurationTarget) -> Bool = { _ in true }
+    let setSelected: (SkillConfigurationTarget, Bool) -> Void
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(targets) { host in hostButton(host) }
+        }.fixedSize()
+    }
+
+    private func hostButton(_ host: SkillConfigurationTarget) -> some View {
         let selected = isSelected(host)
         return Button {
             setSelected(host, !isSelected(host))
         } label: {
-            Image(host == .codex ? "CodexLogo" : "ClaudeLogo", bundle: .module)
-                .resizable()
-                .renderingMode(.template)
-                .scaledToFit()
-                .frame(width: 20, height: 20)
-                .accessibilityHidden(true)
+            SkillTargetIcon(target: host).frame(width: 16, height: 16)
         }
         .buttonStyle(SkillHostButtonStyle(selected: selected))
         .disabled(!isEnabled(host))
         .accessibilityIdentifier("\(identifierPrefix).\(host.rawValue)")
-        .accessibilityLabel(L10n.tr("在 \(host.displayName) 草稿中选择「\(skillName)」"))
+        .accessibilityLabel(savesImmediately
+            ? L10n.tr("在 \(host.displayName) 中保存「\(skillName)」")
+            : L10n.tr("在 \(host.displayName) 草稿中选择「\(skillName)」"))
         .accessibilityValue(selected ? L10n.tr("已选择") : L10n.tr("未选择"))
         .accessibilityAddTraits(selected ? [.isSelected] : [])
-        .help(help(host, selected: selected))
-    }
-
-    private func help(_ host: MCPHost, selected: Bool) -> String {
-        if !isEnabled(host) {
-            return L10n.tr("当前无法切换 \(host.displayName) 草稿中的「\(skillName)」。")
-        }
-        return selected
-            ? L10n.tr("从 \(host.displayName) 草稿中取消选择「\(skillName)」，预览后保存。")
-            : L10n.tr("在 \(host.displayName) 草稿中选择「\(skillName)」，预览后保存。")
+        .help(savesImmediately
+            ? (selected
+                ? L10n.tr("从 \(host.displayName) 中取消「\(skillName)」，立即保存。")
+                : L10n.tr("在 \(host.displayName) 中启用「\(skillName)」，立即保存。"))
+            : isEnabled(host)
+            ? (selected
+                ? L10n.tr("从 \(host.displayName) 草稿中取消选择「\(skillName)」，预览后保存。")
+                : L10n.tr("在 \(host.displayName) 草稿中选择「\(skillName)」，预览后保存。"))
+            : L10n.tr("当前无法切换 \(host.displayName) 草稿中的「\(skillName)」。"))
     }
 }
 
@@ -80,7 +116,7 @@ private struct SkillHostButtonBody: View {
     private var fill: Color {
         if configuration.isPressed && isEnabled { return AppColor.accentSoft.opacity(0.7) }
         if selected { return AppColor.accentSoft }
-        return hovered && isEnabled ? AppColor.controlHover : AppColor.controlSurface
+        return hovered && isEnabled ? AppColor.controlHover : .clear
     }
 
     var body: some View {
@@ -90,20 +126,7 @@ private struct SkillHostButtonBody: View {
             .background(fill, in: RoundedRectangle(cornerRadius: AppControl.radius))
             .overlay {
                 RoundedRectangle(cornerRadius: AppControl.radius)
-                    .strokeBorder(selected ? AppColor.accentText : AppColor.border)
-            }
-            .overlay(alignment: .bottomTrailing) {
-                if selected {
-                    // 勾号同时表达开启状态，避免只靠底色区分。
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 7, weight: .bold))
-                        .foregroundStyle(AppColor.onSelection)
-                        .frame(width: 12, height: 12)
-                        .background(AppColor.selection, in: Circle())
-                        .overlay { Circle().strokeBorder(AppColor.controlSurface, lineWidth: 1) }
-                        .padding(2)
-                        .accessibilityHidden(true)
-                }
+                    .strokeBorder(selected ? AppColor.accentText.opacity(0.6) : AppColor.border.opacity(0.55))
             }
             .opacity(isEnabled ? 1 : 0.45)
             .contentShape(RoundedRectangle(cornerRadius: AppControl.radius))

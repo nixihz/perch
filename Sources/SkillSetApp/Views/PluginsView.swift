@@ -110,7 +110,7 @@ struct PluginsView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     SurfaceCard(emphasis: true) {
                         VStack(alignment: .leading, spacing: 12) {
-                            Text(source.namespace).font(AppFont.title.weight(.bold))
+                            Text(source.namespace).font(AppFont.title)
                             DisclosureGroup(L10n.tr("详细信息")) {
                                 VStack(alignment: .leading, spacing: 10) {
                                     Text(source.inputURL).font(AppFont.code).textSelection(.enabled)
@@ -241,7 +241,7 @@ private struct PluginSourceEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(L10n.tr(source == nil ? "添加插件来源" : "编辑插件来源")).font(AppFont.title.weight(.bold))
+            Text(L10n.tr(source == nil ? "添加插件来源" : "编辑插件来源")).font(AppFont.title)
             Text(L10n.tr("隔离读取完整来源，不执行插件脚本；保存后不会自动安装到 AI 工具。"))
                 .font(AppFont.secondary).foregroundStyle(.secondary)
             AppFormField(L10n.tr("Git 仓库链接或本地目录")) { TextField("owner/repository", text: $address) }

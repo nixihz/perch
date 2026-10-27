@@ -38,13 +38,17 @@ struct AppSearchField: View {
                 .accessibilityIdentifier(identifier + ".clear")
             }
         }
-        .font(AppFont.secondary)
-        .padding(.horizontal, 2)
+        .font(AppFont.body)
         .frame(height: AppControl.height)
-        .background(AppColor.controlSurface, in: RoundedRectangle(cornerRadius: AppControl.radius))
+        .background {
+            RoundedRectangle(cornerRadius: AppControl.radius)
+                .fill(AppColor.controlSurface)
+                .onTapGesture { isFocused = true }
+        }
         .overlay {
             RoundedRectangle(cornerRadius: AppControl.radius)
                 .strokeBorder(isFocused ? AppColor.accent : AppColor.border, lineWidth: isFocused ? 2 : 1)
+                .allowsHitTesting(false)
         }
     }
 }

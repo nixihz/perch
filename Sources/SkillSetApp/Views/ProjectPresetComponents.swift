@@ -31,7 +31,7 @@ struct ProjectPresetComponents: View {
                                     if checked { acknowledged.insert(reference.id) } else { acknowledged.remove(reference.id) }
                                 }
                             ))
-                            .toggleStyle(.checkbox).font(AppFont.secondary)
+                            .toggleStyle(AppCheckboxStyle()).font(AppFont.secondary)
                             Button(L10n.tr("从草稿移除")) { model.removePresetComponent(pluginID: reference.id) }
                         }
                         Divider()

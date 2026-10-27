@@ -92,19 +92,12 @@ struct AIAccessView: View {
                     StatusBadge(text: "stdio", tone: .neutral)
                 }
                 Text(L10n.tr("选择要接入的 AI 工具")).font(AppFont.secondary)
-                Picker(L10n.tr("AI 工具"), selection: $host) {
-                    ForEach(MCPHost.allCases) { item in
-                        Text(item.displayName).tag(item)
-                    }
-                }
-                .pickerStyle(.segmented)
+                AppSegmentedPicker(title: L10n.tr("AI 工具"), selection: $host,
+                    options: MCPHost.allCases.map { ($0, $0.displayName) })
                 .frame(maxWidth: 340)
                 .accessibilityIdentifier("aiAccess.host")
-                Picker(L10n.tr("使用范围"), selection: $scope) {
-                    Text(L10n.tr("用户")).tag(MCPConfigurationScope.user)
-                    Text(L10n.tr("项目")).tag(MCPConfigurationScope.project)
-                }
-                .pickerStyle(.segmented)
+                AppSegmentedPicker(title: L10n.tr("使用范围"), selection: $scope,
+                    options: [(MCPConfigurationScope.user, L10n.tr("用户")), (.project, L10n.tr("项目"))])
                 .frame(maxWidth: 340)
                 .accessibilityIdentifier("aiAccess.scope")
                 if scope == .project {

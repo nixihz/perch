@@ -26,7 +26,7 @@ struct SkillMarkdownView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .font(AppFont.body)
+        .font(AppFont.reading)
         .lineSpacing(3)
         .textSelection(.enabled)
         .tint(AppColor.accentText)
@@ -45,7 +45,7 @@ struct SkillMarkdownView: View {
         switch block {
         case let .heading(level, content):
             AnyView(Text(content)
-                .font(.system(size: level == 1 ? 26 : level == 2 ? 20 : 17, weight: .semibold))
+                .font(level == 1 ? AppFont.pageTitle : level == 2 ? AppFont.title : AppFont.heading)
                 .padding(.top, level == 1 ? 0 : 10)
                 .accessibilityAddTraits(.isHeader))
         case let .paragraph(content):

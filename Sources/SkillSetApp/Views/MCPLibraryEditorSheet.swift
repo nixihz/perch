@@ -10,7 +10,7 @@ struct MCPLibraryEditorSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(L10n.tr("MCP 服务配置")).font(AppFont.title.weight(.bold))
+            Text(L10n.tr("MCP 服务配置")).font(AppFont.title)
             Text(L10n.tr("只保存到本机配置库。AI 工具和使用范围在全局配置或项目中选择。"))
                 .font(AppFont.secondary).foregroundStyle(.secondary)
             ScrollView {

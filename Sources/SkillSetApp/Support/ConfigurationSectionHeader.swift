@@ -20,6 +20,6 @@ struct ConfigurationSectionHeader<Title: View, Actions: View>: View {
                 }
             }
         }
-        .buttonStyle(AppButtonStyle(kind: .primary))
+        .buttonStyle(AppButtonStyle())
     }
 }

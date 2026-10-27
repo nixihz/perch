@@ -6,6 +6,27 @@ import SkillSetCore
 
 @MainActor
 final class SkillHostToggleUITests: XCTestCase {
+    func testAgentsMouseToggleIsIndependentOfBothTools() async throws {
+        let state = TargetToggleState()
+        let controller = NSHostingController(rootView: TargetToggleFixture(state: state))
+        let window = makeWindow(controller, size: NSSize(width: 168, height: 60))
+        defer { window.close() }
+        try await settle(controller.view)
+        try click(window: window, point: NSPoint(x: 34, y: 30))
+        try await settle(controller.view)
+        XCTAssertEqual(state.selected, [.agents])
+        try click(window: window, point: NSPoint(x: 84, y: 30))
+        try await settle(controller.view)
+        XCTAssertEqual(state.selected, [.agents, .codex])
+        try click(window: window, point: NSPoint(x: 134, y: 30))
+        try await settle(controller.view)
+        XCTAssertEqual(state.selected, [.agents, .codex, .claudeCode])
+        try click(window: window, point: NSPoint(x: 34, y: 30))
+        try await settle(controller.view)
+        XCTAssertEqual(state.selected, [.codex, .claudeCode])
+        XCTAssertEqual(state.changes, 4)
+    }
+
     func testMouseClicksChangeOnlyTheChosenHostAndClickingAgainTurnsItOff() async throws {
         let state = HostToggleState()
         let controller = NSHostingController(rootView: HostToggleFixture(state: state))
@@ -13,14 +34,14 @@ final class SkillHostToggleUITests: XCTestCase {
         defer { window.close() }
         try await settle(controller.view)
 
-        try click(window: window, point: NSPoint(x: 39, y: 30))
+        try click(window: window, point: NSPoint(x: 39, y: 16))
         try await settle(controller.view)
         XCTAssertEqual(state.selected, [.codex])
         XCTAssertEqual(state.changes.count, 1, "一次按下和松开只能保存一次草稿")
         XCTAssertEqual(state.changes.last?.host, .codex)
         XCTAssertEqual(state.changes.last?.enabled, true)
 
-        try click(window: window, point: NSPoint(x: 81, y: 30))
+        try click(window: window, point: NSPoint(x: 81, y: 44))
         try await settle(controller.view)
         XCTAssertEqual(state.selected, [.codex, .claudeCode], "开启 Claude 不能取消 Codex")
         XCTAssertEqual(state.changes.count, 2)
@@ -94,6 +115,8 @@ final class SkillHostToggleUITests: XCTestCase {
         model.setSkill(skill, enabled: true, host: .codex)
         model.globalConfiguration.refresh()
         model.globalConfiguration.setSkill(skill.id, enabled: true, host: .claudeCode)
+        model.globalConfiguration.setSkill(skill.id, enabled: true, host: .agents)
+        model.globalConfiguration.setSkill(skill.id, enabled: true, host: .codex)
         let controller = NSHostingController(rootView: ContentView(model: model))
         let size = NSSize(width: 1080, height: 700)
         let window = makeWindow(controller, size: size)
@@ -214,5 +237,27 @@ private struct HostToggleFixture: View {
         )
         .frame(width: 120, height: 60)
         .background(AppColor.surface)
+    }
+}
+
+@MainActor
+private final class TargetToggleState: ObservableObject {
+    @Published var selected: Set<SkillConfigurationTarget> = []
+    var changes = 0
+
+    func select(_ target: SkillConfigurationTarget, enabled: Bool) {
+        changes += 1
+        if enabled { selected.insert(target) } else { selected.remove(target) }
+    }
+}
+
+private struct TargetToggleFixture: View {
+    @ObservedObject var state: TargetToggleState
+
+    var body: some View {
+        SkillTargetToggles(skillName: "共享技能", identifierPrefix: "test.sharedSkill",
+            targets: SkillConfigurationTarget.allCases, isSelected: { state.selected.contains($0) },
+            setSelected: { state.select($0, enabled: $1) })
+            .frame(width: 168, height: 60)
     }
 }

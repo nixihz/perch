@@ -5,6 +5,31 @@ import SkillSetCore
 
 @MainActor
 final class SkillHostSelectionTests: XCTestCase {
+    func testAgentsDraftSurvivesRestartAndCodexDeselectionDoesNotDisableSharedSkill() throws {
+        try withFixture { f in
+            let global = f.model.globalConfiguration
+            global.setSkill(f.first, enabled: true, host: .agents, catalog: f.entries)
+            global.setInstallMethod(.copy, host: .agents)
+            global.setSkill(f.duplicate, enabled: true, host: .codex, catalog: f.entries)
+            global.setSkill(f.second, enabled: true, host: .claudeCode, catalog: f.entries)
+            XCTAssertNotNil(global.duplicateSkillNotice(f.first, catalog: f.entries))
+            global.setSkill(f.duplicate, enabled: false, host: .codex, catalog: f.entries)
+            XCTAssertTrue(global.isSkillSelected(f.first.id, host: .agents))
+            XCTAssertNil(global.duplicateSkillNotice(f.first, catalog: f.entries))
+            let rule = try XCTUnwrap(f.model.snapshot.templates.first)
+            global.setInstruction(rule.id, enabled: true, host: .agents)
+            XCTAssertTrue(try f.manager.draft(host: .agents).instructionIDs.isEmpty)
+
+            let restarted = GlobalConfigurationModel(paths: f.paths, locations: f.locations)
+            restarted.refresh()
+            XCTAssertEqual(restarted.selection(host: .agents)?.skillIDs, [f.first.id])
+            XCTAssertEqual(restarted.selection(host: .agents)?.installMethod, .copy)
+            XCTAssertTrue(restarted.selection(host: .codex)?.skillIDs.isEmpty == true)
+            XCTAssertEqual(restarted.selection(host: .claudeCode)?.skillIDs, [f.second.id])
+            try f.assertNoHostWrites()
+        }
+    }
+
     func testProjectHostSwitchesPreserveEditingTargetRulesOtherProjectAndGlobalDraftsAcrossRestart() throws {
         try withFixture { f in
             let model = f.model
@@ -270,9 +295,11 @@ final class SkillHostSelectionTests: XCTestCase {
             let project = root.appendingPathComponent("project")
             XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: project.path), ["sentinel.txt"], file: file, line: line)
             XCTAssertEqual(try String(contentsOf: project.appendingPathComponent("sentinel.txt"), encoding: .utf8), "原有项目内容", file: file, line: line)
-            for host in MCPHost.allCases {
+            for host in SkillConfigurationTarget.allCases {
                 XCTAssertFalse(FileManager.default.fileExists(atPath: locations.skillsRoot(host).path), file: file, line: line)
-                XCTAssertFalse(FileManager.default.fileExists(atPath: locations.rulesURL(host).path), file: file, line: line)
+                if let rules = locations.rulesURL(for: host) {
+                    XCTAssertFalse(FileManager.default.fileExists(atPath: rules.path), file: file, line: line)
+                }
             }
         }
     }

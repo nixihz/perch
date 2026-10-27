@@ -16,13 +16,8 @@ struct SkillContentView: View {
                     ProgressView(L10n.tr("正在读取技能…")).controlSize(.small)
                 }
                 if canBrowseFiles {
-                    Picker(L10n.tr("阅读内容"), selection: $showsFiles) {
-                        Text(L10n.tr("正文")).tag(false)
-                        Text(model.skillFilesError == nil
-                             ? L10n.tr("附属文件 · \(model.selectedSkillFiles.count)")
-                             : L10n.tr("附属文件")).tag(true)
-                    }
-                    .pickerStyle(.segmented)
+                    AppSegmentedPicker(title: L10n.tr("阅读内容"), selection: $showsFiles,
+                        options: [(false, L10n.tr("正文")), (true, model.skillFilesError == nil ? L10n.tr("附属文件 · \(model.selectedSkillFiles.count)") : L10n.tr("附属文件"))])
                     .labelsHidden()
                     .accessibilityIdentifier("skills.content.tabs")
                     .onChange(of: showsFiles) { _, _ in model.closeSkillFile() }
@@ -34,11 +29,8 @@ struct SkillContentView: View {
                     HStack {
                         Text("SKILL.md").font(AppFont.heading)
                         Spacer()
-                        Picker(L10n.tr("显示方式"), selection: $showsSource) {
-                            Text(L10n.tr("预览")).tag(false)
-                            Text(L10n.tr("原文")).tag(true)
-                        }
-                        .pickerStyle(.segmented)
+                        AppSegmentedPicker(title: L10n.tr("显示方式"), selection: $showsSource,
+                            options: [(false, L10n.tr("预览")), (true, L10n.tr("原文"))])
                         .labelsHidden()
                         .fixedSize()
                         .accessibilityIdentifier("skills.content.format")

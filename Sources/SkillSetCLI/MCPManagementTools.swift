@@ -85,6 +85,10 @@ extension MCPStdioServer {
             guard let host = MCPHost(rawValue: string("host")) else { throw missing(string("host")) }
             return host
         }
+        func skillTarget() throws -> SkillConfigurationTarget {
+            guard let target = SkillConfigurationTarget(rawValue: string("host")) else { throw missing(string("host")) }
+            return target
+        }
         switch name {
         case "skills_get":
             let entry = try skill()
@@ -204,9 +208,9 @@ extension MCPStdioServer {
                 let selection = ProjectHarnessSelection(skillIDs: selected?.skillIDs ?? [], instructionIDs: Array(Set((selected?.instructionIDs ?? []) + instructionIDs)).sorted())
                 return try pending(current.makeHarnessPlan(projectID: id, agent: target.rawValue, selection: selection))
             }
-            var selection = try current.globalConfiguration.appliedSelection(host: target)
+            var selection = try current.globalConfiguration.appliedSelection(host: SkillConfigurationTarget(target))
             selection.instructionIDs = Array(Set(selection.instructionIDs + instructionIDs)).sorted()
-            return try pending(current.makeGlobalPlan(host: target, selection: selection))
+            return try pending(current.makeGlobalPlan(host: SkillConfigurationTarget(target), selection: selection))
         case "mcp_library_list":
             return try result("entries", connections.entries())
         case "mcp_library_get", "mcp_library_delete":
@@ -253,13 +257,13 @@ extension MCPStdioServer {
             let draft = MCPConfigurationDraft(name: server.name, host: target, scope: scope, transport: server.transport, commandOrURL: a["commandOrURL"] as? String ?? server.command, args: strings("args"), envKeys: server.envKeys)
             return try pending(current.makeMCPConfigPlan(projectID: projectID, draft: draft, existingServer: server, remove: name == "mcp_config_delete_plan", replaceArguments: a["args"] != nil))
         case "global_config_get":
-            let target = try host()
+            let target = try skillTarget()
             let inspection = try current.globalConfiguration.inspect(host: target)
             return toolResult(isError: false, text: "已读取全局选择和受管状态。", structured: ["host": target.rawValue, "selection": try jsonValue(inspection.selection), "skillsPath": inspection.skillsPath, "rulesPath": inspection.rulesPath, "hasManagement": inspection.hasManagement,
                 "resources": inspection.resources.map { ["path": $0.path, "managed": $0.managed, "modified": $0.modified, "symbolicLink": $0.symbolicLink] as [String: Any] }])
         case "global_config_plan":
             let method = SkillInstallMethod(rawValue: a["installMethod"] as? String ?? "symlink")!
-            return try pending(current.makeGlobalPlan(host: host(), selection: GlobalConfigurationDraft(skillIDs: strings("skillIds"), instructionIDs: strings("instructionIds"), installMethod: method)))
+            return try pending(current.makeGlobalPlan(host: skillTarget(), selection: GlobalConfigurationDraft(skillIDs: strings("skillIds"), instructionIDs: strings("instructionIds"), installMethod: method)))
         case "plugin_sources_list":
             return try result("sources", pluginSources.sources())
         case "plugin_sources_get":

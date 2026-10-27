@@ -347,7 +347,7 @@ public struct SkillSetService {
         homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
     ) throws -> StoredDeploymentPlan {
         guard agents.count == 1, let agent = agents.first,
-              let host = MCPHost(rawValue: agent) else { throw DeploymentError.invalidPlan }
+              let host = SkillConfigurationTarget(rawValue: agent) else { throw DeploymentError.invalidPlan }
         let manager = homeDirectory == FileManager.default.homeDirectoryForCurrentUser ? globalConfiguration :
             GlobalConfigurationManager(paths: paths, locations: GlobalConfigurationLocations(home: homeDirectory, stateRoot: paths.applicationSupportRoot))
         let inspection = try manager.inspect(host: host)
@@ -498,7 +498,7 @@ public struct SkillSetService {
         try executor.loadJournal(operationID)
     }
 
-    public func makeGlobalPlan(host: MCPHost, selection: GlobalConfigurationDraft, takeOverExisting: Bool = false) throws -> StoredDeploymentPlan {
+    public func makeGlobalPlan(host: SkillConfigurationTarget, selection: GlobalConfigurationDraft, takeOverExisting: Bool = false) throws -> StoredDeploymentPlan {
         try globalConfiguration.makeDeploymentPlan(host: host, selection: selection, catalog: snapshot.catalog,
             sourceURLs: libraryStore().sourceURLs(),
             fragments: Dictionary(uniqueKeysWithValues: snapshot.templates.map { ($0.id, $0.body) }),

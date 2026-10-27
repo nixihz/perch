@@ -79,7 +79,8 @@ struct ProjectsView: View {
     }
 
     private func projectSelector(_ selected: ProjectRecord) -> some View {
-        SurfaceCard {
+        let selectorHeight = model.projects.count > 10 ? AppControl.selectorHeight : AppControl.height
+        return SurfaceCard {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 12) {
                     Text(L10n.tr("项目")).font(AppFont.heading)
@@ -95,7 +96,9 @@ struct ProjectsView: View {
                                 .help(project.path)
                             }
                         }
-                    }.frame(height: AppControl.height)
+                        .frame(height: selectorHeight)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: selectorHeight, maxHeight: selectorHeight)
                     Button(L10n.tr("项目详情…")) { detailsPresented = true }
                         .accessibilityIdentifier("projects.details")
                 }
@@ -129,14 +132,14 @@ struct ProjectConfigurationDetails: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(project.name).font(AppFont.title.weight(.bold))
+            Text(project.name).font(AppFont.title)
             Text(project.path).font(AppFont.code).textSelection(.enabled)
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     Text(L10n.tr("全部工具草稿 \(project.pendingChanges) 项变更")).font(AppFont.secondary)
                     Text(L10n.tr("其他来源的影响")).font(AppFont.heading)
                     Text(UserFacingText.localizedInheritance(project.inherited)).font(AppFont.secondary)
-                    ForEach(MCPHost.allCases) { host in
+                    ForEach(SkillConfigurationTarget.allCases) { host in
                         if let error = model.globalConfiguration.inheritanceErrors[host] {
                             Text(host.displayName + " · " + L10n.text(error)).foregroundStyle(.orange)
                         } else {
@@ -229,7 +232,7 @@ struct PlanSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
                 Text(isGlobalPlan ? L10n.tr("全局配置计划") : isPluginPlan ? L10n.tr("插件变更计划") : isMCPPlan ? L10n.tr("MCP 配置计划") : L10n.tr("变更计划"))
-                    .font(AppFont.title.weight(.bold))
+                    .font(AppFont.title)
                 Spacer()
                 if let record = model.preparedPlan {
                     StatusBadge(
@@ -361,8 +364,10 @@ struct PlanSheet: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
             if isGlobalPlan {
-                Text((MCPHost(rawValue: record.plan.metadata?["globalHost"] ?? "")?.displayName ?? "")
-                    + " · " + L10n.tr("影响所选 AI 工具的全部项目。"))
+                let target = SkillConfigurationTarget(rawValue: record.plan.metadata?["globalHost"] ?? "")
+                Text((target?.displayName ?? "") + " · " + (target == .agents
+                    ? L10n.tr("共享技能目录，Codex 也会加载其中的技能。")
+                    : L10n.tr("影响所选 AI 工具的全部项目。")))
                     .font(AppFont.secondary)
                     .foregroundStyle(.orange)
                     .lineLimit(2)

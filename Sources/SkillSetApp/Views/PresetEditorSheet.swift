@@ -36,7 +36,7 @@ struct PresetConfigurationEditor: View {
     @FocusState private var nameFocused: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: availableHeight < 500 ? 8 : 14) {
+        VStack(alignment: .leading, spacing: availableHeight < 500 ? 4 : 14) {
             ConfigurationSectionHeader {
                 Text(L10n.tr(onClose == nil ? "配置草稿" : initial.name.isEmpty ? "新建预设" : "编辑预设"))
                     .font(AppFont.heading)
@@ -53,12 +53,8 @@ struct PresetConfigurationEditor: View {
                 TextField(L10n.tr("说明（可选）"), text: $draft.description)
                     .textFieldStyle(AppTextFieldStyle()).accessibilityIdentifier("presets.editor.description")
             }
-            Picker(L10n.tr("资源类型"), selection: $category) {
-                ForEach([PresetComponent.skills, .instructions, .mcp, .plugins]) { item in
-                    Text(L10n.text(item.title)).tag(item)
-                }
-            }
-            .pickerStyle(.segmented).accessibilityIdentifier("presets.editor.categories")
+            AppSegmentedPicker(title: L10n.tr("资源类型"), selection: $category,
+                options: [PresetComponent.skills, .instructions, .mcp, .plugins].map { ($0, L10n.text($0.title)) }).accessibilityIdentifier("presets.editor.categories")
             if category == .skills {
                 selectedSkillPills
             }

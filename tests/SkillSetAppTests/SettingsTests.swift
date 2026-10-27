@@ -78,40 +78,121 @@ final class SettingsTests: XCTestCase {
         window.contentViewController = probe
         defer { window.close() }
 
-        for systemAppearance in [NSAppearance.Name.darkAqua, .aqua] {
-            application.appearance = NSAppearance(named: systemAppearance)
-            preferences.appearance = .system
-            try await settle(probe.view)
-            let initial = try XCTUnwrap(colorSchemeProbe(in: probe.view))
-            let stateID = initial.stateID
-            let systemScheme: ColorScheme = systemAppearance == .darkAqua ? .dark : .light
-            let opposite: AppAppearance = systemScheme == .dark ? .light : .dark
-            let matching: AppAppearance = systemScheme == .dark ? .dark : .light
+        application.appearance = nil
+        let systemScheme: ColorScheme = application.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? .dark : .light
+        try await settle(probe.view)
+        let stateID = try XCTUnwrap(colorSchemeProbe(in: probe.view)).stateID
+        let opposite: AppAppearance = systemScheme == .dark ? .light : .dark
 
-            for selection in [opposite, .system, matching, opposite, .system] {
-                preferences.appearance = selection
-                try await settle(probe.view)
-                let expected = selection.colorScheme ?? systemScheme
-                let current = try XCTUnwrap(colorSchemeProbe(in: probe.view))
-                XCTAssertEqual(current.scheme, expected, "\(systemAppearance) / \(selection)")
-                XCTAssertEqual(window.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]),
-                               expected == .dark ? .darkAqua : .aqua)
-                XCTAssertEqual(current.stateID, stateID, "外观切换应保留页面的局部状态")
-                if selection == .system {
-                    XCTAssertNil(window.appearance, "跟随系统必须移除窗口覆盖")
-                }
+        for selection in [opposite, .system, .light, .dark, .system] {
+            preferences.appearance = selection
+            try await settle(probe.view)
+            let expected = selection.colorScheme ?? systemScheme
+            let current = try XCTUnwrap(colorSchemeProbe(in: probe.view))
+            XCTAssertEqual(current.scheme, expected, "\(selection)")
+            XCTAssertEqual(window.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]),
+                           expected == .dark ? .darkAqua : .aqua)
+            XCTAssertEqual(current.stateID, stateID, "外观切换应保留页面的局部状态")
+            XCTAssertNil(window.appearance, "窗口应始终继承应用外观")
+            if selection == .system {
+                XCTAssertNil(application.appearance, "跟随系统必须移除应用覆盖")
             }
+        }
 
-            // 以应用级外观模拟系统变化，不修改用户的系统偏好。
-            application.appearance = NSAppearance(named: systemAppearance == .darkAqua ? .aqua : .darkAqua)
+        // 以应用的继承源模拟系统变化，不修改用户的系统偏好。
+        for inheritedAppearance in [NSAppearance.Name.aqua, .darkAqua] {
+            application.appearance = NSAppearance(named: inheritedAppearance)
             try await settle(probe.view)
-            XCTAssertEqual(colorSchemeProbe(in: probe.view)?.scheme, systemScheme == .dark ? .light : .dark)
+            XCTAssertEqual(colorSchemeProbe(in: probe.view)?.scheme,
+                           inheritedAppearance == .darkAqua ? .dark : .light)
+        }
+    }
 
-            preferences.appearance = .light
-            try await settle(probe.view)
-            application.appearance = NSAppearance(named: systemAppearance)
-            try await settle(probe.view)
-            XCTAssertEqual(colorSchemeProbe(in: probe.view)?.scheme, .light, "显式选择不随系统变化")
+    func testAppearanceSelectionReachesExistingSheetsAndNewPanels() async throws {
+        let suite = "SkillSet.SettingsTests.Panels.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let preferences = AppPreferences(defaults: defaults)
+        let application = NSApplication.shared
+        let originalAppearance = application.appearance
+        application.appearance = nil
+        defer { application.appearance = originalAppearance }
+        let systemScheme: ColorScheme = application.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? .dark : .light
+        let opposite: AppAppearance = systemScheme == .dark ? .light : .dark
+        let main = NSHostingController(rootView: ColorSchemeProbe().appPreferences(preferences))
+        let sheet = NSHostingController(rootView: ColorSchemeProbe())
+        let window = NSWindow(contentViewController: main)
+        let panel = NSPanel(contentViewController: sheet)
+        window.isReleasedWhenClosed = false
+        panel.isReleasedWhenClosed = false
+        window.orderFront(nil)
+        window.beginSheet(panel, completionHandler: nil)
+        defer {
+            window.endSheet(panel)
+            panel.close()
+            window.close()
+        }
+        try await settle(main.view)
+        let mainStateID = try XCTUnwrap(colorSchemeProbe(in: main.view)).stateID
+        let sheetStateID = try XCTUnwrap(colorSchemeProbe(in: sheet.view)).stateID
+
+        for selection in [opposite, .system, .light, .dark, .system] {
+            preferences.appearance = selection
+            try await settle(main.view)
+            let expected = selection.colorScheme ?? systemScheme
+            XCTAssertEqual(colorSchemeProbe(in: main.view)?.scheme, expected)
+            XCTAssertEqual(colorSchemeProbe(in: sheet.view)?.scheme, expected, "已打开的 sheet 必须与主窗口一致")
+            XCTAssertEqual(colorSchemeProbe(in: main.view)?.stateID, mainStateID)
+            XCTAssertEqual(colorSchemeProbe(in: sheet.view)?.stateID, sheetStateID)
+
+            let newPanel = NSOpenPanel()
+            XCTAssertEqual(newPanel.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]),
+                           expected == .dark ? .darkAqua : .aqua, "新打开的系统面板必须继承应用选择")
+            newPanel.close()
+            if selection == .system {
+                XCTAssertNil(application.appearance, "跟随系统必须清除应用级覆盖")
+            }
+        }
+    }
+
+    func testSavedAppearanceReachesSwiftUISheetAfterWindowReopens() async throws {
+        let suite = "SkillSet.SettingsTests.Reopen.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let application = NSApplication.shared
+        let originalAppearance = application.appearance
+        application.appearance = nil
+        defer { application.appearance = originalAppearance }
+        let systemIsDark = application.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        let savedAppearance: AppAppearance = systemIsDark ? .light : .dark
+        defaults.set(savedAppearance.rawValue, forKey: PreferenceKey.appearance)
+        let preferences = AppPreferences(defaults: defaults)
+
+        for _ in 0..<2 {
+            let controller = NSHostingController(rootView:
+                ColorSchemeProbe()
+                    .frame(width: 240, height: 120)
+                    .sheet(isPresented: .constant(true)) {
+                        ColorSchemeProbe().frame(width: 240, height: 120)
+                    }
+                    .appPreferences(preferences)
+            )
+            let window = NSWindow(contentViewController: controller)
+            window.isReleasedWhenClosed = false
+            defer {
+                if let sheet = window.attachedSheet { window.endSheet(sheet) }
+                window.close()
+            }
+            window.orderFront(nil)
+            try await settle(controller.view)
+            let sheet = try XCTUnwrap(window.attachedSheet)
+            let sheetContent = try XCTUnwrap(sheet.contentView)
+            try await settle(sheetContent)
+            XCTAssertEqual(colorSchemeProbe(in: controller.view)?.scheme, savedAppearance.colorScheme)
+            XCTAssertEqual(colorSchemeProbe(in: sheetContent)?.scheme, savedAppearance.colorScheme,
+                           "重开窗口后 SwiftUI sheet 仍须继承已保存的外观")
+            XCTAssertEqual(sheet.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]),
+                           savedAppearance == .dark ? .darkAqua : .aqua)
         }
     }
 

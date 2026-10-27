@@ -58,7 +58,7 @@ extension SkillSetService {
     static func officialInstalledSkillRoots(_ locations: GlobalConfigurationLocations) -> [URL] {
         [
             locations.configuredSkillsRoot(.codex),
-            locations.codexRoot.appendingPathComponent("skills"),
+            locations.configuredSkillsRoot(.agents),
             locations.configuredSkillsRoot(.claudeCode),
         ]
     }
@@ -233,9 +233,7 @@ extension SkillSetService {
               source.analysis.contentHash == contentHash else {
             throw SourceSkillImportError.changed
         }
-        let roots = [globalConfiguration.locations.configuredSkillsRoot(.codex),
-                     globalConfiguration.locations.codexRoot.appendingPathComponent("skills"),
-                     globalConfiguration.locations.configuredSkillsRoot(.claudeCode)]
+        let roots = Self.officialInstalledSkillRoots(globalConfiguration.locations)
         guard !roots.contains(where: { $0.standardizedFileURL.path == original.standardizedFileURL.path }) else {
             throw SourceSkillImportError.unavailable
         }

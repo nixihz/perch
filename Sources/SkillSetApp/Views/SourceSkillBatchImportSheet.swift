@@ -43,7 +43,7 @@ struct SourceSkillBatchImportSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text(results == nil ? L10n.tr("批量加入技能库") : L10n.tr("批量加入结果"))
-                .font(AppFont.title.weight(.bold))
+                .font(AppFont.title)
             if let results {
                 resultView(results)
             } else {
@@ -62,11 +62,8 @@ struct SourceSkillBatchImportSheet: View {
                 .font(AppFont.secondary)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            Picker(L10n.tr("存放方式"), selection: $mode) {
-                Text(L10n.tr("软链接")).tag(SkillInstallMethod.symlink)
-                Text(L10n.tr("复制")).tag(SkillInstallMethod.copy)
-            }
-            .pickerStyle(.segmented)
+            AppSegmentedPicker(title: L10n.tr("存放方式"), selection: $mode,
+                options: [(SkillInstallMethod.symlink, L10n.tr("软链接")), (.copy, L10n.tr("复制"))])
             .accessibilityIdentifier("sources.batch.mode")
             HStack {
                 Text(L10n.tr("分类"))

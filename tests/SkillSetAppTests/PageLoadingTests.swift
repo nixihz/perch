@@ -227,9 +227,9 @@ final class PageLoadingTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(150))
             controller.view.layoutSubtreeIfNeeded()
             let rail = try XCTUnwrap(descendants(controller.view).compactMap { $0 as? NSScrollView }.first {
-                $0.bounds.height <= 40 && ($0.documentView?.frame.width ?? 0) > 1000
+                $0.bounds.height >= 44 && $0.bounds.height <= 48 && ($0.documentView?.frame.width ?? 0) > 1000
             })
-            XCTAssertLessThanOrEqual(rail.bounds.height, 40)
+            XCTAssertLessThanOrEqual(rail.bounds.height, 48)
             let document = try XCTUnwrap(rail.documentView)
             document.scroll(NSPoint(x: document.bounds.maxX, y: 0))
             try await Task.sleep(for: .milliseconds(100))

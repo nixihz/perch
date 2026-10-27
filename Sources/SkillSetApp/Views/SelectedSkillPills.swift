@@ -10,9 +10,11 @@ struct SelectedSkillPills: View {
     }
 
     struct HostSelection {
-        let isSelected: (String, MCPHost) -> Bool
-        let isEnabled: (String, MCPHost) -> Bool
-        let setSelected: (String, MCPHost, Bool) -> Void
+        var targets: [SkillConfigurationTarget] = [.codex, .claudeCode]
+        var savesImmediately = false
+        let isSelected: (String, SkillConfigurationTarget) -> Bool
+        let isEnabled: (String, SkillConfigurationTarget) -> Bool
+        let setSelected: (String, SkillConfigurationTarget, Bool) -> Void
     }
 
     let items: [Item]
@@ -21,17 +23,19 @@ struct SelectedSkillPills: View {
     var hostSelection: HostSelection? = nil
     var canRemove: (String) -> Bool = { _ in true }
     let remove: (String) -> Void
-    @State private var contentHeight: CGFloat = 36
+    private let iconTarget: CGFloat = 28
+    private var rowHeight: CGFloat { iconTarget + 2 }
+    @State private var contentHeight: CGFloat = 30
 
     var body: some View {
         Group {
             if compact {
-                HStack(alignment: .top, spacing: 12) {
-                    heading.fixedSize().frame(minHeight: 36)
+                HStack(alignment: .top, spacing: 8) {
+                    heading.fixedSize().frame(minHeight: rowHeight)
                     content
                 }
             } else {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 6) {
                     HStack { heading; Spacer(minLength: 0) }
                     content
                 }
@@ -53,35 +57,35 @@ struct SelectedSkillPills: View {
         if items.isEmpty {
             Text(L10n.tr("从下方列表选择技能，已选名称会显示在这里。"))
                 .font(AppFont.metadata).foregroundStyle(.secondary)
-                .frame(minHeight: compact ? 36 : 0, alignment: .leading)
+                .frame(minHeight: compact ? rowHeight : 0, alignment: .leading)
         } else {
             ScrollView {
-                PillFlowLayout {
+                PillFlowLayout(spacing: 6) {
                     ForEach(items) { item in pill(item) }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
             }
             // 小窗口只保留一行并允许滚动，不能让已选区挤走可选列表。
-            .frame(height: min(max(contentHeight, 36), compact ? 36 : 124))
+            .frame(height: min(max(contentHeight, rowHeight), compact ? rowHeight : 102))
         }
     }
 
     private func pill(_ item: Item) -> some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 2) {
             Text(item.name)
                 .font(AppFont.metadata)
                 .lineLimit(1).truncationMode(.middle)
                 .frame(maxWidth: 220, alignment: .leading)
                 .help(item.detail)
             if let hostSelection {
-                ForEach([MCPHost.codex, .claudeCode]) { host in
+                ForEach(hostSelection.targets) { host in
                     hostButton(item, host: host, selection: hostSelection)
                 }
             }
             Button { remove(item.id) } label: {
                 Image(systemName: "xmark").font(.system(size: 10, weight: .semibold))
-                    .frame(width: 32, height: 32).contentShape(Rectangle())
+                    .frame(width: iconTarget, height: iconTarget).contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .disabled(!canRemove(item.id))
@@ -89,7 +93,7 @@ struct SelectedSkillPills: View {
             .accessibilityLabel(removalHelp(item))
             .help(removalHelp(item))
         }
-        .padding(.leading, 12).padding(.trailing, 2).padding(.vertical, 1)
+        .padding(.leading, 10).padding(.trailing, 1).padding(.vertical, 1)
         .foregroundStyle(AppColor.accentText)
         .background(AppColor.accentSoft, in: Capsule())
         .overlay { Capsule().strokeBorder(AppColor.accentText.opacity(0.5)) }
@@ -97,35 +101,39 @@ struct SelectedSkillPills: View {
         .accessibilityIdentifier("\(identifierPrefix).selectedSkill.\(item.id)")
     }
 
-    private func hostButton(_ item: Item, host: MCPHost, selection: HostSelection) -> some View {
+    private func hostButton(_ item: Item, host: SkillConfigurationTarget, selection: HostSelection) -> some View {
         let selected = selection.isSelected(item.id, host)
         return Button { selection.setSelected(item.id, host, !selected) } label: {
-            Image(host == .codex ? "CodexLogo" : "ClaudeLogo", bundle: .module)
-                .resizable().renderingMode(.template).scaledToFit().frame(width: 15, height: 15)
-                .frame(width: 32, height: 32)
+            SkillTargetIcon(target: host).frame(width: 15, height: 15)
+                .frame(width: iconTarget, height: iconTarget)
                 .opacity(selected ? 1 : 0.4)
-                .overlay(alignment: .bottomTrailing) {
-                    if selected {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 9)).padding(2)
-                    }
-                }
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(!selection.isEnabled(item.id, host))
         .accessibilityIdentifier("\(identifierPrefix).selectedSkill.\(item.id).\(host.rawValue)")
-        .accessibilityLabel(L10n.tr("在 \(host.displayName) 草稿中选择「\(item.name)」"))
+        .accessibilityLabel(selection.savesImmediately
+            ? L10n.tr("在 \(host.displayName) 中保存「\(item.name)」")
+            : L10n.tr("在 \(host.displayName) 草稿中选择「\(item.name)」"))
         .accessibilityValue(selected ? L10n.tr("已选择") : L10n.tr("未选择"))
         .accessibilityAddTraits(selected ? [.isSelected] : [])
-        .help(selected
+        .help(selection.savesImmediately
+            ? (selected
+                ? L10n.tr("从 \(host.displayName) 中取消「\(item.name)」，立即保存。")
+                : L10n.tr("在 \(host.displayName) 中启用「\(item.name)」，立即保存。"))
+            : selected
             ? L10n.tr("从 \(host.displayName) 草稿中取消选择「\(item.name)」，预览后保存。")
             : L10n.tr("在 \(host.displayName) 草稿中选择「\(item.name)」，预览后保存。"))
     }
 
     private func removalHelp(_ item: Item) -> String {
-        hostSelection == nil
+        if hostSelection?.savesImmediately == true {
+            return L10n.tr("从 Agents、Codex 和 Claude Code 中移除「\(item.name)」，立即保存。")
+        }
+        return hostSelection == nil
             ? L10n.tr("从预设草稿中移除「\(item.name)」")
-            : L10n.tr("从 Codex 和 Claude Code 草稿中移除「\(item.name)」；预览并批准后应用。")
+            : (hostSelection?.targets.contains(.agents) == true
+                ? L10n.tr("从 Agents、Codex 和 Claude Code 草稿中移除「\(item.name)」；预览并批准后应用。")
+                : L10n.tr("从 Codex 和 Claude Code 草稿中移除「\(item.name)」；预览并批准后应用。"))
     }
 }

@@ -22,12 +22,9 @@ struct MCPServersView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Picker(L10n.tr("MCP 服务"), selection: $tab) {
-                Text(L10n.tr("配置库")).tag("library")
-                Text(L10n.tr("AI 工具中的配置")).tag("observed")
-            }
-            .pickerStyle(.segmented)
-            .frame(maxWidth: 360, maxHeight: 32)
+            AppSegmentedPicker(title: L10n.tr("MCP 服务"), selection: $tab,
+                options: [("library", L10n.tr("配置库")), ("observed", L10n.tr("AI 工具中的配置"))])
+            .frame(maxWidth: 360)
             if tab == "observed" { MCPObservedServersView(model: model) }
             else { libraryContent }
         }
@@ -134,7 +131,7 @@ struct MCPServersView: View {
     private func connectionDetail(_ entry: MCPLibraryEntry) -> some View {
         SurfaceCard {
             VStack(alignment: .leading, spacing: 14) {
-                Text(entry.name).font(AppFont.title.weight(.bold))
+                Text(entry.name).font(AppFont.title)
                 if savedFeedback {
                     Label(L10n.tr("已保存在配置库，下一步选择使用范围。"), systemImage: "checkmark.circle")
                         .font(AppFont.secondary).foregroundStyle(AppColor.positive)
@@ -183,7 +180,7 @@ struct MCPServersView: View {
                                 model.selectProjectHost(usage.host == .codex ? .codex : .claude)
                                 model.section = .projects
                             } else {
-                                model.globalConfiguration.selectHost(usage.host); model.section = .globalConfiguration
+                                model.globalConfiguration.selectHost(SkillConfigurationTarget(usage.host)); model.section = .globalConfiguration
                             }
                         }
                     }
@@ -260,7 +257,7 @@ private struct MCPLibraryUseSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(L10n.tr("选择 MCP 使用范围")).font(AppFont.title.weight(.bold))
+            Text(L10n.tr("选择 MCP 使用范围")).font(AppFont.title)
             Text(entry.name).font(AppFont.heading)
             AppPicker(title: L10n.tr("目标配置"), selection: $targetID, valueLabel: target.map(targetTitle) ?? L10n.tr("请选择")) {
                 ForEach(library.usageTargets) { target in Text(targetTitle(target)).tag(target.id) }
@@ -328,7 +325,7 @@ private struct MCPLibraryUseSheet: View {
         }
         .appControls().padding(26).frame(width: 660, height: 580)
         .onAppear {
-            targetID = library.initialUsageTargetID(fallbackHost: model.globalConfiguration.host)
+            targetID = library.initialUsageTargetID(fallbackHost: model.globalConfiguration.host.mcpHost ?? .codex)
         }
     }
 

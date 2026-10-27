@@ -82,7 +82,7 @@ struct MCPSelectionCard: View {
                 HStack {
                     AppSearchField(query: $query, prompt: L10n.tr("搜索 MCP 服务"),
                         label: L10n.tr("搜索 MCP 服务"), identifier: "mcp.selection.search")
-                    Toggle(L10n.tr("只看已选"), isOn: $selectedOnly).toggleStyle(.checkbox)
+                    Toggle(L10n.tr("只看已选"), isOn: $selectedOnly).toggleStyle(AppCheckboxStyle())
                         .font(AppFont.secondary)
                 }
                 ScrollView {
@@ -103,7 +103,7 @@ struct MCPSelectionCard: View {
                                         .font(AppFont.secondary).foregroundStyle(.secondary)
                                 }
                             }
-                            .toggleStyle(.checkbox)
+                            .toggleStyle(AppCheckboxStyle())
                             .accessibilityIdentifier("mcp.selection.entry.\(entry.id)")
                         }
                     }.frame(maxWidth: .infinity, alignment: .leading)

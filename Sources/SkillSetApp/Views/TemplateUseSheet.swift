@@ -15,13 +15,10 @@ struct TemplateUseSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(L10n.tr("使用片段")).font(AppFont.title.weight(.bold))
+            Text(L10n.tr("使用片段")).font(AppFont.title)
             Text(UserFacingText.templateTitle(template)).font(AppFont.heading)
-            Picker(L10n.tr("使用范围"), selection: $isGlobal) {
-                Text(L10n.tr("项目")).tag(false)
-                Text(L10n.tr("全局配置")).tag(true)
-            }
-            .pickerStyle(.segmented)
+            AppSegmentedPicker(title: L10n.tr("使用范围"), selection: $isGlobal,
+                options: [(false, L10n.tr("项目")), (true, L10n.tr("全局配置"))])
             .accessibilityIdentifier("templates.use.scope")
             if isGlobal {
                 AppPicker(title: L10n.tr("AI 工具"), selection: $host, valueLabel: host.displayName) {

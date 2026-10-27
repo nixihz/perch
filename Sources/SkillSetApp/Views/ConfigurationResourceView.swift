@@ -30,27 +30,39 @@ struct ConfigurationResourceView: View {
     private var isProject: Bool { projectID != nil }
     private var project: ProjectRecord? { model.projects.first { $0.id == projectID?.uuidString } }
     private var prefix: String { isProject ? "projects" : "global" }
+    private var savesImmediately: Bool { tab != .plugins }
+
+    private var currentSaveMessage: String? {
+        if tab == .mcp {
+            return model.mcpLibrary.saveMessage
+        } else if isProject {
+            return model.projectSaveMessage
+        } else if !isProject {
+            return global.skillSaveMessage
+        }
+        return nil
+    }
+
+    private var skillTargets: [SkillConfigurationTarget] {
+        isProject ? MCPHost.allCases.map(SkillConfigurationTarget.init) : SkillConfigurationTarget.allCases
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppLayout.columnSpacing) {
                 SurfaceCard {
-                    VStack(alignment: .leading, spacing: availableHeight < 500 ? 10 : 16) {
+                    VStack(alignment: .leading, spacing: availableHeight < 500 ? 6 : 16) {
                         ConfigurationSectionHeader {
-                            Text(L10n.tr("配置草稿")).font(AppFont.heading)
+                            Text(L10n.tr(isProject ? "配置草稿" : (savesImmediately ? (tab == .mcp ? "MCP 服务配置" : (tab == .instructions ? "AGENTS 片段配置" : "技能配置")) : "配置草稿"))).font(AppFont.heading)
                         } actions: {
                             if let project {
                                 Button(L10n.tr("使用预设…")) {
                                     model.presetSelection = PresetSelectionRequest(projectID: project.id)
                                 }.accessibilityIdentifier("projects.usePreset")
                             }
-                            previewActions
+                            if isProject || !savesImmediately { previewActions }
                         }
-                        Picker(L10n.tr("资源类型"), selection: $tab) {
-                            ForEach(ConfigurationResourceTab.allCases) { item in
-                                Text(L10n.text(item.rawValue)).tag(item)
-                            }
-                        }
-                        .pickerStyle(.segmented)
+                        AppSegmentedPicker(title: L10n.tr("资源类型"), selection: $tab,
+                            options: ConfigurationResourceTab.allCases.map { ($0, L10n.text($0.rawValue)) })
                         .accessibilityIdentifier("\(prefix).resourceTabs")
                         if tab == .skills {
                             selectedSkillPills
@@ -58,16 +70,31 @@ struct ConfigurationResourceView: View {
                         AppSearchField(query: $query, prompt: L10n.tr("搜索名称、来源或说明"),
                             label: L10n.tr("搜索配置资源"), identifier: "\(prefix).search")
                         HStack {
-                            Text(L10n.tr("勾选只改草稿，预览后点击「保存」才会写入配置。"))
+                            Text(L10n.tr(savesImmediately
+                                ? "点击工具图标即可保存，再次点击即可取消。"
+                                : "勾选只改草稿，预览后点击「保存」才会写入配置。"))
                                 .font(AppFont.secondary).foregroundStyle(.secondary)
                             Spacer()
                             HStack(spacing: 10) {
-                                hostLegend(.codex)
-                                hostLegend(.claudeCode)
+                                ForEach(tab == .skills ? skillTargets : MCPHost.allCases.map(SkillConfigurationTarget.init)) { target in
+                                    hostLegend(target)
+                                }
                             }
                         }
                         if (!isProject && global.isRefreshing) || plugins.isLoading {
                             ProgressView(L10n.tr("正在读取配置…")).controlSize(.small)
+                        }
+                        if tab == .skills && !isProject && global.isSavingSkill {
+                            ProgressView(L10n.tr("正在保存技能…")).controlSize(.small)
+                        } else if tab == .instructions && !isProject && global.isSavingSkill {
+                            ProgressView(L10n.tr("正在保存 AGENTS 片段…")).controlSize(.small)
+                        } else if tab == .mcp && model.mcpLibrary.isSaving {
+                            ProgressView(L10n.tr("正在保存 MCP 服务…")).controlSize(.small)
+                        } else if isProject && model.isWorking {
+                            ProgressView(L10n.tr("正在保存项目配置…")).controlSize(.small)
+                        } else if let message = currentSaveMessage {
+                            Text(message).font(AppFont.secondary).foregroundStyle(AppColor.positive)
+                                .accessibilityIdentifier("\(prefix).saved")
                         }
                         Divider()
                         ScrollView {
@@ -102,17 +129,24 @@ struct ConfigurationResourceView: View {
         .confirmationDialog(L10n.tr("覆盖已有的同名 MCP 服务？"),
             isPresented: Binding(get: { overwriteHost != nil }, set: { if !$0 { overwriteHost = nil } }), titleVisibility: .visible) {
                 if let host = overwriteHost {
-                    Button(L10n.tr("覆盖并预览"), role: .destructive) {
-                        let names = model.mcpLibrary.externalConflicts(host: host, projectID: projectID).map(\.name)
-                        model.mcpLibrary.approveExternalOverwrite(host: host, projectID: projectID, names: names)
-                        model.prepareMCPLibraryPlan(host: host, projectID: projectID)
-                        overwriteHost = nil
+                    Button(L10n.tr("覆盖并保存"), role: .destructive) {
+                        let names = Set(model.mcpLibrary.externalConflicts(host: host, projectID: projectID).map(\.name))
+                        Task {
+                            let selected = model.mcpLibrary.selectedIDs(host: host, projectID: projectID)
+                            if let firstID = selected.first, let entry = model.mcpLibrary.entries.first(where: { $0.id == firstID }) {
+                                await model.mcpLibrary.saveSelection(firstID, name: entry.name, enabled: true, host: host, projectID: projectID, overwritingNames: names)
+                            } else {
+                                model.mcpLibrary.approveExternalOverwrite(host: host, projectID: projectID, names: Array(names))
+                                model.prepareMCPLibraryPlan(host: host, projectID: projectID)
+                            }
+                            overwriteHost = nil
+                        }
                     }
                 }
                 Button(L10n.tr("先不覆盖"), role: .cancel) { overwriteHost = nil }
             } message: {
                 if let host = overwriteHost {
-                    Text(L10n.tr("同名服务将使用配置库中的连接信息；预览后保存才会覆盖，原文件会先备份。"))
+                    Text(L10n.tr("同名服务将使用配置库中的连接信息；保存后会覆盖原配置，原文件会先备份。"))
                     Text(host.displayName + " · " + (model.mcpLibrary.usageTargets.first { $0.host == host && $0.projectID == projectID }?.configPath ?? "")
                         + "\n" + model.mcpLibrary.externalConflicts(host: host, projectID: projectID).map(\.name).joined(separator: "、"))
                 }
@@ -121,16 +155,22 @@ struct ConfigurationResourceView: View {
         .accessibilityIdentifier("\(prefix).configuration")
     }
 
-    private func hostLegend(_ host: MCPHost) -> some View {
+    private func hostLegend(_ host: SkillConfigurationTarget) -> some View {
         HStack(spacing: 4) {
-            Image(host == .codex ? "CodexLogo" : "ClaudeLogo", bundle: .module)
-                .resizable().renderingMode(.template).scaledToFit().frame(width: 14, height: 14)
+            SkillTargetIcon(target: host).frame(width: 14, height: 14)
             Text(host.displayName).font(AppFont.metadata)
         }.foregroundStyle(.secondary).fixedSize()
+        .help(host.displayName + " · " + global.locations.configuredSkillsRoot(host).path)
     }
 
     private var previewActions: some View {
         HStack(spacing: 8) {
+            if !isProject, tab == .skills {
+                Button(L10n.tr("预览 Agents")) { present(global.prepareDeployment(host: .agents)) }
+                    .buttonStyle(AppButtonStyle())
+                    .disabled(model.isWorking || !canEdit(.agents))
+                    .accessibilityIdentifier("global.preview.agents")
+            }
             ForEach(MCPHost.allCases) { host in
                 if tab == .plugins {
                     let pending = plugins.pending(host: host)
@@ -138,30 +178,33 @@ struct ConfigurationResourceView: View {
                         Button(L10n.tr("预览 \(host.displayName)")) {
                             present(plugins.prepare(plugin, locations: global.locations))
                         }
-                        .buttonStyle(AppButtonStyle(kind: .primary))
+                        .buttonStyle(AppButtonStyle())
                         .disabled(model.isWorking || plugins.isLoading || !plugins.isReady
                             || (plugins.action(plugin) == .install && !plugins.acknowledgedRisk))
                         .accessibilityIdentifier("\(prefix).preview.plugins.\(host.rawValue)")
                     } else {
-                      Menu(L10n.tr("预览 \(host.displayName)")) {
-                        ForEach(plugins.pending(host: host)) { plugin in
-                            Button(plugin.name + " · " + L10n.text(plugins.action(plugin)?.displayName ?? "")) {
-                                present(plugins.prepare(plugin, locations: global.locations))
+                        Menu {
+                            ForEach(plugins.pending(host: host)) { plugin in
+                                Button(plugin.name + " · " + L10n.text(plugins.action(plugin)?.displayName ?? "")) {
+                                    present(plugins.prepare(plugin, locations: global.locations))
+                                }
+                                .disabled(plugins.action(plugin) == .install && !plugins.acknowledgedRisk)
                             }
-                            .disabled(plugins.action(plugin) == .install && !plugins.acknowledgedRisk)
+                        } label: {
+                            Text(L10n.tr("预览 \(host.displayName)"))
                         }
-                    }
-                    .disabled(model.isWorking || plugins.isLoading || !plugins.isReady || plugins.pending(host: host).isEmpty)
-                    .accessibilityIdentifier("\(prefix).preview.plugins.\(host.rawValue)")
+                        .buttonStyle(AppButtonStyle())
+                        .disabled(model.isWorking || plugins.isLoading || !plugins.isReady || plugins.pending(host: host).isEmpty)
+                        .accessibilityIdentifier("\(prefix).preview.plugins.\(host.rawValue)")
                     }
                 } else {
                     Button(L10n.tr("预览 \(host.displayName)")) {
                         if tab == .mcp { model.prepareMCPLibraryPlan(host: host, projectID: projectID) }
                         else if isProject { model.prepareDeploymentPlan(host: host) }
-                        else { present(global.prepareDeployment(host: host)) }
+                        else { present(global.prepareDeployment(host: SkillConfigurationTarget(host))) }
                     }
-                    .buttonStyle(AppButtonStyle(kind: .primary))
-                    .disabled(model.isWorking || (tab != .mcp && !canEdit(host)))
+                    .buttonStyle(AppButtonStyle())
+                    .disabled(model.isWorking || (tab != .mcp && !canEdit(SkillConfigurationTarget(host))))
                     .accessibilityIdentifier("\(prefix).preview.\(host.rawValue)")
                 }
             }
@@ -173,7 +216,7 @@ struct ConfigurationResourceView: View {
             Text(L10n.text(error)).font(AppFont.secondary).foregroundStyle(.red)
                 .accessibilityIdentifier("global.error")
         }
-        ForEach(MCPHost.allCases) { host in
+        ForEach(SkillConfigurationTarget.allCases) { host in
             if !isProject, let error = global.skillEditingErrors[host], error != global.error {
                 Text(host.displayName + ": " + L10n.text(error)).font(AppFont.secondary).foregroundStyle(.red)
             }
@@ -190,7 +233,7 @@ struct ConfigurationResourceView: View {
     }
 
     private var selectedSkillPills: some View {
-        let selected = Set(MCPHost.allCases.flatMap { skillIDs($0) })
+        let selected = Set(skillTargets.flatMap { skillIDs($0) })
         let entries = Dictionary(uniqueKeysWithValues: model.snapshot.catalog.entries.map { ($0.id, $0) })
         let items = selected.map { id in
             SelectedSkillPills.Item(id: id, name: model.skillDisplayTitle(id),
@@ -199,6 +242,8 @@ struct ConfigurationResourceView: View {
         }.sorted { ($0.name, $0.id) < ($1.name, $1.id) }
         return SelectedSkillPills(items: items, identifierPrefix: prefix, compact: availableHeight < 500,
             hostSelection: .init(
+                targets: skillTargets,
+                savesImmediately: savesImmediately,
                 isSelected: { skillIDs($1).contains($0) },
                 isEnabled: { id, host in
                     !model.isWorking && canEdit(host)
@@ -209,14 +254,22 @@ struct ConfigurationResourceView: View {
                     else if !enabled { removeSkill(id, host: host) }
                 }),
             canRemove: { id in
-                !model.isWorking && MCPHost.allCases.filter { skillIDs($0).contains(id) }.allSatisfy { canEdit($0) }
+                !model.isWorking && skillTargets.filter { skillIDs($0).contains(id) }.allSatisfy { canEdit($0) }
             },
             remove: { id in
-                for host in MCPHost.allCases where skillIDs(host).contains(id) {
-                    if let skill = entries[id] { setSkill(skill, enabled: false, host: host) }
-                    else { removeSkill(id, host: host) }
-                    // 保存失败时保留该工具的错误，不让另一工具的成功保存把它清掉。
-                    if skillIDs(host).contains(id) { break }
+                if !isProject {
+                    Task {
+                        for host in skillTargets where skillIDs(host).contains(id) {
+                            guard await global.saveSkill(id, name: model.skillDisplayTitle(id), enabled: false, host: host) else { break }
+                        }
+                    }
+                    return
+                }
+                Task {
+                    for host in skillTargets where skillIDs(host).contains(id) {
+                        guard let tool = host.mcpHost else { continue }
+                        guard await model.saveProjectSkill(id, name: model.skillDisplayTitle(id), enabled: false, host: tool) else { break }
+                    }
                 }
             })
     }
@@ -224,6 +277,11 @@ struct ConfigurationResourceView: View {
     private var skillList: some View {
         let skills = matchingSkills(model.snapshot.catalog.entries, query: query, sourceOrigins: model.sourceOrigins)
         return VStack(alignment: .leading, spacing: 12) {
+            if !isProject {
+                Text(L10n.tr("Agents 保存共享技能；Codex 也会加载它们。取消 Codex 选择不会停用 Agents 中的技能。"))
+                    .font(AppFont.secondary).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("global.agents.notice")
+            }
             Text(L10n.tr("\(skills.count) 个匹配")).font(AppFont.metadata).foregroundStyle(.secondary)
             LazyVStack(alignment: .leading, spacing: 0) {
                 ForEach(skills) { skill in
@@ -232,13 +290,19 @@ struct ConfigurationResourceView: View {
                             Text(skill.slug).font(AppFont.body.weight(.semibold)).lineLimit(1).help(skill.slug)
                             Text(model.skillSourceTitle(skill)).font(AppFont.metadata).foregroundStyle(.secondary).lineLimit(1)
                             Text(skill.description).font(AppFont.secondary).foregroundStyle(.secondary).lineLimit(2)
+                            if !isProject, let duplicate = global.duplicateSkillNotice(skill, catalog: model.snapshot.catalog.entries) {
+                                Text(duplicate).font(AppFont.secondary).foregroundStyle(.orange)
+                                    .accessibilityIdentifier("global.skill.\(skill.id).duplicate")
+                            }
                             if skill.isBlocked {
                                 Text(L10n.tr("未通过文件检查，请到技能库查看原因。"))
                                     .font(AppFont.secondary).foregroundStyle(.red)
                             }
                         }
                     } toggles: {
-                        SkillHostToggles(skillName: skill.slug, identifierPrefix: "\(prefix).skill.\(skill.id)",
+                        SkillTargetToggles(skillName: skill.slug, identifierPrefix: "\(prefix).skill.\(skill.id)",
+                            targets: skillTargets,
+                            savesImmediately: savesImmediately,
                             isSelected: { skillIDs($0).contains(skill.id) },
                             isEnabled: { host in !model.isWorking && canEdit(host)
                                 && (!skill.isBlocked || skillIDs(host).contains(skill.id)) },
@@ -247,7 +311,7 @@ struct ConfigurationResourceView: View {
                 }
             }
             if skills.isEmpty { empty("没有匹配的技能，请调整搜索或先加入技能库。", section: .skills) }
-            ForEach(MCPHost.allCases) { host in
+            ForEach(skillTargets) { host in
                 ForEach(skillIDs(host).filter { id in
                     !model.snapshot.catalog.entries.contains { $0.id == id }
                 }, id: \.self) { id in
@@ -268,7 +332,7 @@ struct ConfigurationResourceView: View {
                             Text(L10n.tr("复制独立文件")).tag(SkillInstallMethod.copy)
                         }
                     } else {
-                        ForEach(MCPHost.allCases) { host in
+                        ForEach(skillTargets) { host in
                             AppPicker(title: host.displayName,
                                 selection: Binding(get: { global.selection(host: host)?.installMethod ?? .symlink },
                                                    set: { global.setInstallMethod($0, host: host) }),
@@ -279,7 +343,10 @@ struct ConfigurationResourceView: View {
                         }
                         Toggle(L10n.tr("接管所选资源的已有同名内容，并保留原始备份"),
                                isOn: Binding(get: { global.takeOverExisting }, set: { global.takeOverExisting = $0 }))
-                            .toggleStyle(.checkbox)
+                            .toggleStyle(AppCheckboxStyle())
+                        Text(L10n.tr("更改安装方式或接管已有内容后，预览并保存。"))
+                            .font(AppFont.secondary).foregroundStyle(.secondary)
+                        previewActions
                     }
                     Text(L10n.tr("软链接指向 ~/.perch 中的固定版本；复制后的文件可独立编辑。"))
                         .font(AppFont.secondary).foregroundStyle(.secondary)
@@ -291,7 +358,7 @@ struct ConfigurationResourceView: View {
     private var instructionList: some View {
         let templates = model.snapshot.templates.filter { matches([$0.title, $0.purpose, $0.body]) }
         return VStack(alignment: .leading, spacing: 12) {
-            Text(L10n.tr("技能与 AGENTS 片段会在同一份工具计划中预览和保存。"))
+            Text(L10n.tr(savesImmediately ? "点击工具图标直接保存规则到 AGENTS.md 或 CLAUDE.md。" : "技能与 AGENTS 片段会在同一份工具计划中预览和保存。"))
                 .font(AppFont.secondary).foregroundStyle(.secondary)
             ForEach(templates) { template in
                 resourceRow {
@@ -304,9 +371,12 @@ struct ConfigurationResourceView: View {
                     }
                 } toggles: {
                     SkillHostToggles(skillName: UserFacingText.templateTitle(template), identifierPrefix: "\(prefix).instruction.\(template.id)",
+                        savesImmediately: savesImmediately,
                         isSelected: { instructionIDs($0).contains(template.id) },
-                        isEnabled: { !model.isWorking && canEdit($0) },
-                        setSelected: { setInstruction(template.id, enabled: $1, host: $0) })
+                        isEnabled: { !model.isWorking && canEdit(SkillConfigurationTarget($0)) },
+                        setSelected: { host, enabled in
+                            setInstruction(template.id, title: UserFacingText.templateTitle(template), enabled: enabled, host: host)
+                        })
                 }
             }
             if templates.isEmpty { empty("没有匹配的 AGENTS 片段，请调整搜索或到「AGENTS 片段」添加。", section: .templates) }
@@ -318,7 +388,7 @@ struct ConfigurationResourceView: View {
                         Text(host.displayName + " · " + L10n.tr("片段已删除，请移除引用后重新选择。"))
                             .foregroundStyle(.orange)
                         Spacer()
-                        Button(L10n.tr("移除不可用的片段")) { setInstruction(id, enabled: false, host: host) }
+                        Button(L10n.tr("移除不可用的片段")) { setInstruction(id, title: id, enabled: false, host: host) }
                     }.font(AppFont.secondary)
                 }
             }
@@ -340,9 +410,14 @@ struct ConfigurationResourceView: View {
                     }
                 } toggles: {
                     SkillHostToggles(skillName: entry.name, identifierPrefix: "\(prefix).mcp.\(entry.id)",
+                        savesImmediately: savesImmediately,
                         isSelected: { model.mcpLibrary.selectedIDs(host: $0, projectID: projectID).contains(entry.id) },
-                        isEnabled: { _ in !model.isWorking },
-                        setSelected: { _ = model.mcpLibrary.select(entry.id, enabled: $1, host: $0, projectID: projectID) })
+                        isEnabled: { _ in !model.isWorking && !model.mcpLibrary.isSaving },
+                        setSelected: { host, enabled in
+                            Task {
+                                await model.mcpLibrary.saveSelection(entry.id, name: entry.name, enabled: enabled, host: host, projectID: projectID)
+                            }
+                        })
                 }
             }
             if entries.isEmpty { empty("没有匹配的 MCP 服务，请调整搜索或到「MCP 服务」添加。", section: .mcp) }
@@ -361,7 +436,11 @@ struct ConfigurationResourceView: View {
                     HStack {
                         Text(host.displayName + " · " + L10n.tr("所选服务已从配置库删除，请取消引用。"))
                         Spacer()
-                        Button(L10n.tr("移除引用")) { _ = model.mcpLibrary.select(id, enabled: false, host: host, projectID: projectID) }
+                        Button(L10n.tr("移除引用")) {
+                            Task {
+                                await model.mcpLibrary.saveSelection(id, name: id.uuidString, enabled: false, host: host, projectID: projectID)
+                            }
+                        }
                     }.font(AppFont.secondary)
                 }
             }
@@ -412,7 +491,7 @@ struct ConfigurationResourceView: View {
             if visible.isEmpty { empty("当前范围没有匹配的本机插件。请先在 AI 工具中取得插件包。", section: .plugins) }
             if plugins.plugins.contains(where: { plugins.action($0) == .install }) {
                 Toggle(L10n.tr("我已核对插件中的自动运行脚本、命令和其他可运行内容。"), isOn: $plugins.acknowledgedRisk)
-                    .toggleStyle(.checkbox).font(AppFont.secondary)
+                    .toggleStyle(AppCheckboxStyle()).font(AppFont.secondary)
                 Text(L10n.tr("安装插件前请确认可运行组件，再从预览菜单选择插件。"))
                     .font(AppFont.secondary).foregroundStyle(.secondary)
             }
@@ -423,34 +502,43 @@ struct ConfigurationResourceView: View {
         }
     }
 
-    private func canEdit(_ host: MCPHost) -> Bool {
+    private func canEdit(_ host: SkillConfigurationTarget) -> Bool {
         if isProject { return project != nil && project?.id == model.selectedProjectID && !model.isWorking }
         return global.canEditSkills(host: host)
     }
 
-    private func skillIDs(_ host: MCPHost) -> [String] {
+    private func skillIDs(_ host: SkillConfigurationTarget) -> [String] {
         if isProject { return project?.harnessSelections[host.rawValue]?.skillIDs ?? [] }
         return global.selection(host: host)?.skillIDs ?? []
     }
 
     private func instructionIDs(_ host: MCPHost) -> [String] {
         if isProject { return project?.harnessSelections[host.rawValue]?.instructionIDs ?? [] }
-        return global.selection(host: host)?.instructionIDs ?? []
+        return global.selection(host: SkillConfigurationTarget(host))?.instructionIDs ?? []
     }
 
-    private func setSkill(_ skill: SkillEntry, enabled: Bool, host: MCPHost) {
-        if isProject { model.setSkill(skill, enabled: enabled, host: host) }
-        else { global.setSkill(skill, enabled: enabled, host: host, catalog: model.snapshot.catalog.entries) }
+    private func setSkill(_ skill: SkillEntry, enabled: Bool, host: SkillConfigurationTarget) {
+        if isProject, let tool = host.mcpHost {
+            Task { await model.saveProjectSkill(skill, enabled: enabled, host: tool) }
+        } else {
+            Task { await global.saveSkill(skill, enabled: enabled, host: host, catalog: model.snapshot.catalog.entries) }
+        }
     }
 
-    private func removeSkill(_ id: String, host: MCPHost) {
-        if isProject { model.removeUnavailableSkill(id, host: host) }
-        else { global.setSkill(id, enabled: false, host: host) }
+    private func removeSkill(_ id: String, host: SkillConfigurationTarget) {
+        if isProject, let tool = host.mcpHost {
+            Task { await model.saveProjectSkill(id, name: model.skillDisplayTitle(id), enabled: false, host: tool) }
+        } else {
+            Task { await global.saveSkill(id, name: model.skillDisplayTitle(id), enabled: false, host: host) }
+        }
     }
 
-    private func setInstruction(_ id: String, enabled: Bool, host: MCPHost) {
-        if isProject { model.setInstruction(id, enabled: enabled, host: host) }
-        else { global.setInstruction(id, enabled: enabled, host: host) }
+    private func setInstruction(_ id: String, title: String, enabled: Bool, host: MCPHost) {
+        if isProject {
+            Task { await model.saveProjectInstruction(id, title: title, enabled: enabled, host: host) }
+        } else {
+            Task { await global.saveInstruction(id, title: title, enabled: enabled, host: SkillConfigurationTarget(host)) }
+        }
     }
 
     private func resourceRow<Content: View, Toggles: View>(@ViewBuilder content: () -> Content,

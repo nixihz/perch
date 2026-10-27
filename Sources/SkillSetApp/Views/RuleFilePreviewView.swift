@@ -15,12 +15,8 @@ struct RuleFilePreviewView: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Spacer(minLength: 8)
-                Picker(L10n.tr("规则内容"), selection: $mode) {
-                    Text(L10n.tr("差异")).tag(0)
-                    Text(L10n.tr("写入前")).tag(1)
-                    Text(L10n.tr("写入后")).tag(2)
-                }
-                .pickerStyle(.segmented)
+                AppSegmentedPicker(title: L10n.tr("规则内容"), selection: $mode,
+                    options: [(0, L10n.tr("差异")), (1, L10n.tr("写入前")), (2, L10n.tr("写入后"))])
                 .labelsHidden()
                 .frame(width: 248)
                 .accessibilityIdentifier("templates.plan.contentMode")

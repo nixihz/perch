@@ -3,8 +3,51 @@ import Testing
 @testable import SkillSetCore
 
 struct GlobalConfigurationTests {
-    @Test(arguments: MCPHost.allCases, [SkillInstallMethod.copy, .symlink])
-    func linkedSkillsRootSupportsInspectionDeploymentUndoAndBaselineRestore(host: MCPHost, method: SkillInstallMethod) throws {
+    @Test(arguments: [SkillInstallMethod.copy, .symlink])
+    func threeTargetsKeepIndependentOwnershipAndUndoOnlyAgents(method: SkillInstallMethod) throws {
+        let f = try GlobalFixture()
+        defer { f.cleanup() }
+        let codex = try f.apply(f.plan(method: method))
+        let codexState = try Data(contentsOf: f.locations.stateURL(.codex))
+        _ = try f.apply(f.plan(method: method, target: .claudeCode))
+        let claudeState = try Data(contentsOf: f.locations.stateURL(.claudeCode))
+        let shared = f.locations.home.appendingPathComponent(".agents/skills/demo")
+        let plan = try f.plan(method: method, target: .agents)
+        #expect(!f.exists(shared))
+        #expect(plan.plan.metadata?["globalHost"] == "agents")
+        #expect(plan.plan.changes.allSatisfy { !$0.relativePath.hasSuffix("AGENTS.md") && !$0.relativePath.hasSuffix("CLAUDE.md") })
+        let applied = try f.apply(plan)
+        #expect(try f.read(shared.appendingPathComponent("assets/data.txt")) == "完整附件")
+        #expect(try f.manager.inspect(host: .agents).rulesPath.isEmpty)
+        #expect(try f.manager.inspect(host: .agents).resources.count == 1)
+        #expect(try Data(contentsOf: f.locations.stateURL(.codex)) == codexState)
+        #expect(try Data(contentsOf: f.locations.stateURL(.claudeCode)) == claudeState)
+        _ = try f.apply(f.manager.makeUndoPlan(host: .agents, operationID: applied.operationID))
+        #expect(!f.exists(shared))
+        #expect(try f.read(f.skill.appendingPathComponent("SKILL.md")).contains("第一版"))
+        #expect(try f.manager.history(host: .codex).first?.id == codex.operationID)
+        #expect(try Data(contentsOf: f.locations.stateURL(.codex)) == codexState)
+        #expect(try Data(contentsOf: f.locations.stateURL(.claudeCode)) == claudeState)
+    }
+
+    @Test
+    func agentsRejectsRuleSelectionsBeforeCreatingDraftOrPlan() throws {
+        let f = try GlobalFixture()
+        defer { f.cleanup() }
+        let selection = GlobalConfigurationDraft(instructionIDs: ["rules"])
+        #expect(throws: GlobalConfigurationError.self) { try f.manager.saveDraft(selection, host: .agents) }
+        #expect(throws: GlobalConfigurationError.self) {
+            try f.manager.makeDeploymentPlan(host: .agents, selection: selection,
+                catalog: CatalogDocument(schemaVersion: 1, hashAlgorithm: "sha256", entries: []),
+                sourceURLs: [:], fragments: ["rules": "不能写入共享目录的规则"])
+        }
+        #expect(!f.exists(f.locations.draftURL(.agents)))
+        #expect(!f.exists(f.locations.skillsRoot(.agents)))
+        #expect(try DeploymentPlanStore(rootURL: f.paths.plansRoot).list().isEmpty)
+    }
+
+    @Test(arguments: SkillConfigurationTarget.allCases, [SkillInstallMethod.copy, .symlink])
+    func linkedSkillsRootSupportsInspectionDeploymentUndoAndBaselineRestore(host: SkillConfigurationTarget, method: SkillInstallMethod) throws {
         let f = try GlobalFixture(host: host)
         defer { f.cleanup() }
         let (alias, destination) = try f.linkSkillsRoot(relative: host == .codex)
@@ -109,8 +152,8 @@ struct GlobalConfigurationTests {
         #expect(try f.read(f.rules) == "更新前新增\n" + original + "更新后新增\n")
     }
 
-    @Test(arguments: MCPHost.allCases)
-    func approvalGateCopiesWholePackageAndLeavesSourceAndNeighbors(host: MCPHost) throws {
+    @Test(arguments: [SkillConfigurationTarget.codex, .claudeCode])
+    func approvalGateCopiesWholePackageAndLeavesSourceAndNeighbors(host: SkillConfigurationTarget) throws {
         let f = try GlobalFixture(host: host)
         defer { f.cleanup() }
         try f.write("邻居", to: f.neighbor)
@@ -131,8 +174,8 @@ struct GlobalConfigurationTests {
         #expect(try ProjectStore(rootURL: f.paths.applicationSupportRoot).list().isEmpty)
     }
 
-    @Test(arguments: MCPHost.allCases)
-    func explicitTakeoverRetainsOriginalPackageAndPermissionsAcrossUpdates(host: MCPHost) throws {
+    @Test(arguments: [SkillConfigurationTarget.codex, .claudeCode])
+    func explicitTakeoverRetainsOriginalPackageAndPermissionsAcrossUpdates(host: SkillConfigurationTarget) throws {
         let f = try GlobalFixture(host: host)
         defer { f.cleanup() }
         try f.write("原来的技能", to: f.skill.appendingPathComponent("SKILL.md"))
@@ -391,7 +434,7 @@ struct GlobalVerificationDiagnosticsTests {
         _ = next
         let repaired = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: stateURL)) as? [String: Any])
         #expect(repaired["skillsPath"] as? String == f.locations.skillsRoot(f.host).path)
-        #expect(repaired["rulesPath"] as? String == f.locations.rulesURL(f.host).path)
+        #expect(repaired["rulesPath"] as? String == f.rules.path)
         #expect((repaired["managed"] as? [String: Any])?[f.skill.path] != nil)
     }
 
@@ -489,15 +532,15 @@ private struct GlobalFixture {
     let home: URL
     let paths: SkillSetRuntimePaths
     let locations: GlobalConfigurationLocations
-    let host: MCPHost
+    let host: SkillConfigurationTarget
     let entry: SkillEntry
     let source: URL
     var manager: GlobalConfigurationManager { GlobalConfigurationManager(paths: paths, locations: locations) }
     var skill: URL { locations.skillsRoot(host).appendingPathComponent("demo") }
-    var rules: URL { locations.rulesURL(host) }
+    var rules: URL { locations.rulesURL(for: host)! }
     var neighbor: URL { locations.skillsRoot(host).appendingPathComponent("neighbor/SKILL.md") }
 
-    init(host: MCPHost = .codex) throws {
+    init(host: SkillConfigurationTarget = .codex) throws {
         self.host = host
         root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent("global-tests-\(UUID())")
         home = root.appendingPathComponent("home")
@@ -514,7 +557,9 @@ private struct GlobalFixture {
 
     func service() throws -> SkillSetService { try SkillSetService(paths: paths, globalLocations: locations) }
 
-    func plan(takeOver: Bool = false, instructions: Bool = true, rule: String = "第一条规则", method: SkillInstallMethod = .copy) throws -> StoredDeploymentPlan {
+    func plan(takeOver: Bool = false, instructions: Bool = true, rule: String = "第一条规则", method: SkillInstallMethod = .copy,
+              target: SkillConfigurationTarget? = nil) throws -> StoredDeploymentPlan {
+        let host = target ?? self.host
         // fixture 的资源包包含附件，按实际文件重新生成目录条目，验证不会只部署正文。
         let copy = try SkillAssetCopier.analyze(from: source)
         let entry = SkillEntry(id: entry.id, slug: entry.slug, declaredName: entry.declaredName,
@@ -522,7 +567,7 @@ private struct GlobalFixture {
             path: entry.path, contentHash: copy.contentHash, fileCount: copy.files.count, bytes: copy.bytes,
             integrity: "ok", issues: [], excludedPaths: [])
         return try manager.makeDeploymentPlan(host: host,
-            selection: GlobalConfigurationDraft(skillIDs: [entry.id], instructionIDs: instructions ? ["rules"] : []),
+            selection: GlobalConfigurationDraft(skillIDs: [entry.id], instructionIDs: instructions && host != .agents ? ["rules"] : []),
             catalog: CatalogDocument(schemaVersion: 1, hashAlgorithm: "sha256:path-content-executable:v1", entries: [entry]),
             sourceURLs: [entry.id: source], fragments: ["rules": rule], takeOverExisting: takeOver, installMethod: method)
     }

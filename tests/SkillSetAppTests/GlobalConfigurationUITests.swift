@@ -6,6 +6,35 @@ import SkillSetCore
 
 @MainActor
 final class GlobalConfigurationUITests: XCTestCase {
+    func testAgentsPlanCancellationAndSaveKeepCodexPendingDraft() throws {
+        let root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent("agents-save-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let paths = SkillSetRuntimePaths(applicationSupportRoot: root.appendingPathComponent("state"), repositoryRoot: nil)
+        let locations = GlobalConfigurationLocations(home: root.appendingPathComponent("home"), stateRoot: paths.applicationSupportRoot)
+        let skill = try paths.makeLibraryStore().save(SkillEditorDraft(slug: "shared-demo",
+            document: "---\nname: shared-demo\ndescription: 保存测试\n---\n共享正文\n"), repositoryRoot: nil)
+        let model = AppModel(runtimePaths: paths, globalLocations: locations)
+        let global = model.globalConfiguration
+        global.refresh()
+        global.setSkill(skill.id, enabled: true, host: .agents)
+        global.setSkill(skill.id, enabled: true, host: .codex)
+        global.setInstallMethod(.copy, host: .agents)
+        let codexBefore = global.selection(host: .codex)
+        model.preparedPlan = try XCTUnwrap(global.prepareDeployment(host: .agents), global.error ?? "")
+        model.planPresented = true
+        model.dismissPlan()
+        let target = locations.home.appendingPathComponent(".agents/skills/shared-demo/SKILL.md")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: target.path))
+        model.preparedPlan = try XCTUnwrap(global.prepareDeployment(host: .agents), global.error ?? "")
+        XCTAssertTrue(model.approveAndApplyPreparedPlan(), model.lastAction)
+        XCTAssertEqual(global.host, .agents)
+        XCTAssertEqual(global.inspection?.host, .agents)
+        XCTAssertTrue(try String(contentsOf: target, encoding: .utf8).contains("共享正文"))
+        XCTAssertEqual(global.selection(host: .codex), codexBefore)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: locations.skillsRoot(.codex).path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: locations.home.appendingPathComponent(".agents/AGENTS.md").path))
+    }
+
     func testCancelledRefreshKeepsDraftAndNextRefreshReadsExternalChange() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("global-refresh-\(UUID())")
         defer { try? FileManager.default.removeItem(at: root) }

@@ -19,7 +19,7 @@ struct TemplateEditorSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(L10n.text(draft.isEditing ? "编辑片段" : "新增片段"))
-                .font(AppFont.title.weight(.bold))
+                .font(AppFont.title)
             Text(L10n.tr("保存到本机片段库，随后可在项目或预设中选择。"))
                 .font(AppFont.secondary).foregroundStyle(.secondary)
             AppFormField(L10n.tr("片段名称")) {

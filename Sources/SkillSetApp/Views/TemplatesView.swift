@@ -237,7 +237,7 @@ struct TemplatesView: View {
                         VStack(alignment: .leading, spacing: 9) {
                             HStack {
                                 Text(UserFacingText.templateTitle(template))
-                                    .font(AppFont.title.weight(.bold))
+                                    .font(AppFont.title)
                                 Spacer()
                                 Button(L10n.tr("编辑")) {
                                     model.templateError = nil

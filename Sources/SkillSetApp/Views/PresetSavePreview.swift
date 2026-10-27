@@ -17,7 +17,7 @@ struct PresetSavePreview: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(L10n.tr("预览预设")).font(AppFont.title.weight(.bold))
+            Text(L10n.tr("预览预设")).font(AppFont.title)
             Text(draft.name).font(AppFont.heading)
             if !draft.description.isEmpty { Text(draft.description).font(AppFont.secondary).foregroundStyle(.secondary) }
             Text(L10n.tr("只保存预设，项目和 AI 工具配置保持不变。"))

@@ -71,7 +71,9 @@ struct PresetsView: View {
                                 .accessibilityAddTraits(preset.id == model.selectedPresetID ? [.isSelected] : [])
                             }
                         }
-                    }.frame(height: AppControl.height)
+                        .frame(height: AppControl.selectorHeight)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: AppControl.selectorHeight, maxHeight: AppControl.selectorHeight)
                     if let preset = model.selectedPreset {
                         Button(L10n.tr("用于项目…")) {
                             model.presetSelection = PresetSelectionRequest(presetID: preset.id)

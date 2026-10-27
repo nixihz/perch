@@ -1,7 +1,7 @@
 import Foundation
 
 extension GlobalConfigurationManager {
-    public func makeUndoPlan(host: MCPHost, operationID: UUID) throws -> StoredDeploymentPlan {
+    public func makeUndoPlan(host: SkillConfigurationTarget, operationID: UUID) throws -> StoredDeploymentPlan {
         _ = try loadState(host)
         guard let operation = try history(host: host).first(where: { $0.id == operationID }), operation.canUndo else {
             throw GlobalConfigurationError.staleOperation
@@ -24,7 +24,7 @@ extension GlobalConfigurationManager {
             catch { throw GlobalConfigurationError.verificationFailed(.invalidBackup, path: backup.path) }
         } else {
             previous = GlobalConfigurationState(host: host, skillsPath: locations.skillsRoot(host).path,
-                rulesPath: locations.rulesURL(host).path, selection: GlobalConfigurationDraft(), managed: [:])
+                rulesPath: (locations.rulesURL(for: host)?.path ?? ""), selection: GlobalConfigurationDraft(), managed: [:])
         }
         let builder = try GlobalPlanBuilder(manager: self, host: host, action: "undo")
         defer { builder.cleanup() }
@@ -37,7 +37,7 @@ extension GlobalConfigurationManager {
             let actual = try builder.observe(target)
             let backup = operationRoot.appendingPathComponent("backup/\(step.relativePath)")
             if let expected = step.beforeHash, try hash(backup) != expected { throw GlobalConfigurationError.baselineMissing }
-            if target == locations.rulesURL(host) {
+            if target == locations.rulesURL(for: host) {
                 // 保存的 staging 是该操作写入后的字节，用于只比较规则块并保留块外编辑。
                 let record = try DeploymentPlanStore(rootURL: paths.plansRoot).load(journal.planID)
                 let stage = URL(fileURLWithPath: record.stagingPath).standardizedFileURL
@@ -62,7 +62,7 @@ extension GlobalConfigurationManager {
             let target = URL(fileURLWithPath: path)
             guard allowedResource(target, host: host) else { throw DeploymentError.invalidPlan }
             let actual = try builder.observe(target)
-            if target == locations.rulesURL(host) {
+            if target == locations.rulesURL(for: host) {
                 guard let data = try dataIfPresent(target),
                       try ruleBody(data, path: target.path).map({ SkillAssetCopier.sha256(Data($0.utf8)) }) == resource.hash else {
                     throw DeploymentError.managedRuleDrift(path)
@@ -72,9 +72,9 @@ extension GlobalConfigurationManager {
         return try builder.finish(state: previous)
     }
 
-    private func canonicalState(_ state: GlobalConfigurationState, host: MCPHost, path: String) throws -> GlobalConfigurationState {
+    private func canonicalState(_ state: GlobalConfigurationState, host: SkillConfigurationTarget, path: String) throws -> GlobalConfigurationState {
         guard state.skillsPath == locations.skillsRoot(host).path,
-              state.rulesPath == locations.rulesURL(host).path else {
+              state.rulesPath == (locations.rulesURL(for: host)?.path ?? "") else {
             return try canonicalizeStatePaths(state, host: host, path: path)
         }
         return state

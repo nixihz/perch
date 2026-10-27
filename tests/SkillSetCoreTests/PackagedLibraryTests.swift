@@ -18,7 +18,9 @@ final class PackagedLibraryTests: XCTestCase {
             currentDirectoryURL: root, applicationSupportRoot: state)
         XCTAssertNil(paths.repositoryRoot)
         XCTAssertFalse(manager.fileExists(atPath: state.path), "查找路径不应复制内置技能快照")
-        let service = try SkillSetService(paths: paths)
+        // 启动测试不能继承执行器的 CODEX_HOME，也不能收录用户真实的全局技能。
+        let locations = GlobalConfigurationLocations(home: root.appendingPathComponent("home"), stateRoot: state)
+        let service = try SkillSetService(paths: paths, globalLocations: locations)
         XCTAssertTrue(service.skills(query: "").isEmpty)
         XCTAssertTrue(service.snapshot.sources.sources.isEmpty)
         XCTAssertEqual(try Data(contentsOf: library.appendingPathComponent("registry/catalog.json")), Data("{}".utf8))

@@ -79,7 +79,7 @@ final class MCPLibraryExperienceTests: XCTestCase {
         model.globalConfiguration.selectHost(.codex)
         model.section = .mcp
         library.refreshUsage()
-        let targetID = library.initialUsageTargetID(fallbackHost: model.globalConfiguration.host)
+        let targetID = library.initialUsageTargetID(fallbackHost: model.globalConfiguration.host.mcpHost ?? .codex)
         let target = try XCTUnwrap(library.usageTargets.first { $0.id == targetID })
         XCTAssertEqual(target.host, .codex)
         XCTAssertNil(target.projectID)

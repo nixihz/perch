@@ -4,19 +4,28 @@ import Testing
 
 /// 技能库是栖集私有库存。通用目录只当安装目标，旧库内容一次性搬进库存。
 struct PrivateSkillLibraryTests {
-    @Test func libraryRootIsPrivateInventoryAndSharedDirectoryIsNotScanned() throws {
+    @Test func libraryRootIsPrivateAndSharedDirectoryIsCollectedOnlyDuringInitialization() throws {
         let fixture = try InventoryFixture()
         defer { fixture.cleanup() }
         #expect(fixture.paths.libraryDirectoryURL.standardizedFileURL.path
             == fixture.paths.applicationSupportRoot.appendingPathComponent("skills/library").standardizedFileURL.path)
         #expect(fixture.paths.makeLibraryStore().libraryURL == fixture.paths.libraryDirectoryURL)
 
-        // 通用目录里的技能不再被当成库收录，也不再被栖集写回。
+        // 首次收录复制技能；共享安装目录不能变成会随库存编辑变化的实体库。
         let shared = fixture.home.appendingPathComponent(".agents/skills/demo")
         try FileManager.default.createDirectory(at: shared, withIntermediateDirectories: true)
         try Data("---\nname: demo\ndescription: 通用目录\n---\n通用".utf8)
             .write(to: shared.appendingPathComponent("SKILL.md"))
-        #expect(try fixture.service().skills(query: "demo").isEmpty)
+        let original = try Data(contentsOf: shared.appendingPathComponent("SKILL.md"))
+        let service = try fixture.service()
+        #expect(service.skills(query: "demo").count == 1)
+        let custom = fixture.paths.sourcesRoot.appendingPathComponent("custom/demo/SKILL.md")
+        try Data("库存内编辑".utf8).write(to: custom)
+        #expect(try Data(contentsOf: shared.appendingPathComponent("SKILL.md")) == original)
+        let later = shared.deletingLastPathComponent().appendingPathComponent("later")
+        try FileManager.default.createDirectory(at: later, withIntermediateDirectories: true)
+        try Data("---\nname: later\ndescription: 稍后添加\n---\n正文".utf8).write(to: later.appendingPathComponent("SKILL.md"))
+        #expect(try fixture.service().skills(query: "later").isEmpty)
     }
 
     @Test func legacyLinksMoveIntoInventoryAndOldDirectoryKeepsItsLinks() throws {

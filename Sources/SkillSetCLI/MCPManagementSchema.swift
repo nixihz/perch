@@ -6,6 +6,7 @@ extension MCPStdioServer {
         let uuid: [String: Any] = ["type": "string", "format": "uuid"]
         let query: [String: Any] = ["type": "string", "maxLength": 200]
         let host: [String: Any] = ["type": "string", "enum": ["codex", "claude-code"]]
+        let skillTarget: [String: Any] = ["type": "string", "enum": ["agents", "codex", "claude-code"]]
         let scope: [String: Any] = ["type": "string", "enum": ["user", "project"]]
         let ids: [String: Any] = ["type": "array", "items": text, "maxItems": 200]
         let agents: [String: Any] = ["type": "array", "items": host, "maxItems": 2]
@@ -62,8 +63,8 @@ extension MCPStdioServer {
         let existing: [String: Any] = ["host": host, "scope": scope, "projectId": uuid, "name": text]
         add("mcp_config_update_plan", "为明确选中的已有 MCP 连接生成编辑计划，保留未知键与凭据；省略 args 保留原参数。", merging(existing, ["commandOrURL": text, "args": connection["args"]!]), ["host", "scope", "name"])
         add("mcp_config_delete_plan", "为选中的已有 MCP 连接生成删除计划，批准后执行，保留其他服务。", existing, ["host", "scope", "name"])
-        add("global_config_get", "读取宿主全局技能/规则的已部署选择、目标路径和受管状态。", ["host": host], ["host"], read: true)
-        add("global_config_plan", "将完整技能与片段选择应用于全局的待批准计划；空数组规划移除受管内容，影响该宿主全部项目。", ["host": host, "skillIds": ids, "instructionIds": ids, "installMethod": ["type": "string", "enum": ["copy", "symlink"]]], ["host", "skillIds", "instructionIds"])
+        add("global_config_get", "读取全局配置目标的已部署选择、路径和受管状态；Agents 只含共享技能。", ["host": skillTarget], ["host"], read: true)
+        add("global_config_plan", "生成全局技能与片段待批准计划；Agents 写入共享技能目录且 instructionIds 必须为空。空数组移除受管内容。", ["host": skillTarget, "skillIds": ids, "instructionIds": ids, "installMethod": ["type": "string", "enum": ["copy", "symlink"]]], ["host", "skillIds", "instructionIds"])
         add("plugin_sources_list", "列出本机插件来源，不执行插件代码。", [:], [], read: true)
         add("plugin_sources_get", "读取插件来源及组件盘点。", ["sourceId": uuid], ["sourceId"], read: true)
         let source: [String: Any] = ["url": text, "ref": ["type": "string", "maxLength": 256]]

@@ -44,7 +44,7 @@ struct InstalledSkillScanSheet: View {
             HStack {
                 Text(L10n.tr("可收录 \(available.count) 项")).font(AppFont.heading)
                 Spacer()
-                Toggle(L10n.tr("显示已收录"), isOn: $showAll).toggleStyle(.checkbox)
+                Toggle(L10n.tr("显示已收录"), isOn: $showAll).toggleStyle(AppCheckboxStyle())
                 if !collectedItems.isEmpty {
                     Button(L10n.tr("批量删除原安装…"), role: .destructive) {
                         deletingAll = true
@@ -143,7 +143,7 @@ struct InstalledSkillScanSheet: View {
             Toggle(L10n.tr("选择技能"), isOn: Binding(get: { scanModel.selected.contains(item.id) }, set: {
                 if $0 { scanModel.selected.insert(item.id) } else { scanModel.selected.remove(item.id) }
             }))
-            .labelsHidden().toggleStyle(.checkbox).disabled(!item.canImport || busy)
+            .toggleStyle(AppCheckboxStyle(showsLabel: false)).disabled(!item.canImport || busy)
             .accessibilityLabel(URL(fileURLWithPath: item.path).lastPathComponent)
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
@@ -166,7 +166,7 @@ struct InstalledSkillScanSheet: View {
                     Button(role: .destructive) { deleting = item } label: {
                         Label(L10n.tr("删除原安装"), systemImage: "trash")
                     }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(AppButtonStyle(kind: .quiet))
                     .disabled(busy)
                 }
             }

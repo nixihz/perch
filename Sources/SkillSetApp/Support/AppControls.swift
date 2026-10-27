@@ -2,10 +2,12 @@ import SwiftUI
 
 /// 同一行的输入、选择和操作共享几何尺寸，页面不再单独调整控件高度。
 enum AppControl {
-    static let height: CGFloat = 36
-    static let radius: CGFloat = 8
-    static let horizontalInset: CGFloat = 12
+    static let height: CGFloat = 32
+    static let radius: CGFloat = 6
+    static let horizontalInset: CGFloat = 10
     static let iconTarget: CGFloat = 32
+    // 横向项目与预设选择器需要保留滚动条和可拖动的命中高度。
+    static let selectorHeight: CGFloat = 46
 }
 
 enum AppButtonKind {
@@ -43,10 +45,10 @@ private struct AppButtonBody: View {
 
     var body: some View {
         configuration.label
-            .font(AppFont.secondary.weight(.medium))
+            .font(AppFont.body.weight(.medium))
             .lineLimit(1)
             .padding(.horizontal, AppControl.horizontalInset)
-            .frame(minHeight: AppControl.height)
+            .frame(minWidth: AppControl.iconTarget, minHeight: AppControl.height)
             .foregroundStyle(foreground)
             .background(fill, in: RoundedRectangle(cornerRadius: AppControl.radius))
             .overlay {
@@ -74,15 +76,21 @@ private struct AppTextFieldBody<Content: View>: View {
     var body: some View {
         content
             .textFieldStyle(.plain)
-            .font(AppFont.secondary)
+            .font(AppFont.body)
             .focused($focused)
             .padding(.horizontal, AppControl.horizontalInset)
-            .padding(.vertical, 8)
+            .padding(.vertical, 5)
             .frame(minHeight: AppControl.height)
-            .background(AppColor.controlSurface.opacity(isEnabled ? 1 : 0.5), in: RoundedRectangle(cornerRadius: AppControl.radius))
+            .background {
+                RoundedRectangle(cornerRadius: AppControl.radius)
+                    .fill(AppColor.controlSurface.opacity(isEnabled ? 1 : 0.5))
+                    // 原生文本区域之外的留白也应聚焦，文字内仍保留系统光标定位。
+                    .onTapGesture { if isEnabled { focused = true } }
+            }
             .overlay {
                 RoundedRectangle(cornerRadius: AppControl.radius)
                     .strokeBorder(focused ? AppColor.accent : AppColor.border, lineWidth: focused ? 2 : 1)
+                    .allowsHitTesting(false)
             }
     }
 }
@@ -130,15 +138,17 @@ struct AppPicker<Selection: Hashable, Options: View>: View {
                 .pickerStyle(.inline)
         } label: {
             Text(valueLabel).lineLimit(1).truncationMode(.middle)
+                .frame(maxWidth: .infinity, minHeight: AppControl.height, alignment: .leading)
+                .contentShape(Rectangle())
         }
-        // macOS Menu 使用 AppKit 触发器，不消费自定义 ButtonStyle；边框由外层统一绘制。
-        .menuStyle(.borderlessButton)
+        // button 菜单才会把统一按钮样式的留白纳入触发器，borderlessButton 只命中文字。
+        .menuStyle(.button)
+        .buttonStyle(AppButtonStyle())
         .menuIndicator(.visible)
         .font(AppFont.secondary)
         .tint(AppColor.ink)
         .focused($focused)
-        .padding(.horizontal, AppControl.horizontalInset)
-        .frame(maxWidth: .infinity, minHeight: AppControl.height)
+        .frame(maxWidth: .infinity)
         .background(AppColor.controlSurface.opacity(isEnabled ? 1 : 0.5), in: RoundedRectangle(cornerRadius: AppControl.radius))
         .overlay {
             RoundedRectangle(cornerRadius: AppControl.radius)
@@ -152,11 +162,13 @@ struct AppPicker<Selection: Hashable, Options: View>: View {
 }
 
 extension View {
-    func appControls() -> some View {
+    func appControls(buttonKind: AppButtonKind = .secondary) -> some View {
         self
-            .buttonStyle(AppButtonStyle())
+            .buttonStyle(AppButtonStyle(kind: buttonKind))
             .textFieldStyle(AppTextFieldStyle())
-            .controlSize(.large)
+            .controlSize(.regular)
+            .toggleStyle(AppCheckboxStyle())
+            .menuStyle(.button)
     }
 
     func appEditorSurface() -> some View {

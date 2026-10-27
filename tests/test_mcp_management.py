@@ -245,6 +245,29 @@ class MCPManagementTests(unittest.TestCase):
         self.tool("mcp_library_selection_set", {"host": "codex", "entryIds": []})
         self.assertEqual(self.tool("mcp_library_selection_get", {"host": "codex"})["entryIds"], [])
 
+    def test_agents_global_target_is_independent_and_rejects_non_skill_resources(self):
+        skill = self.tool("skills_create", {"slug": "sample", "document": self.document()})["skill"]
+        shared = self.tool("global_config_get", {"host": "agents"})
+        self.assertEqual(shared["skillsPath"], str(self.root / ".agents/skills"))
+        self.assertEqual(shared["rulesPath"], "")
+        plan = self.tool("global_config_plan", {
+            "host": "agents", "skillIds": [skill["id"]], "instructionIds": [], "installMethod": "copy",
+        })
+        shared_file = self.root / ".agents/skills/sample/SKILL.md"
+        self.assertFalse(shared_file.exists())
+        self.approve_apply(plan)
+        self.assertEqual(shared_file.read_text(), self.document())
+        self.assertEqual(self.tool("global_config_get", {"host": "agents"})["selection"]["skillIDs"], [skill["id"]])
+        self.assertFalse((self.root / "codex/skills").exists())
+        self.assertFalse((self.root / ".agents/AGENTS.md").exists())
+        self.tool("global_config_plan", {
+            "host": "agents", "skillIds": [], "instructionIds": ["unsupported"],
+        }, error="GLOBAL_STATE_CORRUPT")
+        self.tool("mcp_library_selection_get", {"host": "agents"}, error="INVALID_ARGUMENTS")
+        remove = self.tool("global_config_plan", {"host": "agents", "skillIds": [], "instructionIds": []})
+        self.approve_apply(remove)
+        self.assertFalse(shared_file.exists())
+
     def test_global_application_and_project_metadata(self):
         template = self.tool("templates_create", {"title": "全局", "body": "执行后核验。"})["template"]
         plan = self.tool("global_config_plan", {"host": "codex", "skillIds": [], "instructionIds": [template["id"]]})
