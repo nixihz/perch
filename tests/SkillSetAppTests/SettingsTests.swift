@@ -68,11 +68,11 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(preferences.theme, .obsidian)
         XCTAssertNil(defaults.string(forKey: PreferenceKey.theme))
 
-        preferences.theme = .snow
-        XCTAssertEqual(defaults.string(forKey: PreferenceKey.theme), AppTheme.snow.rawValue)
-        XCTAssertEqual(AppPreferences(defaults: defaults).theme, .snow)
+        preferences.theme = .terracotta
+        XCTAssertEqual(defaults.string(forKey: PreferenceKey.theme), AppTheme.terracotta.rawValue)
+        XCTAssertEqual(AppPreferences(defaults: defaults).theme, .terracotta)
 
-        defaults.set("neon", forKey: PreferenceKey.theme)
+        defaults.set("mist", forKey: PreferenceKey.theme)
         XCTAssertEqual(AppPreferences(defaults: defaults).theme, .obsidian)
     }
 
