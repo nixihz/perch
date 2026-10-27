@@ -51,3 +51,5 @@ app-platform --data "$PLATFORM_CLI_DATA" --server https://app.u1.fan publish <�
 2026-10-27 build 12 发布：主题色调改为黑曜、雪白、雾灰三种黑白灰方案；App 与 DMG 已公证装订，Sparkle appcast 与 DMG 将随本次平台更新一起交付。
 
 2026-10-27 正在准备 `0.0.1 (13)`，官网入口已递增，须与本次公证 DMG 和签名清单一起发布。验证与平台 release ID 见 [build 13 发布记录](../../docs/releases/perch-0.0.1-13.md)。
+
+2026-10-27 build 14：恢复陶土红并移除雾灰主题；待公证后发布。

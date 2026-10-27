@@ -140,3 +140,5 @@ python3 -m unittest tests.test_update_packaging tests.test_ui_localization -v
 2026-10-27 build 12 已完成主题色调与设置页改动。App 与 DMG 已通过 Developer ID 签名、Apple 公证、装订和 Gatekeeper 检查；Sparkle appcast 已在本地生成并通过 `sign_update --verify`，尚未上传平台，线上仍为 build 11。详见 [build 12 准备记录](releases/perch-0.0.1-12.md)。
 
 2026-10-27 正在准备 build 13：重新构建 Developer ID 通用包，沿用原 Sparkle 公钥与 feed。CLI 0.1.3 已通过约 29 MB 的 build 12 发布包预检，报告的上传限制为 200 MiB、解压限制为 100 MiB；build 13 最终结果见 [发布记录](releases/perch-0.0.1-13.md)。
+
+2026-10-27 build 14：恢复陶土红主题并移除雾灰，沿用 Sparkle 公钥与 feed；待完成公证后发布。
