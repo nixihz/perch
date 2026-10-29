@@ -9,6 +9,8 @@
   "同名服务将使用配置库中的连接信息；保存后会覆盖原配置，原文件会先备份。": "The service with the same name will use the configuration library connection details. Saving overwrites the existing configuration after backing up the original file.",
   "已保存：%@ · %@": "Saved: %@ · %@",
   "已更新：%@ · %@ 的调用元信息": "Updated invocation metadata: %@ · %@",
+  "Agents 没有可切换的调用元信息": "Agents has no invocation metadata toggle",
+  "Agents 标准没有调用元信息字段。": "The Agents standard has no invocation metadata field.",
   "在 %@ 中添加「%@」的调用元信息": "Add invocation metadata in %@ for “%@”",
   "在 %@ 中移除「%@」的调用元信息": "Remove invocation metadata in %@ for “%@”",
   "向 %@ 添加「%@」的调用元信息。": "Add invocation metadata in %@ for “%@”.",

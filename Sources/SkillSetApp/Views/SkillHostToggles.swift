@@ -83,14 +83,18 @@ struct SkillTargetToggles: View {
         .buttonStyle(SkillHostButtonStyle(selected: selected))
         .disabled(!isEnabled(host))
         .accessibilityIdentifier("\(identifierPrefix).\(host.rawValue)")
-        .accessibilityLabel(metadataMode
+        .accessibilityLabel(metadataMode && host == .agents
+            ? L10n.tr("Agents 没有可切换的调用元信息")
+            : metadataMode
             ? L10n.tr(selected ? "在 \(host.displayName) 中移除「\(skillName)」的调用元信息" : "在 \(host.displayName) 中添加「\(skillName)」的调用元信息")
             : savesImmediately
             ? L10n.tr("在 \(host.displayName) 中保存「\(skillName)」")
             : L10n.tr("在 \(host.displayName) 草稿中选择「\(skillName)」"))
         .accessibilityValue(selected ? L10n.tr("已选择") : L10n.tr("未选择"))
         .accessibilityAddTraits(selected ? [.isSelected] : [])
-        .help(metadataMode
+        .help(metadataMode && host == .agents
+            ? L10n.tr("Agents 标准没有调用元信息字段。")
+            : metadataMode
             ? L10n.tr(selected
                 ? "从 \(host.displayName) 移除「\(skillName)」的调用元信息。"
                 : "向 \(host.displayName) 添加「\(skillName)」的调用元信息。")
