@@ -32,5 +32,8 @@ artifacts/
 .DS_Store
 .SKILL.md.swp
 
+# 本机 Agent 技能链接，避免提交本地环境路径
+.agents/skills/
+
 # 技能仓库里按需下载的大体积二进制
 skills/tokenhubctl/assets/
