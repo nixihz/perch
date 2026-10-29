@@ -5,7 +5,24 @@ import Testing
 struct LegacyLicenseMetadataTests {
     @Test func oldCatalogSourceAndLockMetadataStillDecodeWithoutRecreatingReviewState() throws {
         let snapshot = AppSnapshot.load()
-        let skill = try #require(snapshot.catalog.entries.first)
+        let skill = try JSONDecoder().decode(SkillEntry.self, from: Data(#"""
+        {
+          "id": "fixture/example",
+          "slug": "example",
+          "declaredName": "example",
+          "description": "测试技能",
+          "declaredVersion": null,
+          "metadataReview": "not-schema-validated",
+          "sourceId": "fixture",
+          "path": "fixtures/example",
+          "contentHash": "abc",
+          "fileCount": 1,
+          "bytes": 10,
+          "integrity": "snapshotted",
+          "issues": [],
+          "excludedPaths": []
+        }
+        """#.utf8))
         let source = try #require(snapshot.sources.sources.first)
         let revision = LockedSkillRevision(id: skill.id, sourceId: skill.sourceId, sourcePath: skill.path,
             declaredVersion: skill.declaredVersion, contentHash: skill.contentHash, files: [])

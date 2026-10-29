@@ -4,10 +4,7 @@
   "name": "界面打磨",
   "description": "有设计约定，有交互细节，也有真实验证。",
   "revision": 1,
-  "skills": [
-    "workspace/stc",
-    "workspace/project-guide"
-  ],
+  "skills": [],
   "instructionFragments": [
     "base-zh",
     "engineering",

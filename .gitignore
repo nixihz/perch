@@ -34,6 +34,7 @@ artifacts/
 
 # 本机 Agent 技能链接，避免提交本地环境路径
 .agents/skills/
+.claude/skills
 
-# 技能仓库里按需下载的大体积二进制
-skills/tokenhubctl/assets/
+# 本机技能库内容由来源导入，不随公开仓库发布
+skills/

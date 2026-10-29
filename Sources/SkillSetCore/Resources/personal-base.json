@@ -4,11 +4,7 @@
   "name": "日常工程",
   "description": "理解项目、清楚沟通，再做小步验证。",
   "revision": 1,
-  "skills": [
-    "workspace/collaboration-style",
-    "workspace/project-guide",
-    "workspace/stc"
-  ],
+  "skills": [],
   "instructionFragments": [
     "base-zh",
     "engineering"

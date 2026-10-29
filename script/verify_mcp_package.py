@@ -84,15 +84,19 @@ def verify(executable):
         project = root / 'project'
         project.mkdir()
         registration = cli('projects', 'add', str(project))['project']
-        # 新本机库从空开始；配置来源不会自动入库，这里显式复制随包快照。
-        preview = cli('sources', 'preview', str(packaged / 'SkillSetLibrary/skills/stc'))
-        candidate = next(item for item in preview['candidates'] if item['slug'] == 'stc')
+        # 新本机库从空开始；配置来源不会自动入库，这里显式导入测试用来源。
+        source = root / 'fixture-skill'
+        source.mkdir()
+        document = '---\nname: package-fixture\ndescription: 独立打包验证技能\n---\n测试技能正文\n'
+        (source / 'SKILL.md').write_text(document)
+        preview = cli('sources', 'preview', str(source))
+        candidate = next(item for item in preview['candidates'] if item['slug'] == 'package-fixture')
         mcp_tool('sources_import_skill', {
-            'previewId': preview['id'], 'path': candidate['path'], 'slug': 'stc', 'mode': 'copy',
+            'previewId': preview['id'], 'path': candidate['path'], 'slug': 'package-fixture', 'mode': 'copy',
         })
-        found = mcp_tool('skills_search', {'query': 'stc'})['skills']
+        found = mcp_tool('skills_search', {'query': 'package-fixture'})['skills']
         if len(found) != 1:
-            raise RuntimeError('隔离本机库未检索到同步的 stc 技能')
+            raise RuntimeError('隔离本机库未检索到同步的打包测试技能')
         skill_id = found[0]['id']
         if mcp_tool('presets_list', {})['presets']:
             raise RuntimeError('正常首开不应注入程序自带预设')
@@ -116,8 +120,8 @@ def verify(executable):
             raise RuntimeError('未批准的计划修改了项目')
         cli('approve', plan['planId'], '--digest', plan['digest'])
         cli('apply', plan['planId'], '--digest', plan['digest'])
-        deployed = project / '.agents/skills/stc/SKILL.md'
-        if deployed.read_bytes() != (library / 'skills/stc/SKILL.md').read_bytes():
+        deployed = project / '.agents/skills/package-fixture/SKILL.md'
+        if deployed.read_bytes() != document.encode():
             raise RuntimeError('技能部署内容与随包快照不一致')
         if rules not in (project / 'AGENTS.md').read_text():
             raise RuntimeError('规则片段未写入项目')

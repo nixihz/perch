@@ -4,11 +4,10 @@ import Foundation
 
 struct SkillSetCoreTests {
     @Test
-    func snapshotLoadsThePublicCatalog() {
+    func snapshotStartsWithoutBundledSkills() {
         let snapshot = AppSnapshot.load()
-        #expect(snapshot.catalog.entries.count == 12)
-        #expect(snapshot.catalog.entries.contains { $0.id == "workspace/stc" })
-        #expect(snapshot.catalog.entries.allSatisfy { !$0.isBlocked })
+        #expect(snapshot.catalog.entries.isEmpty)
+        #expect(snapshot.presets.allSatisfy { $0.skills.isEmpty })
     }
 
     @Test

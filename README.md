@@ -52,7 +52,6 @@ task macos-build
 Sources/SkillSetCore/       Swift 领域模型、事务和来源处理
 Sources/SkillSetApp/        SwiftUI 原生 macOS 应用
 Sources/SkillSetCLI/        skillset CLI 与 stdio MCP
-skills/                     随仓库发布的自维护 Skills
 presets/                    可审阅的预设
 registry/                   来源与内容目录
 objects/                    按内容寻址的离线对象
@@ -62,26 +61,7 @@ script/                     构建、安装和发布辅助脚本
 tests/                      Swift、Python、Node 和 BDD 测试
 ```
 
-仓库只随附 `skills/` 下的公共自维护 Skills。外部 Skill 应通过应用的来源预览和导入流程加入本机库，不应把个人库存或未核实授权的快照提交到仓库。
-
-## 随仓库发布的 Skills
-
-| Skill | 用途 |
-| --- | --- |
-| `skills/collaboration-style` | 中文协作和工程交付约定。 |
-| `skills/cso` | 基于证据的安全审计流程。 |
-| `skills/humanizer-zh` | 中文文本去模板化和自然化改写。 |
-| `skills/kindle-pw2-eink` | Kindle Paperwhite 2 墨水屏控制。 |
-| `skills/kubeconfig-manager` | kubeconfig 批量导入、命名、更新和备份恢复。 |
-| `skills/likec4-dsl` | LikeC4 架构模型、视图和 CLI 工作流。 |
-| `skills/mitmproxy-cli` | mitmproxy Map Local、诊断和流量验证。 |
-| `skills/organize-ios-home-screen` | iPhone 主屏幕布局盘点、规划和批量写入。 |
-| `skills/project-guide` | 从实际代码提取项目架构和运行路径。 |
-| `skills/stc` | 清晰、准确的中文技术文稿。 |
-| `skills/talent-spark-discovery` | 基于对话探索兴趣、优势和工作条件。 |
-| `skills/tokenhubctl` | Token Hub 管理 API 的查询和维护。 |
-
-每个 Skill 目录内的许可证或来源说明优先于仓库默认许可证。新增来源时请同时保留上游许可证和归属信息。
+仓库不随附本机 Skills。外部 Skill 应通过应用的来源预览和导入流程加入本机库，不应把个人库存或未核实授权的快照提交到仓库。
 
 ## 开发和验证
 

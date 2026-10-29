@@ -24,13 +24,24 @@ class MCPInstallationTests(unittest.TestCase):
         self.project.mkdir()
         self.env = os.environ.copy()
         self.env.update({"SKILLSET_HOME": str(self.root / "home"), "CODEX_HOME": str(self.root / "codex")})
-        entries = json.loads((ROOT / "registry/catalog.json").read_text())["entries"]
         records = []
-        for slug in ("stc", "project-guide"):
-            entry = next(dict(item) for item in entries if item["id"] == f"workspace/{slug}")
+        self.project_guide_document = None
+        for slug, description in (("stc", "测试文稿技能"), ("project-guide", "测试项目技能")):
             package = f"packages/{uuid.uuid4()}"
-            shutil.copytree(ROOT / entry["path"], self.state / "skills" / package)
-            entry.update(id=f"personal/{slug}", sourceId="personal", path=package)
+            package_root = self.state / "skills" / package
+            package_root.mkdir(parents=True)
+            document = f"---\nname: {slug}\ndescription: {description}\n---\n测试技能正文\n"
+            (package_root / "SKILL.md").write_text(document, encoding="utf-8")
+            if slug == "project-guide":
+                self.project_guide_document = document.encode()
+            entry = {
+                "id": f"personal/{slug}", "slug": slug, "declaredName": slug,
+                "description": description, "declaredVersion": None,
+                "metadataReview": "not-schema-validated", "sourceId": "personal",
+                "path": package, "contentHash": f"fixture-{slug}", "fileCount": 1,
+                "bytes": len(document.encode()), "integrity": "snapshotted",
+                "issues": [], "excludedPaths": [],
+            }
             records.append({"entry": entry})
         (self.state / "skills/index.json").write_text(json.dumps({"schemaVersion": 1, "records": records, "hiddenIDs": []}))
         # 预设引用本机片段，测试不能依赖应用附带的默认片段。
@@ -99,7 +110,7 @@ class MCPInstallationTests(unittest.TestCase):
         self.assertFalse((self.project / ".agents/skills/project-guide").exists())
         self.approve_and_install(second)
         self.assertEqual((self.project / ".agents/skills/stc/SKILL.md").read_bytes(), original)
-        self.assertEqual((self.project / ".agents/skills/project-guide/SKILL.md").read_bytes(), (ROOT / "skills/project-guide/SKILL.md").read_bytes())
+        self.assertEqual((self.project / ".agents/skills/project-guide/SKILL.md").read_bytes(), self.project_guide_document)
         self.assertIn("skillset:begin", (self.project / "AGENTS.md").read_text())
         self.assertIn("始终使用中文回复。", (self.project / "AGENTS.md").read_text())
         self.assertEqual({p.name for p in self.project.iterdir()}, {".agents", "AGENTS.md"})

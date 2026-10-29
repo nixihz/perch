@@ -1,4 +1,5 @@
 import { readdirSync, readFileSync, existsSync, realpathSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -60,8 +61,19 @@ export function checkSkills(root) {
   const errors = [];
   const warnings = [];
   const read = path => readFileSync(path, 'utf8');
-  const names = readdirSync(join(root, 'skills'), { withFileTypes: true })
-    .filter(entry => entry.isDirectory()).map(entry => entry.name).sort();
+  const skillsRoot = join(root, 'skills');
+  let trackedSkills = true;
+  try {
+    trackedSkills = execFileSync('git', ['-C', root, 'ls-files', '--', 'skills'], {
+      encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore']
+    }).trim().length > 0;
+  } catch {
+    // 临时测试目录不一定是 Git 仓库，仍按实际目录检查。
+  }
+  const names = existsSync(skillsRoot) && trackedSkills
+    ? readdirSync(skillsRoot, { withFileTypes: true })
+      .filter(entry => entry.isDirectory()).map(entry => entry.name).sort()
+    : [];
   const listed = [...read(join(root, 'README.md')).matchAll(/^\| `skills\/([^`]+)` \|/gm)]
     .map(match => match[1]);
   for (const name of listed) {
