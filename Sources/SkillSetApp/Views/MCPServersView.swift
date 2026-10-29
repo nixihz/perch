@@ -115,7 +115,7 @@ struct MCPObservedServersView: View {
                                 .selectionRow(server.id == model.selectedMCPID)
                                 .contentShape(Rectangle())
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(AppPressButtonStyle())
                         }
                     }
                 }

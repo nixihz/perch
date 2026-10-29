@@ -119,7 +119,7 @@ struct MCPServersView: View {
                                 }
                                 .padding(10).frame(maxWidth: .infinity, alignment: .leading)
                                 .selectionRow(selectedEntry?.id == entry.id).contentShape(Rectangle())
-                            }.buttonStyle(.plain)
+                            }.buttonStyle(AppPressButtonStyle())
                             .accessibilityIdentifier("mcp.library.entry.\(entry.id)")
                         }
                     }

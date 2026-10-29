@@ -211,7 +211,7 @@ struct TemplatesView: View {
                                 .selectionRow(template.id == model.selectedTemplateID)
                                 .contentShape(Rectangle())
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(AppPressButtonStyle())
                         }
                         if matches.isEmpty {
                             Text(L10n.text(model.templateLibraryError != nil ? "片段列表暂不可用，请先修复文件并重新读取。"

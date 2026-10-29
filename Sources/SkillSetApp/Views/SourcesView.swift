@@ -139,7 +139,7 @@ struct SourcesView: View {
                                 .selectionRow(preview.id == model.selectedPreviewID)
                                 .contentShape(Rectangle())
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(AppPressButtonStyle())
                             .accessibilityIdentifier("sources.preview.\(preview.id.uuidString)")
                             .contextMenu {
                                 previewActions(preview)

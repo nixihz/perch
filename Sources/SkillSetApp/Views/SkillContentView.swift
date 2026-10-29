@@ -86,7 +86,7 @@ struct SkillContentView: View {
                         }
                         .padding(.vertical, 12).contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(AppPressButtonStyle())
                     .help(file.path)
                     .accessibilityLabel(file.path)
                     .accessibilityIdentifier("skills.file.\(file.path)")

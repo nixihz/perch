@@ -564,7 +564,7 @@ struct PlanSheet: View {
                         .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
                         .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(AppPressButtonStyle())
                     .selectionRow(change.relativePath == selected)
                     .accessibilityLabel(change.relativePath)
                 }

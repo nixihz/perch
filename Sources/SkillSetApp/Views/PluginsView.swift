@@ -62,7 +62,7 @@ struct PluginsView: View {
                                         }
                                         .frame(maxWidth: .infinity, alignment: .leading).padding(8)
                                         .selectionRow(source.id == selectedID).contentShape(Rectangle())
-                                    }.buttonStyle(.plain)
+                                    }.buttonStyle(AppPressButtonStyle())
                                 }
                             }
                         }

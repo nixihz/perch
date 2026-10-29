@@ -148,7 +148,7 @@ public struct SkillLibraryStore {
     public func invocationPolicy(for entry: SkillEntry, repositoryRoot: URL? = nil) throws -> SkillInvocationPolicy {
         let source = try sourceURL(for: entry, repositoryRoot: repositoryRoot)
         let skillDocument = try String(contentsOf: source.appendingPathComponent("SKILL.md"), encoding: .utf8)
-        let claudeManualOnly = Self.frontmatterValue(skillDocument, key: "disable-model-invocation") == "true"
+        let claudeManualOnly = Self.isTrueMetadataValue(Self.frontmatterValue(skillDocument, key: "disable-model-invocation"))
         let codexDocumentURL = source.appendingPathComponent("agents/openai.yaml")
         let codexDocument = (try? String(contentsOf: codexDocumentURL, encoding: .utf8)) ?? ""
         let codexManualOnly = Self.yamlValue(codexDocument, key: "allow_implicit_invocation") == "false"
@@ -921,6 +921,11 @@ public struct SkillLibraryStore {
             return String(trimmed[trimmed.index(after: colon)...]).trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         }
         return nil
+    }
+
+    private static func isTrueMetadataValue(_ value: String?) -> Bool {
+        guard let value else { return false }
+        return ["true", "yes", "on", "1"].contains(value)
     }
 
     private static func setFrontmatterValue(_ text: String, key: String, value: String?) throws -> String {
