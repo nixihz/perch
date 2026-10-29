@@ -109,6 +109,17 @@ final class LocalizationTests: XCTestCase {
         }
     }
 
+    func testStaleTargetMessageExplainsRecoveryWithoutInternalPlanTerms() {
+        let message = UserFacingText.message(forCode: "PLAN_STALE")
+        XCTAssertFalse(message.contains("计划"), message)
+        XCTAssertTrue(message.contains("重新读取当前配置"), message)
+        XCTAssertTrue(message.contains("重新保存或审阅"), message)
+
+        let english = L10n.text(message, language: .english)
+        XCTAssertFalse(english.contains("plan"), english)
+        XCTAssertTrue(english.contains("Reload the current configuration"), english)
+    }
+
     func testBuiltInMetadataIsLocalizedButSkillDescriptionsStayOriginal() {
         let snapshot = AppSnapshot.load()
         for preset in snapshot.presets {

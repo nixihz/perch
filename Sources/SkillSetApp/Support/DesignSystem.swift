@@ -20,6 +20,11 @@ enum AppFont {
     static let code = Font.system(size: 12, design: .monospaced)
 }
 
+/// 交互动效只保留短促的反馈，避免高频操作被动画拖慢。
+enum AppMotion {
+    static let buttonPress = Animation.timingCurve(0.23, 1, 0.32, 1, duration: 0.14)
+}
+
 struct AppThemePalette {
     let accentLight: UInt32
     let accentDark: UInt32

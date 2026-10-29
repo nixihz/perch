@@ -6,7 +6,7 @@
 
 Plugin 不是一个更大的 Skill 文件夹。它可能同时贡献 skills、MCP servers、commands、agents、hooks、LSP 或用户配置，且由宿主 marketplace、Git、目录、archive、npm 或 command source 装载。安装一个 plugin 的副作用范围比安装单个 skill 大，必须在 UI 中展开清楚。
 
-Alpha 的「插件来源」页面管理仓库、本地目录和扫描收录包；全局配置与项目页按需打开插件配置面板。扫描读取项目 `.claude-plugin` / `.codex-plugin`、Claude 与 Codex 插件缓存、Claude `installed_plugins.json`、Codex `config.toml` 和 manifest。盘点本身不执行 hooks、commands、市场脚本或安装器。生命周期由本应用生成不可变计划，经本机 UI 或 CLI 人工批准后，只调用宿主公开 CLI；AI 通过 MCP 可以生成计划，但不能批准，也不能为高风险安装/更新作风险确认。
+Alpha 的「插件来源」页面管理仓库、本地目录和扫描收录包；全局配置与项目页按需打开插件配置面板。全局页点击工具图标只保存插件草稿，项目页才生成生命周期预览计划。扫描读取项目 `.claude-plugin` / `.codex-plugin`、Claude 与 Codex 插件缓存、Claude `installed_plugins.json`、Codex `config.toml` 和 manifest。盘点本身不执行 hooks、commands、市场脚本或安装器。生命周期由本应用生成不可变计划，经本机 UI 或 CLI 人工批准后，只调用宿主公开 CLI；AI 通过 MCP 可以生成计划，但不能批准，也不能为高风险安装/更新作风险确认。
 
 ### 来源库与本机扫描
 

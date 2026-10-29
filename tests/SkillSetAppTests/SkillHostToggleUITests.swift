@@ -60,6 +60,31 @@ final class SkillHostToggleUITests: XCTestCase {
         }
     }
 
+    func testInvocationMetadataToggleLeavesAgentsUnavailable() async throws {
+        let state = TargetToggleState()
+        let controller = NSHostingController(rootView:
+            SkillTargetToggles(skillName: "调用策略技能", identifierPrefix: "test.invocation",
+                targets: SkillConfigurationTarget.allCases, savesImmediately: true, metadataMode: true,
+                isSelected: { state.selected.contains($0) },
+                isEnabled: { $0 != .agents },
+                setSelected: { state.select($0, enabled: $1) })
+            .frame(width: 168, height: 60)
+        )
+        let window = makeWindow(controller, size: NSSize(width: 168, height: 60))
+        defer { window.close() }
+        try await settle(controller.view)
+
+        try click(window: window, point: NSPoint(x: 84, y: 30))
+        try await settle(controller.view)
+        XCTAssertEqual(state.selected, [.codex])
+        try click(window: window, point: NSPoint(x: 134, y: 30))
+        try await settle(controller.view)
+        XCTAssertEqual(state.selected, [.codex, .claudeCode])
+        try click(window: window, point: NSPoint(x: 34, y: 30))
+        try await settle(controller.view)
+        XCTAssertEqual(state.selected, [.codex, .claudeCode], "Agents 没有对应的调用元信息，不应被切换")
+    }
+
     func testBlockedSkillCannotBeEnabledButExistingSelectionCanBeTurnedOff() async throws {
         let state = HostToggleState(selected: [.codex], blocked: true)
         let controller = NSHostingController(rootView: HostToggleFixture(state: state))

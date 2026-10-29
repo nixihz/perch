@@ -16,13 +16,10 @@ tasks:
     preconditions:
       - sh: test -x "{{.DIST_DIR}}/栖集.app/Contents/MacOS/SkillSet"
         msg: 未找到应用产物，请先运行 task macos-build
-      - sh: test -d "{{.INSTALL_DIR}}" && test "$(cd "{{.DIST_DIR}}" && pwd -P)" != "$(cd "{{.INSTALL_DIR}}" && pwd -P)"
-        msg: 安装目录必须已存在，且不能与构建产物目录相同
+      - sh: test -d "{{.INSTALL_DIR}}" && test -w "{{.INSTALL_DIR}}" && test "$(cd "{{.DIST_DIR}}" && pwd -P)" != "$(cd "{{.INSTALL_DIR}}" && pwd -P)"
+        msg: 安装目录必须已存在且可写，且不能与构建产物目录相同
     cmds:
-      - codesign --verify --deep --strict "{{.DIST_DIR}}/栖集.app"
-      # 清除旧版本独有文件，避免增量复制后破坏应用签名。
-      - rsync -a --delete "{{.DIST_DIR}}/栖集.app/" "{{.INSTALL_DIR}}/栖集.app/"
-      - codesign --verify --deep --strict "{{.INSTALL_DIR}}/栖集.app"
+      - ./script/install_app.sh "{{.DIST_DIR}}/栖集.app" "{{.INSTALL_DIR}}"
 
   macos-install:
     desc: 构建并安装 macOS 应用，不启动

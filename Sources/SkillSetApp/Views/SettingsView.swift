@@ -148,6 +148,6 @@ private struct ThemeChoiceButtonStyle: ButtonStyle {
         configuration.label
             .scaleEffect(configuration.isPressed ? 0.985 : 1)
             .opacity(configuration.isPressed ? 0.88 : 1)
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: configuration.isPressed)
+            .animation(reduceMotion ? nil : AppMotion.buttonPress, value: configuration.isPressed)
     }
 }

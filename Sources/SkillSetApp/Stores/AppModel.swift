@@ -120,6 +120,10 @@ final class AppModel {
     var isWorking = false
     var libraryError: String?
     private(set) var skillRemovalError: String?
+    private(set) var skillInvocationPolicies: [String: SkillInvocationPolicy] = [:]
+    private(set) var isUpdatingSkillMetadata = false
+    var skillMetadataError: String?
+    private(set) var skillMetadataSaveMessage: String?
     var projectSaveMessage: String?
     var sourceImportError: String?
     var sourceOrigins: [String: SourceSkillOrigin] = [:]
@@ -466,12 +470,50 @@ final class AppModel {
         )
         reloadTemplates(updateService: false)
         refreshSkillIndexes()
+        refreshSkillInvocationPolicies()
         service = try SkillSetService(paths: runtimePaths, globalLocations: globalConfiguration.locations, library: loaded)
         updateQuery(query)
     }
 
+    func invocationPolicy(for skill: SkillEntry) -> SkillInvocationPolicy {
+        skillInvocationPolicies[skill.id] ?? SkillInvocationPolicy()
+    }
+
+    @discardableResult
+    func setInvocationPolicy(_ skill: SkillEntry, target: SkillInvocationTarget, manualOnly: Bool) -> Bool {
+        guard !isUpdatingSkillMetadata else { return false }
+        isUpdatingSkillMetadata = true
+        skillMetadataError = nil
+        skillMetadataSaveMessage = nil
+        defer { isUpdatingSkillMetadata = false }
+        do {
+            let updated = try libraryStore.setInvocationPolicy(
+                skill, target: target, manualOnly: manualOnly, repositoryRoot: runtimePaths.repositoryRoot
+            )
+            try reloadLibrary()
+            selectedSkillID = updated.id
+            loadSelectedSkillDocument()
+            let targetName = target == .codex ? "Codex" : "Claude Code"
+            skillMetadataSaveMessage = L10n.tr("已更新：\(targetName) · \(skill.slug) 的调用元信息")
+            return true
+        } catch {
+            skillMetadataError = UserFacingText.error(error)
+            return false
+        }
+    }
+
     var selectedProject: ProjectRecord? {
         projects.first(where: { $0.id == selectedProjectID })
+    }
+
+    private func refreshSkillInvocationPolicies() {
+        var policies: [String: SkillInvocationPolicy] = [:]
+        for skill in snapshot.catalog.entries {
+            if let policy = try? libraryStore.invocationPolicy(for: skill, repositoryRoot: runtimePaths.repositoryRoot) {
+                policies[skill.id] = policy
+            }
+        }
+        skillInvocationPolicies = policies
     }
 
     var canPrepareDeploymentPlan: Bool {

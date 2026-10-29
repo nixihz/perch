@@ -17,6 +17,7 @@ struct ConfigurationResourceView: View {
     @State private var availableHeight: CGFloat = 0
     @State private var plugins: PluginSelectionModel
     @State private var overwriteHost: MCPHost?
+    @State private var rulesEditorHost: MCPHost?
 
     init(model: AppModel, projectID: UUID? = nil) {
         self.model = model
@@ -30,7 +31,10 @@ struct ConfigurationResourceView: View {
     private var isProject: Bool { projectID != nil }
     private var project: ProjectRecord? { model.projects.first { $0.id == projectID?.uuidString } }
     private var prefix: String { isProject ? "projects" : "global" }
-    private var savesImmediately: Bool { tab != .plugins }
+    private var savesImmediately: Bool { !isProject || tab != .plugins }
+    private var resourceTabs: [ConfigurationResourceTab] {
+        Array(ConfigurationResourceTab.allCases)
+    }
 
     private var currentSaveMessage: String? {
         if tab == .mcp {
@@ -52,17 +56,17 @@ struct ConfigurationResourceView: View {
                 SurfaceCard {
                     VStack(alignment: .leading, spacing: availableHeight < 500 ? 6 : 16) {
                         ConfigurationSectionHeader {
-                            Text(L10n.tr(isProject ? "配置草稿" : (savesImmediately ? (tab == .mcp ? "MCP 服务配置" : (tab == .instructions ? "AGENTS 片段配置" : "技能配置")) : "配置草稿"))).font(AppFont.heading)
+                            Text(L10n.tr(isProject ? "配置草稿" : (tab == .plugins ? "插件配置" : (savesImmediately ? (tab == .mcp ? "MCP 服务配置" : (tab == .instructions ? "AGENTS 片段配置" : "技能配置")) : "配置草稿")))).font(AppFont.heading)
                         } actions: {
                             if let project {
                                 Button(L10n.tr("使用预设…")) {
                                     model.presetSelection = PresetSelectionRequest(projectID: project.id)
                                 }.accessibilityIdentifier("projects.usePreset")
                             }
-                            if isProject || !savesImmediately { previewActions }
+                            if isProject { previewActions }
                         }
                         AppSegmentedPicker(title: L10n.tr("资源类型"), selection: $tab,
-                            options: ConfigurationResourceTab.allCases.map { ($0, L10n.text($0.rawValue)) })
+                            options: resourceTabs.map { ($0, L10n.text($0.rawValue)) })
                         .accessibilityIdentifier("\(prefix).resourceTabs")
                         if tab == .skills {
                             selectedSkillPills
@@ -81,7 +85,7 @@ struct ConfigurationResourceView: View {
                                 }
                             }
                         }
-                        if (!isProject && global.isRefreshing) || plugins.isLoading {
+                        if (!isProject && global.isRefreshing || plugins.isLoading) {
                             ProgressView(L10n.tr("正在读取配置…")).controlSize(.small)
                         }
                         if tab == .skills && !isProject && global.isSavingSkill {
@@ -124,7 +128,12 @@ struct ConfigurationResourceView: View {
             await plugins.refresh()
         }
         .onChange(of: model.planPresented) { _, presented in
-            if !presented { Task { await plugins.refresh(); await model.mcpLibrary.refreshUsageInBackground() } }
+            if !presented {
+                Task {
+                    await plugins.refresh()
+                    await model.mcpLibrary.refreshUsageInBackground()
+                }
+            }
         }
         .confirmationDialog(L10n.tr("覆盖已有的同名 MCP 服务？"),
             isPresented: Binding(get: { overwriteHost != nil }, set: { if !$0 { overwriteHost = nil } }), titleVisibility: .visible) {
@@ -151,6 +160,9 @@ struct ConfigurationResourceView: View {
                         + "\n" + model.mcpLibrary.externalConflicts(host: host, projectID: projectID).map(\.name).joined(separator: "、"))
                 }
             }
+        .sheet(item: $rulesEditorHost) { host in
+            GlobalRulesEditorSheet(host: host, locations: global.locations)
+        }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("\(prefix).configuration")
     }
@@ -351,6 +363,9 @@ struct ConfigurationResourceView: View {
     private var instructionList: some View {
         let templates = model.snapshot.templates.filter { matches([$0.title, $0.purpose, $0.body]) }
         return VStack(alignment: .leading, spacing: 12) {
+            if !isProject {
+                globalRulesEntry
+            }
             Text(L10n.tr(savesImmediately ? "点击工具图标直接保存规则到 AGENTS.md 或 CLAUDE.md。" : "技能与 AGENTS 片段会在同一份工具计划中预览和保存。"))
                 .font(AppFont.secondary).foregroundStyle(.secondary)
             ForEach(templates) { template in
@@ -386,6 +401,43 @@ struct ConfigurationResourceView: View {
                 }
             }
         }
+    }
+
+    private var globalRulesEntry: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(L10n.tr("宿主规则文件")).font(AppFont.body.weight(.semibold))
+                    Text(L10n.tr("查看或直接编辑 Codex 的 AGENTS.md、Claude Code 的 CLAUDE.md。"))
+                        .font(AppFont.secondary).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 12)
+                HStack(spacing: 8) {
+                    ForEach(MCPHost.allCases) { host in
+                        Button {
+                            rulesEditorHost = host
+                        } label: {
+                            Label(L10n.tr("编辑 \(host.displayName)"), systemImage: "pencil")
+                        }
+                        .accessibilityIdentifier("global.rules.\(host.rawValue)")
+                        .help(global.locations.rulesURL(host).path)
+                    }
+                }
+            }
+            HStack(spacing: 16) {
+                ForEach(MCPHost.allCases) { host in
+                    Text("\(host.displayName) · \(global.locations.rulesURL(host).lastPathComponent)")
+                        .font(AppFont.code).foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
+            }
+        }
+        .padding(12)
+        .background(AppColor.controlSurface, in: RoundedRectangle(cornerRadius: AppControl.radius))
+        .overlay {
+            RoundedRectangle(cornerRadius: AppControl.radius).strokeBorder(AppColor.border)
+        }
+        .accessibilityIdentifier("global.rules.entry")
     }
 
     private var mcpList: some View {
@@ -446,7 +498,7 @@ struct ConfigurationResourceView: View {
     private var pluginList: some View {
         VStack(alignment: .leading, spacing: 12) {
             if isProject {
-                Text(L10n.tr("仅配置当前项目的 Claude Code 插件；全局插件仍可能生效。Codex 插件请到全局配置中管理。"))
+                Text(L10n.tr("仅配置当前项目的 Claude Code 插件。"))
                     .font(AppFont.secondary).foregroundStyle(.secondary)
             }
             let visible = plugins.plugins.filter { matches([$0.name, $0.description, $0.marketplaceID ?? ""]) }
@@ -462,7 +514,9 @@ struct ConfigurationResourceView: View {
                             .font(AppFont.metadata).foregroundStyle(.secondary)
                         Text(plugin.description).font(AppFont.secondary).foregroundStyle(.secondary).lineLimit(2)
                         if let action = plugins.action(plugin) {
-                            Text(L10n.tr("待\(LocalizedText(stringLiteral: action.displayName))，预览后保存"))
+                            Text(L10n.tr(isProject
+                                ? "待\(LocalizedText(stringLiteral: action.displayName))，预览后保存"
+                                : "已保存到全局插件草稿"))
                                 .font(AppFont.metadata).foregroundStyle(AppColor.accentText)
                         }
                         ForEach(plugin.risks, id: \.self) { risk in
@@ -482,7 +536,7 @@ struct ConfigurationResourceView: View {
                 }
             }
             if visible.isEmpty { empty("当前范围没有匹配的本机插件。请先在 AI 工具中取得插件包。", section: .plugins) }
-            if plugins.plugins.contains(where: { plugins.action($0) == .install }) {
+            if isProject && plugins.plugins.contains(where: { plugins.action($0) == .install }) {
                 Toggle(L10n.tr("我已核对插件中的自动运行脚本、命令和其他可运行内容。"), isOn: $plugins.acknowledgedRisk)
                     .toggleStyle(AppCheckboxStyle()).font(AppFont.secondary)
                 Text(L10n.tr("安装插件前请确认可运行组件，再从预览菜单选择插件。"))

@@ -205,6 +205,12 @@ final class NativeUIHarness {
         }
     }
 
+    func hasElement(label: String) throws -> Bool {
+        nodes().contains { node in
+            [node.label, node.title, node.value].contains(label)
+        }
+    }
+
     func buttonIsEnabled(_ label: String) throws -> Bool {
         guard let button = nodes().first(where: {
             $0.role == kAXButtonRole as String

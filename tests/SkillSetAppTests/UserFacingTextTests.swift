@@ -20,6 +20,15 @@ final class UserFacingTextTests: XCTestCase {
         XCTAssertTrue(UserFacingText.diagnostic(".claude/skills：父目录是软链，未扫描。", context: .project).contains("Claude Code"))
     }
 
+    func testProjectIssueLocationKeepsTheAffectedRelativePathForDetails() {
+        XCTAssertEqual(
+            UserFacingText.projectIssueLocation(".agents/skills/demo：目录存在，但 catalog 和项目锁中没有来源。"),
+            ".agents/skills/demo"
+        )
+        XCTAssertNil(UserFacingText.projectIssueLocation("检查项目目录权限后重新选择项目。"))
+        XCTAssertNil(UserFacingText.projectIssueLocation("位置：\n泄露的底层详情"))
+    }
+
     func testMissingPlanPointsBackToPreviewWithoutShowingInternalIdentifier() {
         let error = DeploymentPlanStoreError.planNotFound("private-plan-123")
         let message = UserFacingText.error(error)

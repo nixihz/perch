@@ -1,7 +1,7 @@
 import Foundation
 
 public enum SkillLibraryError: Error, SkillSetCodedError, Equatable, Sendable {
-    case invalidDocument, invalidSlug, duplicate, stale, corrupt, unsafePath
+    case invalidDocument, invalidSlug, duplicate, stale, corrupt, unsafePath, readOnlySource
 
     public var code: String {
         switch self {
@@ -11,6 +11,31 @@ public enum SkillLibraryError: Error, SkillSetCodedError, Equatable, Sendable {
         case .stale: "LIBRARY_STALE"
         case .corrupt: "LIBRARY_CORRUPT"
         case .unsafePath: "PATH_OUTSIDE_ROOT"
+        case .readOnlySource: "LIBRARY_READ_ONLY_SOURCE"
+        }
+    }
+}
+
+public enum SkillInvocationTarget: String, CaseIterable, Identifiable, Sendable {
+    case codex
+    case claudeCode = "claude-code"
+
+    public var id: String { rawValue }
+}
+
+public struct SkillInvocationPolicy: Equatable, Sendable {
+    public let codexManualOnly: Bool
+    public let claudeManualOnly: Bool
+
+    public init(codexManualOnly: Bool = false, claudeManualOnly: Bool = false) {
+        self.codexManualOnly = codexManualOnly
+        self.claudeManualOnly = claudeManualOnly
+    }
+
+    public func manualOnly(for target: SkillInvocationTarget) -> Bool {
+        switch target {
+        case .codex: codexManualOnly
+        case .claudeCode: claudeManualOnly
         }
     }
 }
@@ -118,6 +143,45 @@ public struct SkillLibraryStore {
         let size = try resolved.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
         guard size <= 2 * 1_024 * 1_024 else { throw SkillLibraryError.invalidDocument }
         return try String(contentsOf: resolved, encoding: .utf8)
+    }
+
+    public func invocationPolicy(for entry: SkillEntry, repositoryRoot: URL? = nil) throws -> SkillInvocationPolicy {
+        let source = try sourceURL(for: entry, repositoryRoot: repositoryRoot)
+        let skillDocument = try String(contentsOf: source.appendingPathComponent("SKILL.md"), encoding: .utf8)
+        let claudeManualOnly = Self.frontmatterValue(skillDocument, key: "disable-model-invocation") == "true"
+        let codexDocumentURL = source.appendingPathComponent("agents/openai.yaml")
+        let codexDocument = (try? String(contentsOf: codexDocumentURL, encoding: .utf8)) ?? ""
+        let codexManualOnly = Self.yamlValue(codexDocument, key: "allow_implicit_invocation") == "false"
+        return SkillInvocationPolicy(codexManualOnly: codexManualOnly, claudeManualOnly: claudeManualOnly)
+    }
+
+    public func setInvocationPolicy(
+        _ entry: SkillEntry,
+        target: SkillInvocationTarget,
+        manualOnly: Bool,
+        repositoryRoot: URL? = nil
+    ) throws -> SkillEntry {
+        guard entry.sourceId == Self.sourceID || entry.sourceId == Self.copiedSourceID else {
+            throw SkillLibraryError.readOnlySource
+        }
+        let loaded = try loadLibrary()
+        guard let current = loaded.records.first(where: { $0.entry.id == entry.id && $0.entry.contentHash == entry.contentHash })?.entry else {
+            throw SkillLibraryError.stale
+        }
+        let source = try sourceURL(for: current, repositoryRoot: repositoryRoot)
+        guard try SkillAssetCopier.analyze(from: source).contentHash == current.contentHash else {
+            throw SkillLibraryError.stale
+        }
+        switch target {
+        case .claudeCode:
+            let url = source.appendingPathComponent("SKILL.md")
+            let original = try String(contentsOf: url, encoding: .utf8)
+            let updated = try Self.setFrontmatterValue(original, key: "disable-model-invocation", value: manualOnly ? "true" : nil)
+            if updated != original { try Data(updated.utf8).write(to: url, options: .atomic) }
+        case .codex:
+            try setCodexInvocationPolicy(at: source, manualOnly: manualOnly, entry: current)
+        }
+        return try requireSkill(current.slug)
     }
 
     public func save(_ draft: SkillEditorDraft, repositoryRoot: URL?) throws -> SkillEntry {
@@ -815,6 +879,115 @@ public struct SkillLibraryStore {
         }
         try writeMeta(meta)
         try Data().write(to: marker)
+    }
+
+    private func setCodexInvocationPolicy(at source: URL, manualOnly: Bool, entry: SkillEntry) throws {
+        let directory = source.appendingPathComponent("agents", isDirectory: true)
+        let url = directory.appendingPathComponent("openai.yaml")
+        let existing = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+        if existing.isEmpty && !manualOnly { return }
+        let document: String
+        if existing.isEmpty {
+            document = """
+            interface:
+              display_name: \(Self.yamlQuote(entry.declaredName))
+              short_description: \(Self.yamlQuote(entry.description))
+            policy:
+              allow_implicit_invocation: false
+            """ + "\n"
+        } else {
+            document = try Self.setCodexPolicyValue(existing, manualOnly: manualOnly)
+        }
+        guard document != existing else { return }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data(document.utf8).write(to: url, options: .atomic)
+    }
+
+    private static func frontmatterValue(_ text: String, key: String) -> String? {
+        let lines = text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n").components(separatedBy: "\n")
+        guard lines.first == "---", let end = lines.dropFirst().firstIndex(of: "---") else { return nil }
+        for line in lines[1..<end] where line.first?.isWhitespace == false {
+            guard let colon = line.firstIndex(of: ":"), String(line[..<colon]) == key else { continue }
+            return String(line[line.index(after: colon)...]).trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        }
+        return nil
+    }
+
+    private static func yamlValue(_ text: String, key: String) -> String? {
+        let lines = text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n").components(separatedBy: "\n")
+        for line in lines where line.first?.isWhitespace == true {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard let colon = trimmed.firstIndex(of: ":"), String(trimmed[..<colon]) == key else { continue }
+            return String(trimmed[trimmed.index(after: colon)...]).trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        }
+        return nil
+    }
+
+    private static func setFrontmatterValue(_ text: String, key: String, value: String?) throws -> String {
+        let newline = text.contains("\r\n") ? "\r\n" : "\n"
+        var lines = text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n").components(separatedBy: "\n")
+        guard lines.first == "---", let end = lines.dropFirst().firstIndex(of: "---") else {
+            throw SkillLibraryError.invalidDocument
+        }
+        var found = false
+        for index in 1..<end where lines[index].first?.isWhitespace == false {
+            guard let colon = lines[index].firstIndex(of: ":"), String(lines[index][..<colon]) == key else { continue }
+            found = true
+            if let value { lines[index] = "\(key): \(value)" }
+            else { lines.remove(at: index) }
+            break
+        }
+        if !found, let value { lines.insert("\(key): \(value)", at: end) }
+        return lines.joined(separator: newline)
+    }
+
+    private static func setCodexPolicyValue(_ text: String, manualOnly: Bool) throws -> String {
+        let newline = text.contains("\r\n") ? "\r\n" : "\n"
+        var lines = text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n").components(separatedBy: "\n")
+        var policyIndex: Int?
+        for index in lines.indices where lines[index] == "policy:" { policyIndex = index; break }
+        if policyIndex == nil && manualOnly {
+            if !lines.isEmpty, lines.last?.isEmpty == true { lines.removeLast() }
+            lines.append(contentsOf: ["policy:", "  allow_implicit_invocation: false"])
+            return lines.joined(separator: newline) + newline
+        }
+        guard let policyIndex else { return lines.joined(separator: newline) }
+        var valueIndex: Int?
+        if policyIndex + 1 < lines.count {
+            for index in (policyIndex + 1)..<lines.count {
+                if !lines[index].isEmpty && lines[index].first?.isWhitespace == false {
+                    break
+                }
+                if lines[index].trimmingCharacters(in: .whitespaces).hasPrefix("allow_implicit_invocation:") {
+                    valueIndex = index
+                }
+            }
+        }
+        if manualOnly {
+            if let valueIndex {
+                lines[valueIndex] = "  allow_implicit_invocation: false"
+            } else {
+                let childEnd = (policyIndex + 1..<lines.count).first(where: { index in
+                    !lines[index].isEmpty && lines[index].first?.isWhitespace == false
+                }) ?? lines.count
+                lines.insert("  allow_implicit_invocation: false", at: childEnd)
+            }
+        } else if let valueIndex {
+            lines.remove(at: valueIndex)
+            let childEnd = (policyIndex + 1..<lines.count).first(where: { index in
+                !lines[index].isEmpty && lines[index].first?.isWhitespace == false
+            }) ?? lines.count
+            let hasChildren = lines[(policyIndex + 1)..<childEnd].contains {
+                !$0.trimmingCharacters(in: .whitespaces).isEmpty
+            }
+            if !hasChildren { lines.remove(at: policyIndex) }
+        }
+        return lines.joined(separator: newline)
+    }
+
+    private static func yamlQuote(_ value: String) -> String {
+        let escaped = value.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+        return "\"\(escaped.replacingOccurrences(of: "\n", with: " "))\""
     }
 
     /// 仅提取展示所需字段；保留完整原文和未知字段，不宣称完成 YAML schema 校验。

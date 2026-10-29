@@ -226,7 +226,7 @@ UI、CLI 和 MCP 共用稳定错误码，包括 `PLAN_STALE`、`APPROVAL_REQUIRE
 
 运行时不再合并仓库 catalog 或内置来源，初次技能库为空；自建技能与用户配置来源的索引保存在 `~/.perch/skills/index.json`，完整包保存于其 `packages/<UUID>`。来源配置与固定提交 checkout 保存在 `~/.perch/cache/sources/<UUID>`，兼容原 preview JSON 格式。Git 来源沿用禁用 hooks 的隔离下载；本地目录先复制再扫描，支持把已有 harness 目录的一级技能链接实体化。任何来源脚本均不执行。
 
-插件来源采用独立的 `PluginSourceLibrary` 与 `~/.perch/plugins/sources/<UUID>`，不混入技能索引。来源添加、编辑、移除和本机扫描入库只操作本机隔离副本；扫描收录保存完整包指纹、原始安装证据与扫描时间，不改变宿主安装。全局／项目配置页按明确宿主、范围与项目打开插件生命周期入口，继续使用原审批、状态复核和宿主 CLI 执行器。来源包直接安装和市场注册仍未实现，详见 [Plugin 管理规格](plugins.md)。
+插件来源采用独立的 `PluginSourceLibrary` 与 `~/.perch/plugins/sources/<UUID>`，不混入技能索引。来源添加、编辑、移除和本机扫描入库只操作本机隔离副本；扫描收录保存完整包指纹、原始安装证据与扫描时间，不改变宿主安装。全局与项目配置页按明确宿主、范围与项目打开插件入口；全局只保存草稿，项目继续使用生命周期审批、状态复核和宿主 CLI 执行器。来源包直接安装和市场注册仍未实现，详见 [Plugin 管理规格](plugins.md)。
 
 同步按 canonical 来源地址和技能相对路径建立稳定标识，完整复制有效候选及根许可文件，核对原始内容后原子发布索引。失败保留原索引；编辑失败保留旧来源。来源更新不改变已经物化的版本目录；来源删除移除索引与 checkout，历史完整包和版本目录继续保留，不自动清理。手动创建、编辑副本和旧版个人技能记录兼容保留。
 
@@ -247,7 +247,7 @@ stdio MCP 从 17 个扩展为 59 个工具，覆盖技能库、规则片段、�
 
 `ConfigurationResourceView` 统一资源标签、搜索、工具图标开关和预览入口，全局范围不传 `projectID`，项目范围显式绑定登记项目 UUID；切换项目重建该项目视图，过期的异步插件读取不能覆盖新项目。项目选择区横向滚动，资源列表占满详情宽度。`AppModel.setInstruction` 按宿主更新独立选择，`prepareDeploymentPlan(host:)` 不切换编辑宿主，只提交指定宿主的选择。两种范围的计划页均以“保存”批准当前 digest 并执行，其他页面的二次确认保持原样。
 
-`PluginSelectionModel` 复用原生命周期计划：全局草稿仍在 `global/plugin-draft.json`，各项目草稿位于 `plugin-drafts/<projectUUID>.json`。项目只允许 Claude Code，过滤掉用户级安装，安装使用 project scope；Codex 插件继续在全局配置中操作。草稿保存不运行宿主命令，风险确认不持久化。
+`PluginSelectionModel` 复用原生命周期计划：全局草稿仍在 `global/plugin-draft.json`，各项目草稿位于 `plugin-drafts/<projectUUID>.json`。全局点击工具图标只保存草稿；项目只允许 Claude Code，过滤掉用户级安装，安装使用 project scope。草稿保存不运行宿主命令，风险确认不持久化。
 
 ### 预设页面的草稿与保存
 

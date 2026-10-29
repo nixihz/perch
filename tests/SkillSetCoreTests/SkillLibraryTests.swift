@@ -82,6 +82,33 @@ struct SkillLibraryTests {
         #expect(again.fileCount == 2)
     }
 
+    @Test func invocationPolicyTogglesCodexAndClaudeMetadataWithoutChangingBody() throws {
+        let fixture = try LibraryFixture()
+        defer { fixture.cleanup() }
+        let entry = try fixture.store.save(fixture.draft(body: "保留正文"), repositoryRoot: nil)
+        let source = try #require(fixture.store.sourceURLs()[entry.id])
+        let originalBody = try String(contentsOf: source.appendingPathComponent("SKILL.md"), encoding: .utf8)
+
+        let codex = try fixture.store.setInvocationPolicy(entry, target: .codex, manualOnly: true)
+        let codexPolicy = try fixture.store.invocationPolicy(for: codex)
+        #expect(codexPolicy.codexManualOnly)
+        #expect(try String(contentsOf: source.appendingPathComponent("agents/openai.yaml"), encoding: .utf8)
+            .contains("allow_implicit_invocation: false"))
+
+        let claude = try fixture.store.setInvocationPolicy(codex, target: .claudeCode, manualOnly: true)
+        #expect(try fixture.store.invocationPolicy(for: claude).claudeManualOnly)
+        let manualOnlyBody = try String(contentsOf: source.appendingPathComponent("SKILL.md"), encoding: .utf8)
+        #expect(manualOnlyBody.contains("disable-model-invocation: true"))
+        #expect(manualOnlyBody.contains("保留正文"))
+
+        let restoredCodex = try fixture.store.setInvocationPolicy(claude, target: .codex, manualOnly: false)
+        let restored = try fixture.store.setInvocationPolicy(restoredCodex, target: .claudeCode, manualOnly: false)
+        #expect(try fixture.store.invocationPolicy(for: restored) == SkillInvocationPolicy())
+        #expect(try String(contentsOf: source.appendingPathComponent("SKILL.md"), encoding: .utf8) == originalBody)
+        #expect(!(try String(contentsOf: source.appendingPathComponent("agents/openai.yaml"), encoding: .utf8)
+            .contains("allow_implicit_invocation")))
+    }
+
     @Test func duplicateInvalidDocumentsAndStaleEditorsCannotReplaceCurrentVersion() throws {
         let fixture = try LibraryFixture()
         defer { fixture.cleanup() }

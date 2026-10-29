@@ -23,11 +23,24 @@ struct AppButtonStyle: ButtonStyle {
     }
 }
 
+/// 给没有背景的图标和复选框保留同一套按压反馈，不改变其布局和命中范围。
+struct AppPressButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .opacity(configuration.isPressed ? 0.92 : 1)
+            .animation(reduceMotion ? nil : AppMotion.buttonPress, value: configuration.isPressed)
+    }
+}
+
 private struct AppButtonBody: View {
     let configuration: ButtonStyleConfiguration
     let kind: AppButtonKind
     let selected: Bool
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hovered = false
 
     private var foreground: Color {
@@ -56,6 +69,9 @@ private struct AppButtonBody: View {
                     .strokeBorder(kind == .quiet ? .clear : selected ? AppColor.accent.opacity(0.4) : AppColor.border.opacity(isEnabled ? 1 : 0.5))
             }
             .contentShape(RoundedRectangle(cornerRadius: AppControl.radius))
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .opacity(configuration.isPressed ? 0.92 : 1)
+            .animation(reduceMotion ? nil : AppMotion.buttonPress, value: configuration.isPressed)
             // 按压状态由 Button 提供；零距离拖拽会截走 macOS 的鼠标点击。
             .onHover { hovered = $0 }
     }

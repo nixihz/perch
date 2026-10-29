@@ -52,8 +52,18 @@ struct SkillsView: View {
                     .disabled(checkedSkillIDs.isEmpty || model.isWorking)
                     .accessibilityIdentifier("skills.install-user")
             }
-            if let error = model.skillRemovalError ?? model.libraryError, editor == nil {
+            Text(L10n.tr("行末工具图标用于修改技能调用元信息：启用后模型不会自动调用，仍可由用户显式触发。Codex 写入 agents/openai.yaml，Claude Code 写入 SKILL.md；Agents 标准没有对应字段。"))
+                .font(AppFont.secondary)
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("skills.invocation-policy.notice")
+            if let error = model.skillMetadataError ?? model.skillRemovalError ?? model.libraryError, editor == nil {
                 Text(L10n.text(error)).foregroundStyle(.red).font(AppFont.secondary).textSelection(.enabled)
+            }
+            if let message = model.skillMetadataSaveMessage, editor == nil {
+                Text(L10n.text(message))
+                    .foregroundStyle(AppColor.positive)
+                    .font(AppFont.secondary)
+                    .accessibilityIdentifier("skills.invocation-policy.saved")
             }
             HStack(alignment: .top, spacing: AppLayout.columnSpacing) {
                 skillList
@@ -112,6 +122,10 @@ struct SkillsView: View {
         if skill.sourceId == SkillLibraryStore.linkedSourceID { return true }
         guard let url = model.sourceOrigins[skill.id]?.url else { return false }
         return url.hasPrefix("https://") || url.hasPrefix("http://")
+    }
+
+    private func canEditInvocationMetadata(_ skill: SkillEntry) -> Bool {
+        skill.sourceId == SkillLibraryStore.sourceID || skill.sourceId == SkillLibraryStore.copiedSourceID
     }
 
     private var skillList: some View {
@@ -210,7 +224,27 @@ struct SkillsView: View {
                                     .selectionRow(skill.id == model.selectedSkillID)
                                     .contentShape(Rectangle())
                                 }
-                                .buttonStyle(.plain)
+                                .buttonStyle(AppPressButtonStyle())
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                SkillTargetToggles(
+                                    skillName: skill.slug,
+                                    identifierPrefix: "skills.invocation-policy.\(skill.id)",
+                                    targets: SkillConfigurationTarget.allCases,
+                                    savesImmediately: true,
+                                    metadataMode: true,
+                                    isSelected: { host in
+                                        guard let target = SkillInvocationTarget(rawValue: host.rawValue) else { return false }
+                                        return model.invocationPolicy(for: skill).manualOnly(for: target)
+                                    },
+                                    isEnabled: { host in
+                                        host != .agents && canEditInvocationMetadata(skill) && !model.isUpdatingSkillMetadata
+                                    },
+                                    setSelected: { host, enabled in
+                                        guard let target = SkillInvocationTarget(rawValue: host.rawValue) else { return }
+                                        _ = model.setInvocationPolicy(skill, target: target, manualOnly: enabled)
+                                    }
+                                )
+                                .padding(.leading, 4)
                             }
                             Divider()
                         }

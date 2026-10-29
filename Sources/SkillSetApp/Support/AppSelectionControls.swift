@@ -18,7 +18,7 @@ struct AppCheckboxStyle: ToggleStyle {
             .frame(minHeight: AppControl.height, alignment: .leading)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(AppPressButtonStyle())
         .accessibilityRepresentation {
             Toggle(isOn: configuration.$isOn) { configuration.label }
                 .toggleStyle(.checkbox)

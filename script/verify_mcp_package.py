@@ -90,7 +90,24 @@ def verify(executable):
         document = '---\nname: package-fixture\ndescription: 独立打包验证技能\n---\n测试技能正文\n'
         (source / 'SKILL.md').write_text(document)
         preview = cli('sources', 'preview', str(source))
-        candidate = next(item for item in preview['candidates'] if item['slug'] == 'package-fixture')
+        expected_slug = source.name
+        expected_name = 'package-fixture'
+        candidate = next(
+            (
+                item for item in preview['candidates']
+                if item.get('slug') == expected_slug
+                or item.get('declaredName') == expected_name
+            ),
+            None,
+        )
+        if candidate is None:
+            available = ', '.join(
+                f"{item.get('slug', '?')} ({item.get('declaredName', '未声明名称')})"
+                for item in preview['candidates']
+            ) or '无候选'
+            raise RuntimeError(
+                f"打包验证未找到 {expected_slug}/{expected_name} 候选；实际候选：{available}"
+            )
         mcp_tool('sources_import_skill', {
             'previewId': preview['id'], 'path': candidate['path'], 'slug': 'package-fixture', 'mode': 'copy',
         })

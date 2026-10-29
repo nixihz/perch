@@ -16,7 +16,7 @@ struct AppSearchField: View {
                     .frame(width: AppControl.iconTarget, height: AppControl.iconTarget)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(AppPressButtonStyle())
             .keyboardShortcut("f", modifiers: .command)
             .accessibilityLabel(label)
             .accessibilityIdentifier(identifier + ".focus")
@@ -32,7 +32,7 @@ struct AppSearchField: View {
                         .frame(width: AppControl.iconTarget, height: AppControl.iconTarget)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(AppPressButtonStyle())
                 .accessibilityLabel(L10n.tr("清空搜索"))
                 .help(L10n.tr("清空搜索"))
                 .accessibilityIdentifier(identifier + ".clear")

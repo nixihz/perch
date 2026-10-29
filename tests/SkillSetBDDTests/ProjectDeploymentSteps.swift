@@ -532,6 +532,24 @@ extension Cucumber: @retroactive StepImplementation {
             XCTAssertFalse(try nativeUI.hasStaticText(forbidden), "不应显示文案：\(forbidden)")
         }
 
+        Then("原生界面不显示控件 {string}") { match, _ in
+            let forbidden = try match.first(\.string)
+            let nativeUI = try XCTUnwrap(try XCTUnwrap(world).nativeUI)
+            XCTAssertFalse(try nativeUI.hasElement(label: forbidden), "不应显示控件：\(forbidden)")
+        }
+
+        Then("原生界面显示控件 {string}") { match, _ in
+            let expected = try match.first(\.string)
+            let nativeUI = try XCTUnwrap(try XCTUnwrap(world).nativeUI)
+            XCTAssertTrue(try nativeUI.hasElement(label: expected), "缺少控件：\(expected)")
+        }
+
+        Then("原生界面不显示按钮 {string}") { match, _ in
+            let forbidden = try match.first(\.string)
+            let nativeUI = try XCTUnwrap(try XCTUnwrap(world).nativeUI)
+            XCTAssertFalse(try nativeUI.hasElement(label: forbidden), "不应显示按钮：\(forbidden)")
+        }
+
         Then("搜索字段提示为 {string}") { match, _ in
             let expected = try match.first(\.string)
             let nativeUI = try XCTUnwrap(try XCTUnwrap(world).nativeUI)

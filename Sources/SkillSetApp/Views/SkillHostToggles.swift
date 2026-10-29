@@ -62,6 +62,7 @@ struct SkillTargetToggles: View {
     let identifierPrefix: String
     let targets: [SkillConfigurationTarget]
     var savesImmediately = false
+    var metadataMode = false
     let isSelected: (SkillConfigurationTarget) -> Bool
     var isEnabled: (SkillConfigurationTarget) -> Bool = { _ in true }
     let setSelected: (SkillConfigurationTarget, Bool) -> Void
@@ -82,12 +83,18 @@ struct SkillTargetToggles: View {
         .buttonStyle(SkillHostButtonStyle(selected: selected))
         .disabled(!isEnabled(host))
         .accessibilityIdentifier("\(identifierPrefix).\(host.rawValue)")
-        .accessibilityLabel(savesImmediately
+        .accessibilityLabel(metadataMode
+            ? L10n.tr(selected ? "在 \(host.displayName) 中移除「\(skillName)」的调用元信息" : "在 \(host.displayName) 中添加「\(skillName)」的调用元信息")
+            : savesImmediately
             ? L10n.tr("在 \(host.displayName) 中保存「\(skillName)」")
             : L10n.tr("在 \(host.displayName) 草稿中选择「\(skillName)」"))
         .accessibilityValue(selected ? L10n.tr("已选择") : L10n.tr("未选择"))
         .accessibilityAddTraits(selected ? [.isSelected] : [])
-        .help(savesImmediately
+        .help(metadataMode
+            ? L10n.tr(selected
+                ? "从 \(host.displayName) 移除「\(skillName)」的调用元信息。"
+                : "向 \(host.displayName) 添加「\(skillName)」的调用元信息。")
+            : savesImmediately
             ? (selected
                 ? L10n.tr("从 \(host.displayName) 中取消「\(skillName)」，立即保存。")
                 : L10n.tr("在 \(host.displayName) 中启用「\(skillName)」，立即保存。"))
@@ -111,6 +118,7 @@ private struct SkillHostButtonBody: View {
     let configuration: ButtonStyleConfiguration
     let selected: Bool
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hovered = false
 
     private var fill: Color {
@@ -130,6 +138,8 @@ private struct SkillHostButtonBody: View {
             }
             .opacity(isEnabled ? 1 : 0.45)
             .contentShape(RoundedRectangle(cornerRadius: AppControl.radius))
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(reduceMotion ? nil : AppMotion.buttonPress, value: configuration.isPressed)
             // 保留原生 Button 的鼠标、键盘与辅助功能动作。
             .onHover { hovered = $0 }
     }

@@ -6,6 +6,31 @@ import SkillSetCore
 
 @MainActor
 final class GlobalConfigurationUITests: XCTestCase {
+    func testGlobalRulesEditorLoadsTheSelectedHostFileAsEditablePlainText() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("global-rules-editor-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let paths = SkillSetRuntimePaths(applicationSupportRoot: root.appendingPathComponent("state"), repositoryRoot: nil)
+        let locations = GlobalConfigurationLocations(home: root.appendingPathComponent("home"), stateRoot: paths.applicationSupportRoot)
+        let rulesURL = locations.rulesURL(.codex)
+        try FileManager.default.createDirectory(at: rulesURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try "# Codex 全局规则\n始终先查看变更。\n".write(to: rulesURL, atomically: true, encoding: .utf8)
+
+        let controller = NSHostingController(rootView: GlobalRulesEditorSheet(host: .codex, locations: locations))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 820, height: 640),
+                              styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentViewController = controller
+        defer { window.close() }
+        try await Task.sleep(for: .milliseconds(100))
+        controller.view.layoutSubtreeIfNeeded()
+
+        let textView = try XCTUnwrap(descendants(controller.view).compactMap { $0 as? NSTextView }.first)
+        XCTAssertTrue(textView.isEditable)
+        XCTAssertEqual(textView.string, "# Codex 全局规则\n始终先查看变更。\n")
+        XCTAssertLessThanOrEqual(controller.view.fittingSize.width, 821)
+        XCTAssertLessThanOrEqual(controller.view.fittingSize.height, 641)
+    }
+
     func testAgentsPlanCancellationAndSaveKeepCodexPendingDraft() throws {
         let root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent("agents-save-\(UUID())")
         defer { try? FileManager.default.removeItem(at: root) }

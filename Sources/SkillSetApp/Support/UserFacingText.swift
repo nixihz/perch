@@ -149,6 +149,8 @@ enum UserFacingText {
                 return "技能内容已改变。请先复制保留未保存的改动，再关闭并重新打开编辑器。"
             case "LIBRARY_CORRUPT":
                 return "技能库记录无法读取，请检查栖集的数据目录；已有技能版本仍保留。"
+            case "LIBRARY_READ_ONLY_SOURCE":
+                return "来源技能不可直接修改。请先复制并编辑，再设置调用元信息。"
             case "PLAN_NOT_FOUND":
                 return "找不到这份计划，请返回配置页重新预览变更。"
             case "PLAN_INVALID", "PLAN_INVALID_STATE", "PLUGIN_STAGED_COMMAND_INVALID":
@@ -162,7 +164,7 @@ enum UserFacingText {
             case "PRESET_INVALID":
                 return "预设无法保存，请检查名称和所选内容后再试。"
             case "PLAN_EXPIRED", "PLAN_STALE", "PLAN_DIGEST_MISMATCH", "PLUGIN_STATE_STALE", "PROJECT_LOCK_STALE":
-                return "计划已过期或目标已改变，请重新生成计划并审阅。"
+                return "当前目标已变化，操作已停止。请重新读取当前配置，确认目标路径和选择后，再按页面提示重新保存或审阅。"
             case "APPROVAL_REQUIRED":
                 return "请先在本机审阅并批准这份计划。"
             case "PLAN_ALREADY_APPLIED":
@@ -342,6 +344,16 @@ enum UserFacingText {
         let rules = ["AGENTS.md", "CLAUDE.md"]
         return roots.contains { text == "\($0)：父目录是软链，未扫描。" }
             || rules.contains { text == "\($0)：文件是软链，不读取受管块。" }
+    }
+
+    /// 从项目检查生成的诊断中提取相对位置，避免在页面上回显底层错误详情。
+    static func projectIssueLocation(_ text: String) -> String? {
+        guard !text.contains(where: { $0.isNewline }) else { return nil }
+        guard let separator = text.firstIndex(of: "：") else { return nil }
+        let location = String(text[..<separator]).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !location.isEmpty, location.count <= 160,
+              !location.contains(where: { $0.isNewline }) else { return nil }
+        return location
     }
 
     // 只转换已知诊断；未知或夹带英文的外部文本不回显，也不据此推断成功状态。

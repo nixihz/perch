@@ -5,6 +5,7 @@ import SkillSetCore
 struct ProjectsView: View {
     @Bindable var model: AppModel
     @State private var detailsPresented = false
+    @State private var projectIssuesPresented = false
     @State private var pendingPlan: StoredDeploymentPlan?
 
     var body: some View {
@@ -33,9 +34,8 @@ struct ProjectsView: View {
                         }
                     }
                 }
-                ForEach((model.projectIssues[project.id] ?? []).filter { !UserFacingText.isInformationalProjectNote($0) }, id: \.self) { issue in
-                    Text(L10n.text(UserFacingText.diagnostic(issue, context: .project)))
-                        .font(AppFont.secondary).foregroundStyle(.orange)
+                if !visibleProjectIssues(for: project.id).isEmpty {
+                    projectIssueSummary(for: project)
                 }
                 ConfigurationResourceView(model: model, projectID: projectID)
                     // 每个项目持有自己的列表与插件草稿，切换时不沿用旧项目的异步结果。
@@ -76,6 +76,35 @@ struct ProjectsView: View {
                 }
             }
         }
+        .sheet(isPresented: $projectIssuesPresented) {
+            if let project = model.selectedProject {
+                ProjectIssueDetailsSheet(projectName: project.name, issues: visibleProjectIssues(for: project.id))
+            }
+        }
+    }
+
+    private func visibleProjectIssues(for projectID: String) -> [String] {
+        (model.projectIssues[projectID] ?? []).filter { !UserFacingText.isInformationalProjectNote($0) }
+    }
+
+    private func projectIssueSummary(for project: ProjectRecord) -> some View {
+        let count = visibleProjectIssues(for: project.id).count
+        return HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Label(L10n.tr("项目检查发现 \(count) 条提醒"), systemImage: "exclamationmark.triangle")
+                .font(AppFont.secondary.weight(.semibold))
+                .foregroundStyle(.orange)
+            Text(L10n.tr("查看明细以确认受影响目录。"))
+                .font(AppFont.metadata)
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 0)
+            Button(L10n.tr("查看明细…")) { projectIssuesPresented = true }
+                .buttonStyle(.link)
+                .accessibilityLabel(L10n.tr("查看项目检查明细"))
+                .accessibilityIdentifier("projects.issues")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
     }
 
     private func projectSelector(_ selected: ProjectRecord) -> some View {
@@ -123,6 +152,66 @@ struct ProjectsView: View {
     }
 }
 
+private struct ProjectIssueDetailsSheet: View {
+    let projectName: String
+    let issues: [String]
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(L10n.tr("项目检查提醒")).font(AppFont.title)
+                Text(L10n.tr("\(projectName) 有 \(issues.count) 条提醒。这里只读项目检查结果，不会自动修改项目。"))
+                    .font(AppFont.secondary)
+                    .foregroundStyle(.secondary)
+            }
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 12) {
+                    ForEach(Array(issues.enumerated()), id: \.offset) { _, issue in
+                        ProjectIssueRow(issue: issue)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            HStack {
+                Spacer()
+                Button(L10n.tr("完成")) { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+            }
+        }
+        .padding(24)
+        .frame(width: 640, height: 520)
+        .appControls()
+    }
+}
+
+private struct ProjectIssueRow: View {
+    let issue: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
+                if let location = UserFacingText.projectIssueLocation(issue) {
+                    Text(location)
+                        .font(AppFont.code)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
+                Text(L10n.text(UserFacingText.diagnostic(issue, context: .project)))
+                    .font(AppFont.secondary)
+                    .foregroundStyle(.primary)
+                    .textSelection(.enabled)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(10)
+        .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 8))
+    }
+}
+
 /// 项目信息按需打开，不挤占配置列表；观察与待批准计划仍可核对。
 struct ProjectConfigurationDetails: View {
     @Bindable var model: AppModel
@@ -156,8 +245,7 @@ struct ProjectConfigurationDetails: View {
                     Divider()
                     Text(L10n.tr("项目技能现状")).font(AppFont.heading)
                     ForEach(model.projectIssues[project.id] ?? [], id: \.self) { issue in
-                        Text(L10n.text(UserFacingText.diagnostic(issue, context: .project)))
-                            .font(AppFont.secondary).foregroundStyle(.secondary)
+                        ProjectIssueRow(issue: issue)
                     }
                     Text(L10n.tr("项目原有技能会保留。取消选择只会移除栖集写入且未经修改的技能；仍需在 AI 工具中确认是否加载。"))
                         .font(AppFont.secondary).foregroundStyle(.secondary)
