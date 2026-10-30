@@ -3,6 +3,7 @@
 
 import argparse
 import base64
+import os
 from pathlib import Path
 import plistlib
 import shutil
@@ -15,12 +16,12 @@ from configure_updates import load_configuration
 
 ROOT = Path(__file__).resolve().parents[1]
 SPARKLE_NS = "http://www.andymatuschak.org/xml-namespaces/sparkle"
-BUNDLE_ID = "com.example.perch"
+BUNDLE_ID = os.environ.get("PERCH_BUNDLE_ID", "com.example.perch")
 
 
 def validate_info(info, config):
     if info.get("CFBundleIdentifier") != BUNDLE_ID:
-        raise ValueError("DMG 必须包含 com.example.perch 应用")
+        raise ValueError(f"DMG 必须包含 {BUNDLE_ID} 应用")
     for key, field in [("CFBundleShortVersionString", "version"), ("CFBundleVersion", "build"),
                        ("SUFeedURL", "feedURL"), ("SUPublicEDKey", "publicEDKey")]:
         if not config[field] or info.get(key) != config[field]:

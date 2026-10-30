@@ -23,6 +23,7 @@ if [[ -n "${PERCH_BUILD_PATH:-}" ]]; then
     BUILD_ARGS+=(--scratch-path "$PERCH_BUILD_PATH")
 fi
 UPDATE_CONFIG="${PERCH_UPDATE_CONFIG:-config/updates.json}"
+BUNDLE_ID="${PERCH_BUNDLE_ID:-com.example.perch}"
 python3 script/configure_updates.py --config "$UPDATE_CONFIG"
 
 swift build "${BUILD_ARGS[@]}" --product "$APP_PRODUCT"
@@ -72,7 +73,7 @@ cp "$BRAND_ICONSET/perch-1024.png" "$ICON_BUILD_DIR/Perch.iconset/icon_512x512@2
 iconutil -c icns "$ICON_BUILD_DIR/Perch.iconset" -o "$ICON_BUILD_DIR/Perch.icns"
 cp "$ICON_BUILD_DIR/Perch.icns" "$APP_BUNDLE/Contents/Resources/Perch.icns"
 
-cat > "$APP_BUNDLE/Contents/Info.plist" <<'PLIST'
+cat > "$APP_BUNDLE/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -82,7 +83,7 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<'PLIST'
     <key>CFBundleExecutable</key>
     <string>SkillSet</string>
     <key>CFBundleIdentifier</key>
-    <string>com.example.perch</string>
+    <string>${BUNDLE_ID}</string>
     <key>CFBundleName</key>
     <string>栖集</string>
     <key>CFBundleDisplayName</key>
