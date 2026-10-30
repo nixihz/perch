@@ -20,6 +20,8 @@ public struct ProjectDraft: Codable, Identifiable, Hashable, Sendable {
     public var agents: [String]
     public var plugins: [PresetPluginReference]
     public var mcpServers: [MCPConfigurationDraft]
+    /// 已用于本项目的预设快照。取消预设时按快照计算差集。
+    public var presetApplications: [PresetApplication]
     public var harnessSelections: [String: ProjectHarnessSelection]?
     public var updatedAt: Date
 
@@ -33,6 +35,7 @@ public struct ProjectDraft: Codable, Identifiable, Hashable, Sendable {
         updatedAt: Date,
         plugins: [PresetPluginReference] = [],
         mcpServers: [MCPConfigurationDraft] = [],
+        presetApplications: [PresetApplication] = [],
         harnessSelections: [String: ProjectHarnessSelection]? = nil
     ) {
         self.projectID = projectID
@@ -42,6 +45,7 @@ public struct ProjectDraft: Codable, Identifiable, Hashable, Sendable {
         self.updatedAt = updatedAt
         self.plugins = plugins
         self.mcpServers = mcpServers
+        self.presetApplications = presetApplications
         self.harnessSelections = harnessSelections
     }
     public init(from decoder: Decoder) throws {
@@ -53,6 +57,7 @@ public struct ProjectDraft: Codable, Identifiable, Hashable, Sendable {
         updatedAt = try c.decode(Date.self, forKey: .updatedAt)
         plugins = try c.decodeIfPresent([PresetPluginReference].self, forKey: .plugins) ?? []
         mcpServers = try c.decodeIfPresent([MCPConfigurationDraft].self, forKey: .mcpServers) ?? []
+        presetApplications = try c.decodeIfPresent([PresetApplication].self, forKey: .presetApplications) ?? []
         harnessSelections = try c.decodeIfPresent([String: ProjectHarnessSelection].self, forKey: .harnessSelections)
     }
 
@@ -101,6 +106,7 @@ public struct ProjectDraftStore {
         agents: some Sequence<String>,
         plugins: [PresetPluginReference]? = nil,
         mcpServers: [MCPConfigurationDraft]? = nil,
+        presetApplications: [PresetApplication]? = nil,
         harnessSelections: [String: ProjectHarnessSelection]? = nil
     ) throws -> ProjectDraft {
         var document = try loadDocument()
@@ -113,6 +119,7 @@ public struct ProjectDraftStore {
             updatedAt: clock(),
             plugins: plugins ?? previous?.plugins ?? [],
             mcpServers: mcpServers ?? previous?.mcpServers ?? [],
+            presetApplications: presetApplications ?? previous?.presetApplications ?? [],
             harnessSelections: harnessSelections
         )
         document.drafts.removeAll { $0.projectID == projectID }

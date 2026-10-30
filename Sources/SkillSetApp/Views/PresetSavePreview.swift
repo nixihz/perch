@@ -8,11 +8,27 @@ struct PresetSavePreview: View {
     let onSaved: () -> Void
     @Environment(\.dismiss) private var dismiss
 
-    private var changes: PresetDraftPreview {
-        let baseline = ProjectRecord(id: "preset-preview", name: initial.name, path: "", adapter: "", inherited: "",
-            draftSkillIDs: initial.skills, appliedSkillIDs: [], agents: [], fragments: initial.instructions.sorted(),
-            pendingChanges: 0, draftPlugins: initial.plugins, draftMCPServers: initial.mcpServers)
-        return PresetDraftPreview(preset: draft.record, project: baseline, snapshot: model.snapshot)
+    /// 预设保存前后的差异，只比较预设自身内容，不涉及项目草稿。
+    private var changes: PresetSaveDiff {
+        var updatedPlugins: Set<String> = []
+        for reference in draft.plugins {
+            if let existing = initial.plugins.first(where: { $0.id == reference.id }), existing != reference {
+                updatedPlugins.insert(reference.id)
+            }
+        }
+        var updatedMCP: Set<String> = []
+        for server in draft.mcpServers {
+            if let existing = initial.mcpServers.first(where: { $0.presetID == server.presetID }), existing != server {
+                updatedMCP.insert(server.presetID)
+            }
+        }
+        return PresetSaveDiff(
+            skills: PresetComponentChanges(current: Set(initial.skills), proposed: Set(draft.skills)),
+            instructions: PresetComponentChanges(current: Set(initial.instructions), proposed: Set(draft.instructions)),
+            plugins: PresetComponentChanges(current: Set(initial.plugins.map(\.id)), proposed: Set(draft.plugins.map(\.id)),
+                                             updated: updatedPlugins),
+            mcpServers: PresetComponentChanges(current: Set(initial.mcpServers.map(\.presetID)), proposed: Set(draft.mcpServers.map(\.presetID)),
+                                               updated: updatedMCP))
     }
 
     var body: some View {
@@ -64,7 +80,7 @@ struct PresetSavePreview: View {
         .padding(24).frame(width: 760, height: 620).appControls()
     }
 
-    private func section(_ kind: PresetComponent, change: PresetDraftPreview.Changes, names: [String], removed: [String]) -> some View {
+    private func section(_ kind: PresetComponent, change: PresetComponentChanges, names: [String], removed: [String]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(L10n.text(kind.title)).font(AppFont.heading)
             Text(L10n.tr("新增 \(change.added.count) · 更新 \(change.updated.count) · 移除 \(change.removed.count) · 保留 \(change.retained.count)"))
@@ -80,4 +96,11 @@ struct PresetSavePreview: View {
     private func instructionName(_ id: String) -> String {
         model.snapshot.templates.first { $0.id == id }.map { UserFacingText.templateTitle($0) } ?? L10n.tr("片段已删除")
     }
+}
+
+private struct PresetSaveDiff {
+    let skills: PresetComponentChanges
+    let instructions: PresetComponentChanges
+    let plugins: PresetComponentChanges
+    let mcpServers: PresetComponentChanges
 }

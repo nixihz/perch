@@ -7,62 +7,122 @@ struct PresetSelectionRequest: Identifiable {
     var presetID: String?
 }
 
-struct PresetDraftPreview {
-    struct Changes {
-        let added: [String]
-        let retained: [String]
-        let updated: [String]
-        let removed: [String]
+/// 一类资源相对当前草稿的差异。
+struct PresetComponentChanges {
+    let added: [String]
+    let retained: [String]
+    let updated: [String]
+    let removed: [String]
 
-        init(current: Set<String>, proposed: Set<String>, updated: Set<String> = []) {
-            added = proposed.subtracting(current).sorted()
-            self.updated = updated.intersection(proposed).intersection(current).sorted()
-            retained = proposed.intersection(current).subtracting(updated).sorted()
-            removed = current.subtracting(proposed).sorted()
-        }
+    init(current: Set<String>, proposed: Set<String>, updated: Set<String> = []) {
+        added = proposed.subtracting(current).sorted()
+        self.updated = updated.intersection(proposed).intersection(current).sorted()
+        retained = proposed.intersection(current).subtracting(updated).sorted()
+        removed = current.subtracting(proposed).sorted()
     }
 
-    let plugins: Changes
-    let mcpServers: Changes
+    var isEmpty: Bool { added.isEmpty && updated.isEmpty && removed.isEmpty && retained.isEmpty }
+}
+
+/// 多个预设写入项目草稿后的差异预览。
+///
+/// 合并规则与 `PresetDraftMerge` 一致：多个预设取并集，取消预设只回收它独占的内容。
+struct PresetDraftPreview {
+    enum Mode {
+        /// 并入新预设，已生效的预设保持不变。
+        case merge
+        /// 以选中集合为准，未选中的预设按差集取消。
+        case select
+    }
+
+    let plugins: PresetComponentChanges
+    let mcpServers: PresetComponentChanges
     let componentIssues: [String]
     let unavailablePluginNames: [String]
-    let skills: Changes
-    let instructions: Changes
+    let skills: PresetComponentChanges
+    let instructions: PresetComponentChanges
     let unavailableSkillIDs: [String]
     let unavailableInstructionIDs: [String]
     let conflictingSkillIDs: [String]
+    /// 本次新增的预设。
+    let addedPresets: [PresetRecord]
+    /// 本次取消的预设。
+    let removedPresets: [PresetRecord]
+    /// 合并后的草稿状态，写入时以此为准。
+    let mergedState: PresetDraftState
+
     private let snapshot: AppSnapshot
-    private let preset: PresetRecord
+    private let mergedSkillIDs: Set<String>
 
     var canLoad: Bool {
         unavailableSkillIDs.isEmpty && unavailableInstructionIDs.isEmpty && conflictingSkillIDs.isEmpty && componentIssues.isEmpty
     }
 
-    init(preset: PresetRecord, project: ProjectRecord, snapshot: AppSnapshot, availablePlugins: [PluginInventoryRecord]? = nil) {
-        plugins = Changes(current: Set(project.draftPlugins.map(\.id)), proposed: Set(preset.plugins.map(\.id)), updated: Set(preset.plugins.filter { next in project.draftPlugins.contains { $0.id == next.id && $0 != next } }.map(\.id)))
-        mcpServers = Changes(current: Set(project.draftMCPServers.map(\.presetID)), proposed: Set(preset.mcpServers.map(\.presetID)), updated: Set(preset.mcpServers.filter { next in project.draftMCPServers.contains { $0.presetID == next.presetID && $0 != next } }.map(\.presetID)))
+    init(presets: [PresetRecord], project: ProjectRecord, snapshot: AppSnapshot,
+         availablePlugins: [PluginInventoryRecord]? = nil, mode: Mode = .select) {
+        let host = project.editingAgent
+        let current = PresetDraftState(selections: project.harnessSelections, plugins: project.draftPlugins,
+                                       mcpServers: project.draftMCPServers, applications: project.presetApplications)
+        let merged = mode == .merge
+            ? PresetDraftMerge.merging(presets, host: host, to: current)
+            : PresetDraftMerge.selecting(presets, host: host, to: current)
+
+        let currentSelection = current.selections[host] ?? ProjectHarnessSelection()
+        let mergedSelection = merged.selections[host] ?? ProjectHarnessSelection()
+        skills = PresetComponentChanges(current: Set(currentSelection.skillIDs), proposed: Set(mergedSelection.skillIDs))
+        instructions = PresetComponentChanges(current: Set(currentSelection.instructionIDs), proposed: Set(mergedSelection.instructionIDs))
+        let updatedPluginIDs = Set(merged.plugins.compactMap { reference -> String? in
+            guard let existing = current.plugins.first(where: { $0.id == reference.id }) else { return nil }
+            return existing == reference ? nil : reference.id
+        })
+        plugins = PresetComponentChanges(current: Set(current.plugins.map(\.id)), proposed: Set(merged.plugins.map(\.id)),
+                                         updated: updatedPluginIDs)
+        let updatedMCPIDs = Set(merged.mcpServers.compactMap { server -> String? in
+            guard let existing = current.mcpServers.first(where: { $0.presetID == server.presetID }) else { return nil }
+            return existing == server ? nil : server.presetID
+        })
+        mcpServers = PresetComponentChanges(current: Set(current.mcpServers.map(\.presetID)), proposed: Set(merged.mcpServers.map(\.presetID)),
+                                             updated: updatedMCPIDs)
+
         var issues: [String] = []
         // 内置旧预设允许空组合；新增预设的完整性由本机保存边界校验。
-        if preset.componentCount > 0, let issue = PresetStore.validationIssue(preset) { issues.append(issue) }
-        let missingPlugins = preset.plugins.filter { reference in
+        if presets.contains(where: { $0.componentCount > 0 }), let issue = PresetStore.validationIssue(presets[0]) {
+            issues.append(issue)
+        }
+        let targetPlugins = presets.flatMap(\.plugins)
+        let missingPlugins = targetPlugins.filter { reference in
             guard let availablePlugins else { return false }
             return !availablePlugins.contains { $0.host == reference.host && $0.pluginID == reference.pluginID && $0.manifestDigest == reference.manifestDigest }
         }
         unavailablePluginNames = missingPlugins.map { $0.name.isEmpty ? $0.pluginID : $0.name }
         if !missingPlugins.isEmpty { issues.append("插件版本不可用，请重新扫描并更新预设。") }
         componentIssues = issues
-        let skillIDs = Set(preset.skills)
-        skills = Changes(current: project.draftSkillIDs, proposed: skillIDs)
-        instructions = Changes(current: Set(project.fragments), proposed: Set(preset.instructionFragments))
+
+        let targetSkillIDs = Set(presets.flatMap(\.skills))
+        let mergedSkillIDs = Set(mergedSelection.skillIDs)
         let available = snapshot.catalog.entries.filter { !$0.isBlocked }
-        unavailableSkillIDs = skillIDs.subtracting(Set(available.map(\.id))).sorted()
-        unavailableInstructionIDs = Set(preset.instructionFragments)
+        unavailableSkillIDs = targetSkillIDs.subtracting(Set(available.map(\.id))).sorted()
+        unavailableInstructionIDs = Set(presets.flatMap(\.instructionFragments))
             .subtracting(Set(snapshot.templates.map(\.id))).sorted()
-        let selected = available.filter { skillIDs.contains($0.id) }
+        let selected = available.filter { mergedSkillIDs.contains($0.id) }
         conflictingSkillIDs = Dictionary(grouping: selected, by: \.slug).values
             .filter { $0.count > 1 }.flatMap { $0.map(\.id) }.sorted()
+
+        let appliedIDs = Set(project.appliedPresets(host: host).map(\.presetID))
+        let targetIDs = Set(presets.map(\.id))
+        addedPresets = presets.filter { !appliedIDs.contains($0.id) }
+        removedPresets = appliedIDs.subtracting(targetIDs).sorted().map { id in
+            snapshot.presets.first { $0.id == id } ?? PresetRecord(id: id, name: id)
+        }
         self.snapshot = snapshot
-        self.preset = preset
+        self.mergedSkillIDs = mergedSkillIDs
+        self.mergedState = merged
+    }
+
+    /// 单个预设的预览，保留给预设编辑器的可用性检查。
+    init(preset: PresetRecord, project: ProjectRecord, snapshot: AppSnapshot,
+         availablePlugins: [PluginInventoryRecord]? = nil) {
+        self.init(presets: [preset], project: project, snapshot: snapshot, availablePlugins: availablePlugins)
     }
 
     /// 同名技能只比较 slug。提示必须带上名称和来源，否则无法判断该取消哪一项。
@@ -85,7 +145,7 @@ struct PresetDraftPreview {
         if !unavailableInstructionIDs.isEmpty {
             reasons.append("AGENTS 片段已不在库中，请从预设中移除这项引用。")
         }
-        let selected = snapshot.catalog.entries.filter { preset.skills.contains($0.id) && !$0.isBlocked }
+        let selected = snapshot.catalog.entries.filter { mergedSkillIDs.contains($0.id) && !$0.isBlocked }
         let conflicts = Dictionary(grouping: selected, by: \.slug).values.filter { $0.count > 1 }
             .sorted { $0[0].slug < $1[0].slug }
         for group in conflicts {

@@ -348,6 +348,8 @@ public struct ProjectRecord: Identifiable, Hashable, Sendable {
     public var harnessSelections: [String: ProjectHarnessSelection]
     public var draftPlugins: [PresetPluginReference]
     public var draftMCPServers: [MCPConfigurationDraft]
+    /// 已用于本项目的预设快照。多预设并存时，取消其中一个只回收它独占的内容。
+    public var presetApplications: [PresetApplication]
     public var pendingChanges: Int
     public var lockStatus: String
 
@@ -365,6 +367,7 @@ public struct ProjectRecord: Identifiable, Hashable, Sendable {
         lockStatus: String = "absent",
         draftPlugins: [PresetPluginReference] = [],
         draftMCPServers: [MCPConfigurationDraft] = [],
+        presetApplications: [PresetApplication] = [],
         editingAgent: String = "codex",
         harnessSelections: [String: ProjectHarnessSelection]? = nil
     ) {
@@ -384,8 +387,14 @@ public struct ProjectRecord: Identifiable, Hashable, Sendable {
         })
         self.draftPlugins = draftPlugins
         self.draftMCPServers = draftMCPServers
+        self.presetApplications = presetApplications
         self.pendingChanges = pendingChanges
         self.lockStatus = lockStatus
+    }
+
+    /// 当前编辑宿主下已应用的预设。
+    public func appliedPresets(host: String) -> [PresetApplication] {
+        presetApplications.filter { $0.host == host }
     }
 
     public var editingAgentName: String { editingAgent == "claude-code" ? "Claude Code" : "Codex" }

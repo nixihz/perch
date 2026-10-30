@@ -1095,40 +1095,97 @@ final class AppModel {
 
     @discardableResult
     func loadPreset(_ preset: PresetRecord, into projectID: String? = nil) -> Bool {
+        applyPresets([preset], into: projectID)
+    }
+
+    /// 把预设并入项目草稿。多个预设可以同时生效，重叠内容只保留一份。
+    @discardableResult
+    func applyPresets(_ presets: [PresetRecord], into projectID: String? = nil) -> Bool {
+        updateProjectPresets(presets, into: projectID, mode: .merge)
+    }
+
+    /// 以选中集合为准更新项目草稿：未选中的预设按差集取消。
+    @discardableResult
+    func selectPresets(_ presets: [PresetRecord], into projectID: String? = nil) -> Bool {
+        updateProjectPresets(presets, into: projectID, mode: .select)
+    }
+
+    /// 取消单个预设。只回收它独占的内容，其他预设和手动选择保持不变。
+    @discardableResult
+    func cancelPreset(_ presetID: String, into projectID: String? = nil) -> Bool {
         let targetID = projectID ?? selectedProjectID
         guard let index = projects.firstIndex(where: { $0.id == targetID }),
               let id = UUID(uuidString: targetID) else {
             report("请先添加并选择一个项目")
             return false
         }
-        let preview = PresetDraftPreview(preset: preset, project: projects[index], snapshot: snapshot, availablePlugins: presetPlugins(for: targetID))
+        let project = projects[index]
+        let host = project.editingAgent
+        let state = presetDraftState(for: project)
+        guard state.applications.contains(where: { $0.presetID == presetID && $0.host == host }) else {
+            report("这个预设没有用于当前项目")
+            return false
+        }
+        let merged = PresetDraftMerge.removing(presetIDs: [presetID], host: host, from: state)
+        return savePresetState(merged, project: project, projectID: id,
+                               message: "已取消这个预设；其他预设和手动选择的内容保持不变")
+    }
+
+    private func updateProjectPresets(_ presets: [PresetRecord], into projectID: String?, mode: PresetDraftPreview.Mode) -> Bool {
+        let targetID = projectID ?? selectedProjectID
+        guard let index = projects.firstIndex(where: { $0.id == targetID }),
+              let id = UUID(uuidString: targetID) else {
+            report("请先添加并选择一个项目")
+            return false
+        }
+        let project = projects[index]
+        let preview = PresetDraftPreview(presets: presets, project: project, snapshot: snapshot,
+                                         availablePlugins: presetPlugins(for: targetID), mode: mode)
         let reasons = preview.blockingReasons(origins: sourceOrigins)
         guard reasons.isEmpty else {
             report(LocalizedText.joining(reasons))
             return false
         }
+        return savePresetState(preview.mergedState, project: project, projectID: id,
+                               message: presetLoadMessage(presets))
+    }
+
+    private func presetLoadMessage(_ presets: [PresetRecord]) -> String {
+        let names = presets.map { $0.status == "local" ? $0.name : L10n.text($0.name) }
+        if names.count == 1, let name = names.first { return "已载入「\(name)」草稿，尚未写入项目" }
+        return "已载入 \(names.count) 个预设的草稿，尚未写入项目"
+    }
+
+    private func presetDraftState(for project: ProjectRecord) -> PresetDraftState {
+        PresetDraftState(selections: project.harnessSelections, plugins: project.draftPlugins,
+                         mcpServers: project.draftMCPServers, applications: project.presetApplications)
+    }
+
+    /// 写入合并后的草稿状态，并刷新项目摘要。
+    private func savePresetState(_ state: PresetDraftState, project: ProjectRecord, projectID: UUID, message: String) -> Bool {
+        guard let index = projects.firstIndex(where: { $0.id == project.id }) else { return false }
+        var proposed = project
+        proposed.harnessSelections = state.selections
+        proposed.draftPlugins = state.plugins
+        proposed.draftMCPServers = state.mcpServers
+        proposed.presetApplications = state.applications
+        // 技能与片段按当前宿主保存，切换宿主不能改写另一个工具的选择。
+        proposed.selectEditingAgent(proposed.editingAgent)
+        proposed.updateEditingSelection()
         do {
-            // 预设技能与规则只替换当前宿主；插件与 MCP 已有各自明确的宿主范围。
-            var proposed = projects[index]
-            proposed.draftSkillIDs = Set(preset.skills)
-            proposed.fragments = preset.instructionFragments
-            proposed.updateEditingSelection()
-            proposed.draftPlugins = preset.plugins
-            proposed.draftMCPServers = preset.mcpServers
             _ = try draftStore.save(
-                projectID: id, skillIDs: proposed.allDraftSkillIDs,
+                projectID: projectID, skillIDs: proposed.allDraftSkillIDs,
                 instructionIDs: proposed.fragments, agents: canonicalAgentIDs(proposed.agents),
                 plugins: proposed.draftPlugins, mcpServers: proposed.draftMCPServers,
+                presetApplications: proposed.presetApplications,
                 harnessSelections: proposed.harnessSelections
             )
             projects[index] = proposed
             projects[index].pendingChanges = pendingChangeCount(for: projects[index])
-            setProjectPlanNotice(nil, for: targetID)
-            selectedProjectID = targetID
-            selectedPresetID = preset.id
+            setProjectPlanNotice(nil, for: project.id)
+            selectedProjectID = project.id
             section = .projects
-            if preset.status == "local" { report("已载入「\(preset.name)」草稿，尚未写入项目") }
-            else { report("已载入「\(LocalizedText(stringLiteral: preset.name))」草稿，尚未写入项目") }
+            reportKey(message)
             return true
         } catch {
             reportKey(UserFacingText.error(error))
@@ -1978,7 +2035,8 @@ final class AppModel {
                 lockStatus: projectState.status,
                 draftPlugins: draft?.plugins ?? [],
                 draftMCPServers: draft?.mcpServers ?? [],
-                harnessSelections: draft?.resolvedHarnessSelections
+                harnessSelections: draft?.resolvedHarnessSelections,
+                presetApplications: draft?.presetApplications ?? []
             )
             let editingAgent = projects.first(where: { $0.id == record.id })?.editingAgent
                 ?? (record.harnessSelections["codex"] != nil ? "codex" : record.harnessSelections.keys.sorted().first ?? "codex")
@@ -2014,6 +2072,7 @@ final class AppModel {
                 instructionIDs: project.fragments,
                 agents: canonicalAgentIDs(project.agents),
                 plugins: project.draftPlugins, mcpServers: project.draftMCPServers,
+                presetApplications: project.presetApplications,
                 harnessSelections: project.harnessSelections
             )
             if let index = projects.firstIndex(where: { $0.id == project.id }) {
