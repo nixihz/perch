@@ -176,23 +176,39 @@ extension MCPStdioServer {
             let id = try requiredUUID(a, key: "projectId")
             let project = try projects.project(id: id)
             let target = try host().rawValue
-            guard let preset = current.snapshot.presets.first(where: { $0.id == string("presetId") }) else { throw missing(string("presetId")) }
-            // 完整保存混合预设，不能把插件或 MCP 组件静默丢弃。
-            for skillID in preset.skills {
-                guard current.snapshot.catalog.entries.contains(where: { $0.id == skillID && !$0.isBlocked }) else { throw missing(skillID) }
+            // presetIds 支持多个预设；presetId 保留单个预设的写法。
+            var presetIDs = strings("presetIds")
+            if presetIDs.isEmpty, let single = a["presetId"] as? String, !single.isEmpty { presetIDs = [single] }
+            guard !presetIDs.isEmpty else {
+                throw MCPToolError(code: "INVALID_ARGUMENTS", message: "需要 presetId 或 presetIds。")
             }
-            for instructionID in preset.instructionFragments {
-                guard current.snapshot.templates.contains(where: { $0.id == instructionID }) else { throw missing(instructionID) }
+            let presets = try presetIDs.map { presetID -> PresetRecord in
+                guard let preset = current.snapshot.presets.first(where: { $0.id == presetID }) else { throw missing(presetID) }
+                return preset
+            }
+            // 完整保存混合预设，不能把插件或 MCP 组件静默丢弃。
+            for preset in presets {
+                for skillID in preset.skills {
+                    guard current.snapshot.catalog.entries.contains(where: { $0.id == skillID && !$0.isBlocked }) else { throw missing(skillID) }
+                }
+                for instructionID in preset.instructionFragments {
+                    guard current.snapshot.templates.contains(where: { $0.id == instructionID }) else { throw missing(instructionID) }
+                }
             }
             let store = ProjectDraftStore(rootURL: root)
             let previous = try store.load(projectID: id)
             let manifest = try current.projectState(projectID: id).manifest
-            var selections = previous?.resolvedHarnessSelections ?? manifest?.resolvedHarnessSelections ?? [:]
-            selections[target] = ProjectHarnessSelection(skillIDs: preset.skills, instructionIDs: preset.instructionFragments)
-            let draft = try store.save(projectID: project.id, skillIDs: preset.skills, instructionIDs: preset.instructionFragments,
-                agents: selections.keys.sorted(), plugins: preset.plugins, mcpServers: preset.mcpServers, harnessSelections: selections)
-            return toolResult(isError: false, text: "已将完整预设载入项目草稿；尚未应用。技能和片段使用 deployment_harness_plan，MCP 和插件分别生成计划并在本机审阅。",
-                structured: ["status": "draft-only", "draft": try jsonValue(draft)])
+            let selections = previous?.resolvedHarnessSelections ?? manifest?.resolvedHarnessSelections ?? [:]
+            let state = PresetDraftState(selections: selections, plugins: previous?.plugins ?? [],
+                                         mcpServers: previous?.mcpServers ?? [], applications: previous?.presetApplications ?? [])
+            // 多个预设取并集：重叠内容只保留一份，其他预设和手动选择不受影响。
+            let merged = PresetDraftMerge.merging(presets, host: target, to: state)
+            let selection = merged.selections[target] ?? ProjectHarnessSelection()
+            let draft = try store.save(projectID: project.id, skillIDs: selection.skillIDs, instructionIDs: selection.instructionIDs,
+                agents: merged.selections.keys.sorted(), plugins: merged.plugins, mcpServers: merged.mcpServers,
+                presetApplications: merged.applications, harnessSelections: merged.selections)
+            return toolResult(isError: false, text: "已将 \(presets.count) 个预设并入项目草稿；尚未应用。技能和片段使用 deployment_harness_plan，MCP 和插件分别生成计划并在本机审阅。",
+                structured: ["status": "draft-only", "appliedPresets": presets.map(\.id), "draft": try jsonValue(draft)])
         case "deployment_harness_plan":
             let id = try requiredUUID(a, key: "projectId")
             let target = try host().rawValue

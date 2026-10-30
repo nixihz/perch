@@ -72,7 +72,7 @@ extension MCPStdioServer {
         add("plugin_sources_update", "重新同步并替换插件来源，失败保留旧记录。", merging(source, ["sourceId": uuid]), ["sourceId", "url"], open: true)
         add("plugin_sources_delete", "移除本机插件来源，不卸载宿主插件。", ["sourceId": uuid], ["sourceId"], destructive: true)
         add("projects_draft_get", "读取本机项目编辑草稿；草稿不代表已应用。", ["projectId": uuid], ["projectId"], read: true)
-        add("presets_apply_draft", "将完整预设用于项目草稿：替换指定宿主的技能与片段，同时保存插件和 MCP 组件；不部署。", ["projectId": uuid, "presetId": text, "host": host], ["projectId", "presetId", "host"])
+        add("presets_apply_draft", "将一个或多个预设并入项目草稿：多个预设取并集，重叠内容只保留一份，其他预设和手动选择不受影响；同时保存插件和 MCP 组件；不部署。", ["projectId": uuid, "presetId": text, "presetIds": ids, "host": host], ["projectId", "host"])
         add("deployment_harness_plan", "仅替换指定宿主的完整技能/片段选择，其他宿主沿用已部署内容；空数组规划移除，仍需本机批准。", ["projectId": uuid, "host": host, "skillIds": ids, "instructionIds": ids, "installMethod": ["type": "string", "enum": ["copy", "symlink"]]], ["projectId", "host", "skillIds", "instructionIds"])
         add("templates_apply_plan", "将片段追加用于指定宿主的项目或全局配置，保留已部署技能与其他片段；无 projectId 表示全局。返回待批准计划。", ["projectId": uuid, "host": host, "instructionIds": ids], ["host", "instructionIds"])
         return result

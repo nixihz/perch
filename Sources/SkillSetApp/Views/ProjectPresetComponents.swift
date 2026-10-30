@@ -74,3 +74,56 @@ struct ProjectPresetComponents: View {
         }
     }
 }
+
+/// 项目当前使用的预设。
+///
+/// 取消其中一个预设时只回收它独占的内容，其他预设与手动选择保持不变。
+struct ProjectAppliedPresets: View {
+    @Bindable var model: AppModel
+    let project: ProjectRecord
+
+    private var applications: [PresetApplication] { project.appliedPresets(host: project.editingAgent) }
+
+    var body: some View {
+        if !applications.isEmpty {
+            SurfaceCard {
+                VStack(alignment: .leading, spacing: 12) {
+                    ConfigurationSectionHeader {
+                        Label(L10n.tr("已用预设"), systemImage: "rectangle.stack")
+                            .font(AppFont.heading)
+                    } actions: {
+                        Text(L10n.tr("\(applications.count) 个 · \(project.editingAgentName)"))
+                            .font(AppFont.metadata).foregroundStyle(.secondary)
+                    }
+                    ForEach(applications) { application in
+                        HStack(spacing: 10) {
+                            Image(systemName: "rectangle.stack.fill")
+                                .foregroundStyle(AppColor.accentText)
+                                .accessibilityHidden(true)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(presetName(application.presetID))
+                                    .font(AppFont.body.weight(.medium))
+                                Text(L10n.tr("版本 \(application.revision) · 技能 \(application.skillIDs.count) · 片段 \(application.instructionIDs.count)"))
+                                    .font(AppFont.metadata).foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 12)
+                            Button(L10n.tr("取消")) {
+                                model.cancelPreset(application.presetID, into: project.id)
+                            }
+                            .buttonStyle(AppButtonStyle(kind: .quiet))
+                            .help(L10n.tr("取消这个预设，只移除它独有的内容"))
+                            .accessibilityIdentifier("projects.preset.cancel.\(application.presetID)")
+                        }
+                    }
+                    Text(L10n.tr("取消预设只移除该预设独有的内容；重叠内容、其他预设和手动选择保持不变。"))
+                        .font(AppFont.metadata).foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private func presetName(_ presetID: String) -> String {
+        guard let preset = model.snapshot.presets.first(where: { $0.id == presetID }) else { return presetID }
+        return preset.status == "local" ? preset.name : L10n.text(preset.name)
+    }
+}

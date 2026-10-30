@@ -104,6 +104,9 @@ struct ConfigurationResourceView: View {
                         ScrollView {
                             VStack(alignment: .leading, spacing: 12) {
                                 errors
+                                if let project {
+                                    ProjectAppliedPresets(model: model, project: project)
+                                }
                                 switch tab {
                                 case .skills: skillList
                                 case .instructions: instructionList

@@ -2035,8 +2035,8 @@ final class AppModel {
                 lockStatus: projectState.status,
                 draftPlugins: draft?.plugins ?? [],
                 draftMCPServers: draft?.mcpServers ?? [],
-                harnessSelections: draft?.resolvedHarnessSelections,
-                presetApplications: draft?.presetApplications ?? []
+                presetApplications: draft?.presetApplications ?? [],
+                harnessSelections: draft?.resolvedHarnessSelections
             )
             let editingAgent = projects.first(where: { $0.id == record.id })?.editingAgent
                 ?? (record.harnessSelections["codex"] != nil ? "codex" : record.harnessSelections.keys.sorted().first ?? "codex")
