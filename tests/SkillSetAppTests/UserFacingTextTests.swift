@@ -83,6 +83,15 @@ final class UserFacingTextTests: XCTestCase {
         XCTAssertFalse(message.contains("已有文件保持不变"))
     }
 
+    func testCorruptedSnapshotMessageOffersTheRepairEntry() {
+        let path = "/local/.agents/skills/demo"
+        let message = UserFacingText.error(FileTransactionError.snapshotCorrupt(path))
+        XCTAssertTrue(message.contains("内容与目录指纹不一致"))
+        XCTAssertTrue(message.contains(path))
+        XCTAssertTrue(message.contains("修复技能快照"))
+        XCTAssertFalse(message.contains("重新读取当前配置"))
+    }
+
     func testMCPStatusKeepsOwnershipSeparateFromLoadingAndRejectsUnknownInput() {
         let managed = UserFacingText.mcpState("管理器受管")
         let existing = UserFacingText.mcpState("仅观察")

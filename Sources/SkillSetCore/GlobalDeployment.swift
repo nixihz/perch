@@ -60,9 +60,9 @@ extension GlobalConfigurationManager {
             guard try SkillAssetCopier.analyze(from: source).contentHash == entry.contentHash else { throw DeploymentError.skillSourceChanged(source.path) }
             let installedHash: String
             if installMethod == .symlink {
-                let linkTarget = try ManagedSkillLink.prepare(source: source, contentHash: entry.contentHash, root: paths.versionsRoot)
+                let versionTarget = try ManagedSkillLink.prepare(source: source, contentHash: entry.contentHash, root: paths.versionsRoot)
                 try fileManager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
-                try fileManager.createSymbolicLink(at: destination, withDestinationURL: linkTarget)
+                try fileManager.createSymbolicLink(at: destination, withDestinationURL: versionTarget)
                 installedHash = try ManagedSkillLink.hash(
                     destination, versionsRoot: paths.versionsRoot,
                     libraryRoot: paths.libraryDirectoryURL, sourcesRoot: paths.sourcesRoot
@@ -131,6 +131,53 @@ extension GlobalConfigurationManager {
         guard !builder.changes.isEmpty || current?.selection != next.selection || current?.managed != next.managed else {
             throw DeploymentError.noChanges
         }
+        next.revision = UUID()
+        return try builder.finish(state: next)
+    }
+
+    /// 从同名技能库条目重建固定版本快照，仍通过普通部署计划执行。
+    public func makeSnapshotRepairPlan(host: SkillConfigurationTarget) throws -> StoredDeploymentPlan {
+        guard let current = try loadState(host) else { throw DeploymentError.noChanges }
+        let corrupted = try inspect(host: host).resources.filter(\.snapshotCorrupt)
+        guard !corrupted.isEmpty else { throw DeploymentError.noChanges }
+
+        let builder = try GlobalPlanBuilder(manager: self, host: host, action: "repair-snapshot")
+        defer { builder.cleanup() }
+        try builder.requireState(current)
+        var next = current
+
+        for observation in corrupted.sorted(by: { $0.path < $1.path }) {
+            let target = URL(fileURLWithPath: observation.path, isDirectory: true)
+            guard let resource = current.managed[target.path], allowedResource(target, host: host) else {
+                throw DeploymentError.invalidPlan
+            }
+            let libraryTarget = paths.libraryDirectoryURL.appendingPathComponent(target.lastPathComponent, isDirectory: true)
+            guard libraryTarget.path.hasPrefix(paths.libraryDirectoryURL.standardizedFileURL.path + "/") else {
+                throw DeploymentError.pathOutsideRoot(libraryTarget.path)
+            }
+            var isDirectory: ObjCBool = false
+            guard fileManager.fileExists(atPath: libraryTarget.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+                throw GlobalConfigurationError.snapshotRepairUnavailable(libraryTarget.path)
+            }
+            let contentHash = try SkillAssetCopier.analyze(
+                from: libraryTarget.resolvingSymlinksInPath().standardizedFileURL,
+                fileManager: fileManager
+            ).contentHash
+            let versionTarget = try ManagedSkillLink.prepare(
+                source: libraryTarget.resolvingSymlinksInPath().standardizedFileURL,
+                contentHash: contentHash,
+                root: paths.versionsRoot
+            )
+            let before = try builder.observe(target, allowingCorruptSnapshot: true)
+            let staged = builder.staged(target)
+            try fileManager.createDirectory(at: staged.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try fileManager.createSymbolicLink(at: staged, withDestinationURL: versionTarget)
+            let after = ManagedSkillLink.expectedHash(destination: versionTarget, contentHash: contentHash)
+            next.managed[target.path] = GlobalManagedResource(hash: after, baselineID: resource.baselineID,
+                baselineHash: resource.baselineHash, originalRules: resource.originalRules, writtenRules: resource.writtenRules)
+            builder.append(target, before: before, after: after, summary: "重建技能快照并更新软链")
+        }
+
         next.revision = UUID()
         return try builder.finish(state: next)
     }
@@ -237,9 +284,9 @@ final class GlobalPlanBuilder {
         }
     }
     @discardableResult
-    func observe(_ url: URL) throws -> String? {
-        try manager.check(url, root: root)
-        let hash = try manager.hash(url)
+    func observe(_ url: URL, allowingCorruptSnapshot: Bool = false) throws -> String? {
+        try manager.check(url, root: root, allowingCorruptSnapshot: allowingCorruptSnapshot)
+        let hash = try manager.hash(url, allowingCorruptSnapshot: allowingCorruptSnapshot)
         let path = manager.relative(url, root: root)
         if let previous = observations[path], previous.contentHash != hash { throw FileTransactionError.staleFile(path) }
         observations[path] = PlannedObservation(relativePath: path, contentHash: hash)
@@ -265,8 +312,9 @@ final class GlobalPlanBuilder {
     }
     func finish(state: GlobalConfigurationState) throws -> StoredDeploymentPlan {
         try write(manager.encode(state), to: manager.locations.stateURL(host), summary: "保存全局配置与本机管理归属")
-        let metadata = ["planType": "global-configuration", "globalHost": host.rawValue,
+        var metadata = ["planType": "global-configuration", "globalHost": host.rawValue,
                         "globalAction": action, "globalSkillsRoot": state.skillsPath]
+        if action == "repair-snapshot" { metadata["allowSnapshotRepair"] = "1" }
         let dependencies = observations.values.sorted { $0.relativePath < $1.relativePath }
         let digest = DeploymentPlanner.calculateDigest(projectPath: root.path, changes: changes,
             selectedSkills: [], metadata: metadata, observations: dependencies)

@@ -433,6 +433,10 @@ final class GlobalConfigurationModel {
         }
     }
 
+    func prepareSnapshotRepair(host: SkillConfigurationTarget? = nil) -> StoredDeploymentPlan? {
+        prepare { try manager.makeSnapshotRepairPlan(host: host ?? self.host) }
+    }
+
     func prepareRestore(_ mode: GlobalRestoreMode) -> StoredDeploymentPlan? {
         prepare { try manager.makeRestorePlan(host: host, mode: mode) }
     }

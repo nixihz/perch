@@ -69,7 +69,7 @@ enum L10n {
     static func text(_ key: String, language: AppLanguage? = nil) -> String {
         let selected = language ?? AppPreferences.shared.language
         guard selected.resolved() == .english else { return key }
-        return english[key] ?? translatedVerificationFailure(key) ?? key
+        return english[key] ?? translatedVerificationFailure(key) ?? translatedSnapshotRepairMessage(key) ?? key
     }
 
     private static func translatedVerificationFailure(_ message: String) -> String? {
@@ -88,6 +88,14 @@ enum L10n {
         guard pathLine.hasPrefix("\n文件：") else { return nil }
         let path = String(pathLine.dropFirst("\n文件：".count))
         return tr("全局配置核验失败：\(LocalizedText(stringLiteral: reason))。\n文件：\(path)\n已停止当前操作，请核对上述内容后重试。", language: .english)
+    }
+
+    private static func translatedSnapshotRepairMessage(_ message: String) -> String? {
+        let prefix = "技能快照内容与目录指纹不一致，当前操作已停止。\n文件："
+        let suffix = "\n请先修复技能快照，再重新预览。"
+        guard message.hasPrefix(prefix), message.hasSuffix(suffix) else { return nil }
+        let path = String(message.dropFirst(prefix.count).dropLast(suffix.count))
+        return tr("技能快照内容与目录指纹不一致，当前操作已停止。\n文件：\(LocalizedText(stringLiteral: path))\n请先修复技能快照，再重新预览。", language: .english)
     }
 
     static func tr(_ value: LocalizedText, language: AppLanguage? = nil) -> String {

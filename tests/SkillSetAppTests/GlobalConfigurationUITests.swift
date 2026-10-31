@@ -60,6 +60,48 @@ final class GlobalConfigurationUITests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: locations.home.appendingPathComponent(".agents/AGENTS.md").path))
     }
 
+    func testCorruptedSnapshotShowsRepairActionInGlobalConfiguration() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("snapshot-repair-ui-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let paths = SkillSetRuntimePaths(applicationSupportRoot: root.appendingPathComponent("state"), repositoryRoot: nil)
+        let locations = GlobalConfigurationLocations(home: root.appendingPathComponent("home"), stateRoot: paths.applicationSupportRoot)
+        let skill = try paths.makeLibraryStore().save(SkillEditorDraft(slug: "snapshot-demo",
+            document: "---\nname: snapshot-demo\ndescription: 快照修复测试\n---\n原始正文\n"), repositoryRoot: nil)
+        let model = AppModel(runtimePaths: paths, globalLocations: locations)
+        let global = model.globalConfiguration
+        global.refresh()
+        global.setSkill(skill.id, enabled: true, host: .codex)
+        model.preparedPlan = try XCTUnwrap(global.prepareDeployment(host: .codex), global.error ?? "")
+        XCTAssertTrue(model.approveAndApplyPreparedPlan(), model.lastAction)
+
+        let target = locations.skillsRoot(.codex).appendingPathComponent("snapshot-demo")
+        let snapshot = paths.versionsRoot.appendingPathComponent(String(repeating: "b", count: 64), isDirectory: true)
+        let librarySource = try XCTUnwrap(paths.makeLibraryStore().sourceURLs()[skill.id])
+        _ = try SkillAssetCopier.copy(from: librarySource, to: snapshot)
+        try FileManager.default.removeItem(at: target)
+        try FileManager.default.createSymbolicLink(at: target, withDestinationURL: snapshot)
+        let snapshotPath = try FileManager.default.destinationOfSymbolicLink(atPath: target.path)
+        try "损坏快照".write(to: URL(fileURLWithPath: snapshotPath).appendingPathComponent("SKILL.md"),
+                             atomically: true, encoding: .utf8)
+        global.refresh()
+        XCTAssertTrue(global.inspection?.resources.contains { $0.snapshotCorrupt } == true)
+
+        let previousLanguage = AppPreferences.shared.language
+        AppPreferences.shared.language = .chinese
+        defer { AppPreferences.shared.language = previousLanguage }
+        let controller = NSHostingController(rootView: ConfigurationResourceView(model: model))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1080, height: 700),
+                              styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentViewController = controller
+        defer { window.close() }
+        try await Task.sleep(for: .milliseconds(100))
+        controller.view.layoutSubtreeIfNeeded()
+        XCTAssertGreaterThan(controller.view.fittingSize.width, 0)
+        let repair = try XCTUnwrap(global.prepareSnapshotRepair())
+        XCTAssertEqual(repair.plan.metadata?["globalAction"], "repair-snapshot")
+    }
+
     func testCancelledRefreshKeepsDraftAndNextRefreshReadsExternalChange() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("global-refresh-\(UUID())")
         defer { try? FileManager.default.removeItem(at: root) }

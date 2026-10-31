@@ -94,6 +94,9 @@ enum UserFacingText {
             }
             return "要保存的位置链接到了其他位置，栖集没有修改它。请打开所在文件夹处理后再试。"
         }
+        if case let FileTransactionError.snapshotCorrupt(path) = error {
+            return "技能快照内容与目录指纹不一致，当前操作已停止。\n文件：\(path)\n请先修复技能快照，再重新预览。"
+        }
         // 只展示由 Core 定义的原因与文件路径，不回显解码器或外部进程的原始异常。
         if let globalError = error as? GlobalConfigurationError,
            case .verificationFailed = globalError {
@@ -117,6 +120,10 @@ enum UserFacingText {
                 return "原始备份缺失或已改变，无法安全还原；请检查备份后重试。"
             case "GLOBAL_OPERATION_STALE":
                 return "已有后续全局变更，请先撤销后续操作，再撤销这次操作。"
+            case "SNAPSHOT_CORRUPT":
+                return "技能快照内容与目录指纹不一致，当前操作已停止。请先修复该快照，再重新预览。"
+            case "GLOBAL_SNAPSHOT_REPAIR_UNAVAILABLE":
+                return "找不到可用于修复技能快照的技能库条目，请先检查技能库。"
             case "TEMPLATE_STORE_CORRUPT":
                 return "本机片段库无法读取，请检查数据文件后重试。"
             case "SOURCE_IMPORT_CHANGED":
@@ -163,8 +170,16 @@ enum UserFacingText {
                 return "片段无法保存，请检查名称和规则正文后再试。"
             case "PRESET_INVALID":
                 return "预设无法保存，请检查名称和所选内容后再试。"
-            case "PLAN_EXPIRED", "PLAN_STALE", "PLAN_DIGEST_MISMATCH", "PLUGIN_STATE_STALE", "PROJECT_LOCK_STALE":
-                return "当前目标已变化，操作已停止。请重新读取当前配置，确认目标路径和选择后，再按页面提示重新保存或审阅。"
+            case "PLAN_EXPIRED":
+                return "变更计划已过期，请重新读取当前配置后再预览。"
+            case "PLAN_STALE":
+                return "目标文件在操作开始后已改变。请重新读取当前配置，确认目标路径和选择后，再重新保存或审阅。"
+            case "PLAN_DIGEST_MISMATCH":
+                return "变更计划内容与当前记录不一致，请重新读取当前配置后再预览。"
+            case "PLUGIN_STATE_STALE":
+                return "插件状态在预览后已改变，请重新扫描并重新生成计划。"
+            case "PROJECT_LOCK_STALE":
+                return "项目版本记录已改变，请重新读取项目后再生成计划。"
             case "APPROVAL_REQUIRED":
                 return "请先在本机审阅并批准这份计划。"
             case "PLAN_ALREADY_APPLIED":

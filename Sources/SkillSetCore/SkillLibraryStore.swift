@@ -32,6 +32,11 @@ public struct SkillInvocationPolicy: Equatable, Sendable {
         self.claudeManualOnly = claudeManualOnly
     }
 
+    /// 只有两个宿主都允许隐式调用时，统一开关才显示为开启。
+    public var allowsImplicitInvocation: Bool {
+        !codexManualOnly && !claudeManualOnly
+    }
+
     public func manualOnly(for target: SkillInvocationTarget) -> Bool {
         switch target {
         case .codex: codexManualOnly

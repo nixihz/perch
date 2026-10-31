@@ -20,7 +20,24 @@ enum ManagedSkillLink {
         guard pointsAtLibrary || pointsAtSource || legacyVersion else { return nil }
         let contentRoot = destination.resolvingSymlinksInPath().standardizedFileURL
         let content = try SkillAssetCopier.analyze(from: contentRoot).contentHash
-        if legacyVersion, content != destination.lastPathComponent { throw FileTransactionError.staleFile(url.path) }
+        if legacyVersion, content != destination.lastPathComponent { throw FileTransactionError.snapshotCorrupt(url.path) }
+        return expectedHash(destination: destination, contentHash: content)
+    }
+
+    /// 仅用于展示和显式修复入口，保留真实内容指纹但不绕过快照完整性检查。
+    static func observedHash(_ url: URL, versionsRoot: URL?, libraryRoot: URL? = nil, sourcesRoot: URL? = nil) throws -> String? {
+        guard let target = try? FileManager.default.destinationOfSymbolicLink(atPath: url.path) else { return nil }
+        let destination = URL(fileURLWithPath: target, relativeTo: url.deletingLastPathComponent()).standardizedFileURL
+        let library = libraryRoot?.standardizedFileURL
+        let sources = sourcesRoot?.standardizedFileURL
+        let versions = versionsRoot?.standardizedFileURL
+        let pointsAtLibrary = library.map { destination.deletingLastPathComponent().path == $0.path } ?? false
+        let pointsAtSource = sources.map { destination.path.hasPrefix($0.path + "/") } ?? false
+        let legacyVersion = versions.map { destination.deletingLastPathComponent().path == $0.path } ?? false
+            && destination.lastPathComponent.range(of: #"^[0-9a-f]{64}$"#, options: .regularExpression) != nil
+        guard pointsAtLibrary || pointsAtSource || legacyVersion else { return nil }
+        let contentRoot = destination.resolvingSymlinksInPath().standardizedFileURL
+        let content = try SkillAssetCopier.analyze(from: contentRoot).contentHash
         return expectedHash(destination: destination, contentHash: content)
     }
 

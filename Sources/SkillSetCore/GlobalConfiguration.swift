@@ -82,12 +82,14 @@ public enum GlobalVerificationReason: String, Sendable {
 public enum GlobalConfigurationError: Error, LocalizedError, SkillSetCodedError {
     case corruptState
     case verificationFailed(GlobalVerificationReason, path: String)
+    case snapshotRepairUnavailable(String)
     case baselineMissing
     case staleOperation
 
     public var code: String {
         switch self {
         case .corruptState, .verificationFailed: "GLOBAL_STATE_CORRUPT"
+        case .snapshotRepairUnavailable: "GLOBAL_SNAPSHOT_REPAIR_UNAVAILABLE"
         case .baselineMissing: "GLOBAL_BASELINE_MISSING"
         case .staleOperation: "GLOBAL_OPERATION_STALE"
         }
@@ -97,6 +99,8 @@ public enum GlobalConfigurationError: Error, LocalizedError, SkillSetCodedError 
         case .corruptState: "全局管理记录损坏或缺少本机操作凭证，请先检查操作历史。"
         case let .verificationFailed(reason, path):
             "全局配置核验失败：\(reason.rawValue)。\(path.isEmpty ? "" : "\n文件：\(path)")\n已停止当前操作，请核对上述内容后重试。"
+        case let .snapshotRepairUnavailable(path):
+            "找不到可用于修复技能快照的技能库条目：\(path)"
         case .baselineMissing: "原始备份缺失或已改变，已停止还原。"
         case .staleOperation: "已有后续全局变更，请先撤销后续操作。"
         }
@@ -144,7 +148,16 @@ public struct GlobalResourceObservation: Identifiable, Sendable {
     public let managed: Bool
     public let modified: Bool
     public let symbolicLink: Bool
+    public let snapshotCorrupt: Bool
     public var id: String { path }
+
+    public init(path: String, managed: Bool, modified: Bool, symbolicLink: Bool, snapshotCorrupt: Bool = false) {
+        self.path = path
+        self.managed = managed
+        self.modified = modified
+        self.symbolicLink = symbolicLink
+        self.snapshotCorrupt = snapshotCorrupt
+    }
 }
 
 public struct GlobalConfigurationInspection: Sendable {
@@ -203,9 +216,24 @@ public struct GlobalConfigurationManager {
                 let url = skillsRoot.appendingPathComponent(child.lastPathComponent)
                 let link = isLink(url)
                 let record = state?.managed[url.path]
-                let actual = record == nil ? nil : try hash(url)
+                let actual: String?
+                let snapshotCorrupt: Bool
+                if record == nil {
+                    actual = nil
+                    snapshotCorrupt = false
+                } else {
+                    do {
+                        actual = try hash(url)
+                        snapshotCorrupt = false
+                    } catch FileTransactionError.snapshotCorrupt {
+                        actual = try ManagedSkillLink.observedHash(url, versionsRoot: paths.versionsRoot,
+                            libraryRoot: paths.libraryDirectoryURL, sourcesRoot: paths.sourcesRoot)
+                        snapshotCorrupt = true
+                    }
+                }
                 resources.append(GlobalResourceObservation(path: url.path, managed: record != nil,
-                    modified: record.map { $0.hash != actual } ?? false, symbolicLink: link))
+                    modified: record.map { $0.hash != actual } ?? false, symbolicLink: link,
+                    snapshotCorrupt: snapshotCorrupt))
             }
         }
         // 用户手工删除的受管包仍需显示，以便解释后续计划为何冲突。
@@ -383,6 +411,8 @@ public struct GlobalConfigurationManager {
         try validateSkillsRoot(host)
         guard plan.projectPath == locations.transactionRoot(host).path else { throw DeploymentError.invalidPlan }
         let root = locations.transactionRoot(host)
+        let allowingCorruptSnapshot = plan.metadata?["allowSnapshotRepair"] == "1"
+            && plan.metadata?["globalAction"] == "repair-snapshot"
         guard root.resolvingSymlinksInPath().standardizedFileURL.path == root.path else {
             throw DeploymentError.symlinkDetected(root.path)
         }
@@ -392,7 +422,7 @@ public struct GlobalConfigurationManager {
                   url == locations.stateURL(host) || allowedResource(url, host: host) else {
                 throw DeploymentError.pathOutsideRoot(path)
             }
-            try check(url, root: root)
+            try check(url, root: root, allowingCorruptSnapshot: allowingCorruptSnapshot)
         }
     }
 
@@ -409,11 +439,23 @@ public struct GlobalConfigurationManager {
         try check(resolved, root: locations.transactionRoot(host))
     }
 
-    func hash(_ url: URL) throws -> String? {
-        if let hash = try ManagedSkillLink.hash(
-            url, versionsRoot: paths.versionsRoot,
-            libraryRoot: paths.libraryDirectoryURL, sourcesRoot: paths.sourcesRoot
-        ) { return hash }
+    func hash(_ url: URL, allowingCorruptSnapshot: Bool = false) throws -> String? {
+        do {
+            if let hash = try ManagedSkillLink.hash(
+                url, versionsRoot: paths.versionsRoot,
+                libraryRoot: paths.libraryDirectoryURL, sourcesRoot: paths.sourcesRoot
+            ) { return hash }
+        } catch {
+            if allowingCorruptSnapshot,
+               let transactionError = error as? FileTransactionError,
+               case .snapshotCorrupt = transactionError {
+                return try ManagedSkillLink.observedHash(
+                    url, versionsRoot: paths.versionsRoot,
+                    libraryRoot: paths.libraryDirectoryURL, sourcesRoot: paths.sourcesRoot
+                )
+            }
+            throw error
+        }
         // 只在已配置的目录边界内检查，不能把 macOS 的 /var 系统别名误判为用户置换。
         let roots = [locations.home, locations.stateRoot, locations.codexRoot, locations.claudeRoot]
             + SkillConfigurationTarget.allCases.map { locations.skillsRoot($0) }
@@ -430,17 +472,29 @@ public struct GlobalConfigurationManager {
         return try SkillAssetCopier.analyze(from: url).contentHash
     }
 
-    func check(_ url: URL, root: URL) throws {
+    func check(_ url: URL, root: URL, allowingCorruptSnapshot: Bool = false) throws {
         guard url.standardizedFileURL.path == url.path, url.path != root.path,
               root.path == "/" || url.path.hasPrefix(root.path + "/") else { throw DeploymentError.pathOutsideRoot(url.path) }
         var cursor = url
         while cursor.path != root.path {
             if isLink(cursor) {
-                guard cursor == url, try ManagedSkillLink.hash(
-                    cursor, versionsRoot: paths.versionsRoot,
-                    libraryRoot: paths.libraryDirectoryURL, sourcesRoot: paths.sourcesRoot
-                ) != nil else {
-                    throw DeploymentError.symlinkDetected(cursor.path)
+                var accepted = false
+                do {
+                    guard cursor == url, try ManagedSkillLink.hash(
+                        cursor, versionsRoot: paths.versionsRoot,
+                        libraryRoot: paths.libraryDirectoryURL, sourcesRoot: paths.sourcesRoot
+                    ) != nil else {
+                        throw DeploymentError.symlinkDetected(cursor.path)
+                    }
+                } catch {
+                    if allowingCorruptSnapshot, cursor == url,
+                       let transactionError = error as? FileTransactionError,
+                       case .snapshotCorrupt = transactionError,
+                       (try? ManagedSkillLink.observedHash(cursor, versionsRoot: paths.versionsRoot,
+                           libraryRoot: paths.libraryDirectoryURL, sourcesRoot: paths.sourcesRoot)) != nil {
+                        accepted = true
+                    }
+                    guard accepted else { throw error }
                 }
             }
             cursor.deleteLastPathComponent()

@@ -398,6 +398,42 @@ struct GlobalConfigurationTests {
 
 struct GlobalVerificationDiagnosticsTests {
     @Test
+    func corruptedSnapshotDoesNotBlockInspectionAndCanBeRepairedThroughAnApprovedPlan() throws {
+        let f = try GlobalFixture()
+        defer { f.cleanup() }
+        _ = try f.apply(f.plan(method: .symlink))
+
+        let snapshot = f.paths.versionsRoot.appendingPathComponent(String(repeating: "a", count: 64), isDirectory: true)
+        _ = try SkillAssetCopier.copy(from: f.source, to: snapshot)
+        try FileManager.default.removeItem(at: f.skill)
+        try FileManager.default.createSymbolicLink(at: f.skill, withDestinationURL: snapshot)
+        try f.write("被意外改写的快照", to: snapshot.appendingPathComponent("SKILL.md"))
+
+        let inspection = try f.manager.inspect(host: f.host)
+        let observed = try #require(inspection.resources.first { $0.path == f.skill.path })
+        #expect(observed.snapshotCorrupt)
+        #expect(observed.modified)
+        #expect(inspection.resources.contains { $0.path == f.rules.path })
+
+        let repair = try f.manager.makeSnapshotRepairPlan(host: f.host)
+        #expect(repair.plan.metadata?["globalAction"] == "repair-snapshot")
+        #expect(repair.plan.metadata?["allowSnapshotRepair"] == "1")
+        let relativeSkillPath = f.manager.relative(f.skill, root: URL(fileURLWithPath: repair.plan.projectPath))
+        #expect(repair.plan.changes.contains { $0.relativePath == relativeSkillPath && $0.action == "update" })
+        _ = try f.apply(repair)
+
+        let repairedTarget = try FileManager.default.destinationOfSymbolicLink(atPath: f.skill.path)
+        let repairedHash = try SkillAssetCopier.analyze(from: f.source).contentHash
+        #expect(repairedTarget == f.paths.versionsRoot.appendingPathComponent(repairedHash).path)
+        let repaired = try #require(try f.manager.inspect(host: f.host).resources.first { $0.path == f.skill.path })
+        #expect(!repaired.snapshotCorrupt)
+        #expect(!repaired.modified)
+        #expect(try f.read(f.skill.appendingPathComponent("SKILL.md")).contains("第一版"))
+        let followUp = try f.plan(method: .symlink)
+        #expect(!followUp.plan.changes.contains { $0.relativePath == relativeSkillPath })
+    }
+
+    @Test
     func signedLegacyHostPathsAreRepairedBeforeTheNextApprovedPlan() throws {
         let f = try GlobalFixture()
         defer { f.cleanup() }

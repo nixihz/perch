@@ -79,7 +79,8 @@ final class LocalizationTests: XCTestCase {
 
     func testCodedAndSystemErrorsHaveTranslatedSafeMessages() {
         let codes = [
-            "PLAN_EXPIRED", "APPROVAL_REQUIRED", "PLAN_ALREADY_APPLIED", "PLAN_NO_CHANGES",
+            "PLAN_EXPIRED", "SNAPSHOT_CORRUPT", "GLOBAL_SNAPSHOT_REPAIR_UNAVAILABLE",
+            "APPROVAL_REQUIRED", "PLAN_ALREADY_APPLIED", "PLAN_NO_CHANGES",
             "RECOVERY_REQUIRED", "PROJECT_PATH_MISSING", "PROJECT_ALREADY_REGISTERED",
             "PROJECT_NAME_INVALID", "PROJECT_REGISTRY_CORRUPT", "PROJECT_MANIFEST_CORRUPT",
             "AGENT_UNSUPPORTED", "REPOSITORY_NOT_FOUND", "SKILL_SOURCE_CHANGED", "SKILL_BLOCKED",
@@ -120,8 +121,41 @@ final class LocalizationTests: XCTestCase {
         XCTAssertTrue(english.contains("Reload the current configuration"), english)
     }
 
-    func testBuiltInMetadataIsLocalizedButSkillDescriptionsStayOriginal() {
-        let snapshot = AppSnapshot.load()
+    func testSnapshotCorruptionMessageLocalizesTheRepairActionAndKeepsPath() {
+        let path = "/local/.agents/skills/demo"
+        let source = UserFacingText.error(FileTransactionError.snapshotCorrupt(path))
+        let english = L10n.text(source, language: .english)
+        XCTAssertTrue(english.contains("directory fingerprint"), english)
+        XCTAssertTrue(english.contains("Repair the skill snapshot"), english)
+        XCTAssertTrue(english.contains(path), english)
+    }
+
+    func testBuiltInMetadataIsLocalizedButSkillDescriptionsStayOriginal() throws {
+        let catalog = try JSONDecoder().decode(CatalogDocument.self, from: Data(#"""
+        {
+          "schemaVersion": 1,
+          "hashAlgorithm": "sha256:path-content-executable:v1",
+          "entries": [
+            {
+              "id": "fixture/localized-skill",
+              "slug": "localized-skill",
+              "declaredName": "localized-skill",
+              "description": "中文技能说明不会被翻译",
+              "declaredVersion": null,
+              "metadataReview": "reviewed",
+              "sourceId": "fixture",
+              "path": "skills/localized-skill",
+              "contentHash": "0000000000000000000000000000000000000000000000000000000000000000",
+              "fileCount": 1,
+              "bytes": 1,
+              "integrity": "ok",
+              "issues": [],
+              "excludedPaths": []
+            }
+          ]
+        }
+        """#.utf8))
+        let snapshot = AppSnapshot.load().replacingCatalog(catalog)
         for preset in snapshot.presets {
             XCTAssertFalse(containsChinese(L10n.text(preset.name, language: .english)))
             XCTAssertFalse(containsChinese(L10n.text(preset.description, language: .english)))

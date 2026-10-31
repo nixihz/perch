@@ -2,6 +2,7 @@ import Foundation
 
 public enum FileTransactionError: Error, LocalizedError, Equatable, Sendable {
     case staleFile(String)
+    case snapshotCorrupt(String)
     case unsafeDestination(String)
     case journalCorrupt(String)
     case rollbackConflict(String)
@@ -11,6 +12,7 @@ public enum FileTransactionError: Error, LocalizedError, Equatable, Sendable {
     public var code: String {
         switch self {
         case .staleFile: "PLAN_STALE"
+        case .snapshotCorrupt: "SNAPSHOT_CORRUPT"
         case .unsafeDestination: "PATH_OUTSIDE_ROOT"
         case .journalCorrupt: "RECOVERY_REQUIRED"
         case .rollbackConflict: "ROLLBACK_CONFLICT"
@@ -23,6 +25,8 @@ public enum FileTransactionError: Error, LocalizedError, Equatable, Sendable {
         switch self {
         case let .staleFile(path):
             return "目标文件在生成计划后发生变化：\(path)"
+        case let .snapshotCorrupt(path):
+            return "技能固定版本快照的内容与目录指纹不一致：\(path)"
         case let .unsafeDestination(path):
             return "目标路径不安全：\(path)"
         case let .journalCorrupt(path):
@@ -148,6 +152,8 @@ public struct FileTransactionExecutor {
 
     public func apply(plan: DeploymentPlan, from stagingRoot: URL) throws -> TransactionResult {
         let projectRoot = URL(fileURLWithPath: plan.projectPath, isDirectory: true).resolvingSymlinksInPath().standardizedFileURL
+        let allowingCorruptSnapshot = plan.metadata?["allowSnapshotRepair"] == "1"
+            && plan.metadata?["globalAction"] == "repair-snapshot"
         try validate(plan: plan, stagingRoot: stagingRoot, projectRoot: projectRoot)
         let operationID = idGenerator()
         let operationRoot = operationsRoot.appendingPathComponent(operationID.uuidString, isDirectory: true)
@@ -182,9 +188,9 @@ public struct FileTransactionExecutor {
                 let destination = targetRoot.appendingPathComponent(change.relativePath)
                 try ensureInsideProject(destination, root: targetRoot)
                 try ensureNoSymlinkInParents(destination, root: targetRoot)
-                try ensureTargetIsNotSymlink(destination)
+                try ensureTargetIsNotSymlink(destination, allowingCorruptSnapshot: allowingCorruptSnapshot)
 
-                let actualHash = try currentContentHash(destination)
+                let actualHash = try currentContentHash(destination, allowingCorruptSnapshot: allowingCorruptSnapshot)
                 let expected = change.beforeHash
                 guard actualHash == expected else {
                     throw FileTransactionError.staleFile(change.relativePath)
@@ -194,7 +200,7 @@ public struct FileTransactionExecutor {
                     let backup = operationRoot.appendingPathComponent("backup/\(change.relativePath)")
                     try fileManager.createDirectory(at: backup.deletingLastPathComponent(), withIntermediateDirectories: true)
                     try fileManager.copyItem(at: destination, to: backup)
-                    guard try currentContentHash(backup) == change.beforeHash else {
+                    guard try currentContentHash(backup, allowingCorruptSnapshot: allowingCorruptSnapshot) == change.beforeHash else {
                         throw FileTransactionError.staleFile(change.relativePath)
                     }
                     let displaced = siblingTemporaryURL(for: destination, suffix: "removed")
@@ -202,15 +208,15 @@ public struct FileTransactionExecutor {
                     steps[index].state = "staged"
                     journal.steps = steps
                     try writeJournal(journal)
-                    guard try currentContentHash(destination) == change.beforeHash else {
+                    guard try currentContentHash(destination, allowingCorruptSnapshot: allowingCorruptSnapshot) == change.beforeHash else {
                         throw FileTransactionError.staleFile(change.relativePath)
                     }
                     try fileManager.moveItem(at: destination, to: displaced)
                     steps[index].state = "old-moved"
                     journal.steps = steps
                     try writeJournal(journal)
-                    guard try currentContentHash(displaced) == change.beforeHash,
-                          try currentContentHash(destination) == nil else {
+                    guard try currentContentHash(displaced, allowingCorruptSnapshot: allowingCorruptSnapshot) == change.beforeHash,
+                          try currentContentHash(destination, allowingCorruptSnapshot: allowingCorruptSnapshot) == nil else {
                         throw FileTransactionError.staleFile(change.relativePath)
                     }
                     steps[index].state = "applied"
@@ -224,7 +230,7 @@ public struct FileTransactionExecutor {
                 guard fileManager.fileExists(atPath: staged.path) else {
                     throw FileTransactionError.invalidStaging(staged.path)
                 }
-                guard try currentContentHash(staged) == change.afterHash else {
+                guard try currentContentHash(staged, allowingCorruptSnapshot: allowingCorruptSnapshot) == change.afterHash else {
                     throw FileTransactionError.invalidStaging(staged.path)
                 }
                 try fileManager.createDirectory(
@@ -236,7 +242,7 @@ public struct FileTransactionExecutor {
                     let backup = operationRoot.appendingPathComponent("backup/\(change.relativePath)")
                     try fileManager.createDirectory(at: backup.deletingLastPathComponent(), withIntermediateDirectories: true)
                     try fileManager.copyItem(at: destination, to: backup)
-                    guard try currentContentHash(backup) == beforeHash else {
+                    guard try currentContentHash(backup, allowingCorruptSnapshot: allowingCorruptSnapshot) == beforeHash else {
                         throw FileTransactionError.staleFile(change.relativePath)
                     }
                 }
@@ -248,7 +254,7 @@ public struct FileTransactionExecutor {
                 steps[index].temporaryPath = temporary.path
                 steps[index].displacedPath = displaced.path
                 try fileManager.copyItem(at: staged, to: temporary)
-                guard try currentContentHash(temporary) == change.afterHash else {
+                guard try currentContentHash(temporary, allowingCorruptSnapshot: allowingCorruptSnapshot) == change.afterHash else {
                     try? fileManager.removeItem(at: temporary)
                     throw FileTransactionError.invalidStaging(staged.path)
                 }
@@ -263,7 +269,7 @@ public struct FileTransactionExecutor {
                     try writeJournal(journal)
                 }
                 try fileManager.moveItem(at: temporary, to: destination)
-                let writtenHash = try currentContentHash(destination) ?? ""
+                let writtenHash = try currentContentHash(destination, allowingCorruptSnapshot: allowingCorruptSnapshot) ?? ""
                 guard writtenHash == change.afterHash else {
                     throw FileTransactionError.staleFile(change.relativePath)
                 }
@@ -298,7 +304,7 @@ public struct FileTransactionExecutor {
             )
             var recovered = false
             do {
-                _ = try rollback(journal: rollbackJournal)
+                _ = try rollback(journal: rollbackJournal, allowingCorruptSnapshot: allowingCorruptSnapshot)
                 recovered = true
             } catch {
                 // 恢复失败保留 failed journal，交给下一次启动处理
@@ -325,7 +331,8 @@ public struct FileTransactionExecutor {
                   ["applying", "failed", "rolling-back"].contains(journal.state) else {
                 continue
             }
-            _ = try rollback(journal: journal)
+            _ = try rollback(journal: journal, allowingCorruptSnapshot: journal.metadata?["allowSnapshotRepair"] == "1"
+                && journal.metadata?["globalAction"] == "repair-snapshot")
             recovered.append(id)
         }
         return recovered
@@ -333,10 +340,11 @@ public struct FileTransactionExecutor {
 
     public func rollback(operationID: UUID) throws -> [String] {
         let journal = try loadJournal(operationID)
-        return try rollback(journal: journal)
+        return try rollback(journal: journal, allowingCorruptSnapshot: journal.metadata?["allowSnapshotRepair"] == "1"
+            && journal.metadata?["globalAction"] == "repair-snapshot")
     }
 
-    private func rollback(journal: FileTransactionJournal) throws -> [String] {
+    private func rollback(journal: FileTransactionJournal, allowingCorruptSnapshot: Bool = false) throws -> [String] {
         guard journal.state != "rolled-back", journal.state != "failed-rolled-back", journal.state != "recovered" else { return [] }
         let projectRoot = URL(fileURLWithPath: journal.projectPath, isDirectory: true).resolvingSymlinksInPath()
         let operationRoot = operationsRoot.appendingPathComponent(journal.operationID.uuidString, isDirectory: true)
@@ -353,16 +361,16 @@ public struct FileTransactionExecutor {
             let destination = targetRoot.appendingPathComponent(step.relativePath)
             try ensureInsideProject(destination, root: targetRoot)
             try ensureNoSymlinkInParents(destination, root: targetRoot)
-            try ensureTargetIsNotSymlink(destination)
-            let current = try currentContentHash(destination)
+            try ensureTargetIsNotSymlink(destination, allowingCorruptSnapshot: allowingCorruptSnapshot)
+            let current = try currentContentHash(destination, allowingCorruptSnapshot: allowingCorruptSnapshot)
             let expectedAfter: String? = step.action == "remove" ? nil : step.afterHash
             guard current == expectedAfter || (step.state == "restoring" && (current == step.beforeHash || current == nil)) else {
                 throw FileTransactionError.rollbackConflict(step.relativePath)
             }
-            try validateRollbackTemporaries(step, destination: destination)
+            try validateRollbackTemporaries(step, destination: destination, allowingCorruptSnapshot: allowingCorruptSnapshot)
             if let beforeHash = step.beforeHash {
                 let backup = operationRoot.appendingPathComponent("backup/\(step.relativePath)")
-                guard try currentContentHash(backup) == beforeHash else {
+                guard try currentContentHash(backup, allowingCorruptSnapshot: allowingCorruptSnapshot) == beforeHash else {
                     throw FileTransactionError.rollbackConflict(step.relativePath)
                 }
             }
@@ -375,10 +383,11 @@ public struct FileTransactionExecutor {
             let destination = targetRoot.appendingPathComponent(step.relativePath)
             try ensureInsideProject(destination, root: targetRoot)
             try ensureNoSymlinkInParents(destination, root: targetRoot)
-            try ensureTargetIsNotSymlink(destination)
-            let current = try currentContentHash(destination)
+            try ensureTargetIsNotSymlink(destination, allowingCorruptSnapshot: allowingCorruptSnapshot)
+            let current = try currentContentHash(destination, allowingCorruptSnapshot: allowingCorruptSnapshot)
             if step.state == "restoring", current == step.beforeHash {
-                try cleanupRollbackTemporaries(step, destination: destination)
+                try cleanupRollbackTemporaries(step, destination: destination,
+                    allowingCorruptSnapshot: allowingCorruptSnapshot)
                 if let index = updated.steps.firstIndex(where: { $0.relativePath == step.relativePath }) {
                     updated.steps[index].state = "rolled-back"
                 }
@@ -396,10 +405,11 @@ public struct FileTransactionExecutor {
             try writeJournal(updated)
             if let beforeHash = step.beforeHash {
                 let backup = operationRoot.appendingPathComponent("backup/\(step.relativePath)")
-                guard try currentContentHash(backup) == beforeHash else {
+                guard try currentContentHash(backup, allowingCorruptSnapshot: allowingCorruptSnapshot) == beforeHash else {
                     throw FileTransactionError.rollbackConflict(step.relativePath)
                 }
-                try cleanupRollbackTemporaries(step, destination: destination)
+                try cleanupRollbackTemporaries(step, destination: destination,
+                    allowingCorruptSnapshot: allowingCorruptSnapshot)
                 let restore = siblingTemporaryURL(for: destination, suffix: "restore")
                 let discarded = siblingTemporaryURL(for: destination, suffix: "discarded")
                 if let index = updated.steps.firstIndex(where: { $0.relativePath == step.relativePath }) {
@@ -409,7 +419,7 @@ public struct FileTransactionExecutor {
                 try writeJournal(updated)
                 try removeIfPresent(restore)
                 try fileManager.copyItem(at: backup, to: restore)
-                guard try currentContentHash(restore) == beforeHash else {
+                guard try currentContentHash(restore, allowingCorruptSnapshot: allowingCorruptSnapshot) == beforeHash else {
                     try? fileManager.removeItem(at: restore)
                     throw FileTransactionError.rollbackConflict(step.relativePath)
                 }
@@ -418,7 +428,7 @@ public struct FileTransactionExecutor {
                     try fileManager.moveItem(at: destination, to: discarded)
                 }
                 try fileManager.moveItem(at: restore, to: destination)
-                guard try currentContentHash(destination) == beforeHash else {
+                guard try currentContentHash(destination, allowingCorruptSnapshot: allowingCorruptSnapshot) == beforeHash else {
                     throw FileTransactionError.rollbackConflict(step.relativePath)
                 }
                 try removeIfPresent(discarded)
@@ -430,7 +440,8 @@ public struct FileTransactionExecutor {
             } else if fileManager.fileExists(atPath: destination.path) {
                 try fileManager.removeItem(at: destination)
             }
-            try cleanupRollbackTemporaries(step, destination: destination)
+            try cleanupRollbackTemporaries(step, destination: destination,
+                allowingCorruptSnapshot: allowingCorruptSnapshot)
             restored.append(step.relativePath)
             if let index = updated.steps.firstIndex(where: { $0.relativePath == step.relativePath }) {
                 updated.steps[index].state = "rolled-back"
@@ -472,6 +483,8 @@ public struct FileTransactionExecutor {
     }
 
     private func validate(plan: DeploymentPlan, stagingRoot: URL, projectRoot: URL) throws {
+        let allowingCorruptSnapshot = plan.metadata?["allowSnapshotRepair"] == "1"
+            && plan.metadata?["globalAction"] == "repair-snapshot"
         if plan.metadata?["planType"] == "skill-deployment",
            plan.metadata?["projectStateStorage"] != "application-v1" {
             throw DeploymentError.invalidPlan
@@ -489,8 +502,8 @@ public struct FileTransactionExecutor {
             let destination = targetRoot.appendingPathComponent(change.relativePath)
             try ensureInsideProject(destination, root: targetRoot)
             try ensureNoSymlinkInParents(destination, root: targetRoot)
-            try ensureTargetIsNotSymlink(destination)
-            guard try currentContentHash(destination) == change.beforeHash else {
+            try ensureTargetIsNotSymlink(destination, allowingCorruptSnapshot: allowingCorruptSnapshot)
+            guard try currentContentHash(destination, allowingCorruptSnapshot: allowingCorruptSnapshot) == change.beforeHash else {
                 throw FileTransactionError.staleFile(change.relativePath)
             }
             if change.action == "remove" {
@@ -504,7 +517,7 @@ public struct FileTransactionExecutor {
             }
             let staged = stagingRoot.appendingPathComponent(change.relativePath)
             guard fileManager.fileExists(atPath: staged.path),
-                  try currentContentHash(staged) == change.afterHash else {
+                  try currentContentHash(staged, allowingCorruptSnapshot: allowingCorruptSnapshot) == change.afterHash else {
                 throw FileTransactionError.invalidStaging(staged.path)
             }
         }
@@ -513,8 +526,8 @@ public struct FileTransactionExecutor {
             let destination = targetRoot.appendingPathComponent(observation.relativePath)
             try ensureInsideProject(destination, root: targetRoot)
             try ensureNoSymlinkInParents(destination, root: targetRoot)
-            try ensureTargetIsNotSymlink(destination)
-            guard try currentContentHash(destination) == observation.contentHash else {
+            try ensureTargetIsNotSymlink(destination, allowingCorruptSnapshot: allowingCorruptSnapshot)
+            guard try currentContentHash(destination, allowingCorruptSnapshot: allowingCorruptSnapshot) == observation.contentHash else {
                 throw FileTransactionError.staleFile(observation.relativePath)
             }
         }
@@ -557,10 +570,21 @@ public struct FileTransactionExecutor {
         }
     }
 
-    private func ensureTargetIsNotSymlink(_ target: URL) throws {
+    private func ensureTargetIsNotSymlink(_ target: URL, allowingCorruptSnapshot: Bool = false) throws {
         if (try? fileManager.destinationOfSymbolicLink(atPath: target.path)) != nil {
-            guard try ManagedSkillLink.hash(target, versionsRoot: versionsRoot, libraryRoot: libraryRoot, sourcesRoot: sourcesRoot) != nil else {
-                throw FileTransactionError.unsafeDestination(target.path)
+            do {
+                guard try ManagedSkillLink.hash(target, versionsRoot: versionsRoot, libraryRoot: libraryRoot, sourcesRoot: sourcesRoot) != nil else {
+                    throw FileTransactionError.unsafeDestination(target.path)
+                }
+            } catch {
+                if allowingCorruptSnapshot,
+                   let transactionError = error as? FileTransactionError,
+                   case .snapshotCorrupt = transactionError,
+                   (try? ManagedSkillLink.observedHash(target, versionsRoot: versionsRoot,
+                       libraryRoot: libraryRoot, sourcesRoot: sourcesRoot)) != nil {
+                    return
+                }
+                throw error
             }
         }
     }
@@ -578,7 +602,8 @@ public struct FileTransactionExecutor {
         }
     }
 
-    private func validateRollbackTemporaries(_ step: FileTransactionStep, destination: URL) throws {
+    private func validateRollbackTemporaries(_ step: FileTransactionStep, destination: URL,
+                                             allowingCorruptSnapshot: Bool = false) throws {
         for (path, expected) in [
             (step.restorePath, step.beforeHash),
             (step.discardedPath, step.action == "remove" ? nil : step.afterHash),
@@ -588,15 +613,17 @@ public struct FileTransactionExecutor {
             guard let path else { continue }
             let candidate = URL(fileURLWithPath: path)
             try ensureSameParent(candidate, as: destination)
-            try ensureTargetIsNotSymlink(candidate)
-            if let hash = try currentContentHash(candidate), hash != expected {
+            try ensureTargetIsNotSymlink(candidate, allowingCorruptSnapshot: allowingCorruptSnapshot)
+            if let hash = try currentContentHash(candidate, allowingCorruptSnapshot: allowingCorruptSnapshot), hash != expected {
                 throw FileTransactionError.rollbackConflict(step.relativePath)
             }
         }
     }
 
-    private func cleanupRollbackTemporaries(_ step: FileTransactionStep, destination: URL) throws {
-        try validateRollbackTemporaries(step, destination: destination)
+    private func cleanupRollbackTemporaries(_ step: FileTransactionStep, destination: URL,
+                                            allowingCorruptSnapshot: Bool = false) throws {
+        try validateRollbackTemporaries(step, destination: destination,
+            allowingCorruptSnapshot: allowingCorruptSnapshot)
         for path in [step.restorePath, step.discardedPath, step.temporaryPath, step.displacedPath].compactMap({ $0 }) {
             try removeIfPresent(URL(fileURLWithPath: path))
         }
@@ -608,8 +635,18 @@ public struct FileTransactionExecutor {
         }
     }
 
-    private func currentContentHash(_ url: URL) throws -> String? {
-        if let hash = try ManagedSkillLink.hash(url, versionsRoot: versionsRoot, libraryRoot: libraryRoot, sourcesRoot: sourcesRoot) { return hash }
+    private func currentContentHash(_ url: URL, allowingCorruptSnapshot: Bool = false) throws -> String? {
+        do {
+            if let hash = try ManagedSkillLink.hash(url, versionsRoot: versionsRoot, libraryRoot: libraryRoot, sourcesRoot: sourcesRoot) { return hash }
+        } catch {
+            if allowingCorruptSnapshot,
+               let transactionError = error as? FileTransactionError,
+               case .snapshotCorrupt = transactionError {
+                return try ManagedSkillLink.observedHash(url, versionsRoot: versionsRoot,
+                    libraryRoot: libraryRoot, sourcesRoot: sourcesRoot)
+            }
+            throw error
+        }
         var isDirectory: ObjCBool = false
         guard fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
             return nil
