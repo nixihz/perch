@@ -1,6 +1,6 @@
 {
   "version": "0.0.1",
-  "build": "14",
+  "build": "15",
   "feedURL": "https://updates.example.com/x/perch/updates/macos/appcast.xml",
   "publicEDKey": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 }
