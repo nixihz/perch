@@ -186,8 +186,6 @@ struct MCPServersView: View {
                     }
                     Divider()
                 }
-                Text(L10n.tr("草稿选择、历史写入和 AI 工具加载是三个状态。写入记录不代表服务正在运行。"))
-                    .font(AppFont.metadata).foregroundStyle(.secondary)
             }.frame(maxWidth: .infinity, alignment: .leading)
         }
     }

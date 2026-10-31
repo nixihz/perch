@@ -52,10 +52,6 @@ struct SkillsView: View {
                     .disabled(checkedSkillIDs.isEmpty || model.isWorking)
                     .accessibilityIdentifier("skills.install-user")
             }
-            Text(L10n.tr("行末工具图标用于修改技能调用元信息：启用后模型不会自动调用，仍可由用户显式触发。Codex 写入 agents/openai.yaml，Claude Code 写入 SKILL.md；Agents 标准没有对应字段。"))
-                .font(AppFont.secondary)
-                .foregroundStyle(.secondary)
-                .accessibilityIdentifier("skills.invocation-policy.notice")
             if let error = model.skillMetadataError ?? model.skillRemovalError ?? model.libraryError, editor == nil {
                 Text(L10n.text(error)).foregroundStyle(.red).font(AppFont.secondary).textSelection(.enabled)
             }
@@ -226,25 +222,6 @@ struct SkillsView: View {
                                 }
                                 .buttonStyle(AppPressButtonStyle())
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                SkillTargetToggles(
-                                    skillName: skill.slug,
-                                    identifierPrefix: "skills.invocation-policy.\(skill.id)",
-                                    targets: SkillConfigurationTarget.allCases,
-                                    savesImmediately: true,
-                                    metadataMode: true,
-                                    isSelected: { host in
-                                        guard let target = SkillInvocationTarget(rawValue: host.rawValue) else { return false }
-                                        return model.invocationPolicy(for: skill).manualOnly(for: target)
-                                    },
-                                    isEnabled: { host in
-                                        host != .agents && canEditInvocationMetadata(skill) && !model.isUpdatingSkillMetadata
-                                    },
-                                    setSelected: { host, enabled in
-                                        guard let target = SkillInvocationTarget(rawValue: host.rawValue) else { return }
-                                        _ = model.setInvocationPolicy(skill, target: target, manualOnly: enabled)
-                                    }
-                                )
-                                .padding(.leading, 4)
                             }
                             Divider()
                         }
@@ -284,14 +261,17 @@ struct SkillsView: View {
                                     Label(L10n.tr("从技能库移除"), systemImage: "trash")
                                 }
                             }
-                            if skill.sourceId == SkillLibraryStore.sourceID {
-                                Text(L10n.tr("保存在本机。到「项目」选择这个技能，预览变更后再写入项目。"))
-                                    .font(AppFont.secondary).foregroundStyle(.secondary)
-                            }
+                            Toggle(L10n.tr("允许模型隐式调用"), isOn: Binding(
+                                get: { model.invocationPolicy(for: skill).allowsImplicitInvocation },
+                                set: { _ = model.setImplicitInvocation(skill, allowed: $0) }
+                            ))
+                            .disabled(!canEditInvocationMetadata(skill) || model.isUpdatingSkillMetadata)
+                            .accessibilityIdentifier("skills.invocation-policy.\(skill.id).implicit")
+                            .help(L10n.tr("关闭后，Codex 和 Claude Code 只能在用户显式触发时调用这个技能。"))
                             let namesakes = libraryIndex.namesakes(of: skill)
                             if !namesakes.isEmpty {
                                 DisclosureGroup(L10n.tr("同名条目（\(namesakes.count)）")) {
-                                    Text(L10n.tr("按 SKILL.md 名称比较，忽略大小写及首尾空格；未声明名称时使用目录名。重名不代表内容相同。"))
+                                    Text(L10n.tr("重名不代表内容相同。"))
                                         .font(AppFont.secondary).foregroundStyle(.secondary)
                                     ForEach(namesakes) { other in
                                         Button {

@@ -480,6 +480,32 @@ final class AppModel {
     }
 
     @discardableResult
+    func setImplicitInvocation(_ skill: SkillEntry, allowed: Bool) -> Bool {
+        guard !isUpdatingSkillMetadata else { return false }
+        isUpdatingSkillMetadata = true
+        skillMetadataError = nil
+        skillMetadataSaveMessage = nil
+        defer { isUpdatingSkillMetadata = false }
+        do {
+            let manualOnly = !allowed
+            var updated = try libraryStore.setInvocationPolicy(
+                skill, target: .codex, manualOnly: manualOnly, repositoryRoot: runtimePaths.repositoryRoot
+            )
+            updated = try libraryStore.setInvocationPolicy(
+                updated, target: .claudeCode, manualOnly: manualOnly, repositoryRoot: runtimePaths.repositoryRoot
+            )
+            try reloadLibrary()
+            selectedSkillID = updated.id
+            loadSelectedSkillDocument()
+            skillMetadataSaveMessage = L10n.tr("已更新：%@ 的隐式调用设置").replacingOccurrences(of: "%@", with: updated.slug)
+            return true
+        } catch {
+            skillMetadataError = UserFacingText.error(error)
+            return false
+        }
+    }
+
+    @discardableResult
     func setInvocationPolicy(_ skill: SkillEntry, target: SkillInvocationTarget, manualOnly: Bool) -> Bool {
         guard !isUpdatingSkillMetadata else { return false }
         isUpdatingSkillMetadata = true
@@ -752,15 +778,16 @@ final class AppModel {
         }
     }
 
+    /// 从栖集移除登记：只清理本机的登记与草稿，项目目录和已写入的文件保持不变。
     @discardableResult
-    func unregisterSelectedProject() -> Bool {
-        guard let project = selectedProject, let id = UUID(uuidString: project.id) else { return false }
+    func unregisterProject(_ id: UUID) -> Bool {
+        guard let project = projects.first(where: { $0.id == id.uuidString }) else { return false }
         do {
             try projectStore.unregister(id: id)
             try draftStore.remove(projectID: id)
-            selectedProjectID = ""
+            // 移除后若还有其他项目，选择权顺延到剩下的第一个，避免停留在已删除的项目上。
             try reloadProjects(preferredID: nil)
-            report("已从列表移除项目；项目文件保持不变")
+            report("已移除 \(project.name)；项目文件夹和已写入的文件保持不变")
             return true
         } catch {
             reportKey(UserFacingText.error(error))

@@ -6,7 +6,7 @@ import XCTest
 
 @MainActor
 final class PresetSelectionTests: XCTestCase {
-    func testPreviewExplainsReplacementAndLoadingOnlyChangesExplicitTargetDraft() throws {
+    func testPreviewExplainsAdditionAndLoadingOnlyChangesExplicitTargetDraft() throws {
         try withFixture { model, root in
             let first = try register("first", model: model, root: root)
             let second = try register("second", model: model, root: root)
@@ -27,12 +27,13 @@ final class PresetSelectionTests: XCTestCase {
             let preset = try XCTUnwrap(model.snapshot.presets.first { $0.id == "personal-base" })
             let beforePreview = model.projects
             let preview = PresetDraftPreview(preset: preset, project: model.projects[index], snapshot: model.snapshot)
+            // 预设是追加内容：草稿里已有的选择不因为载入预设而消失。
             XCTAssertEqual(preview.skills.added, ["workspace/collaboration-style", "workspace/project-guide"])
-            XCTAssertEqual(preview.skills.retained, ["workspace/stc"])
-            XCTAssertEqual(preview.skills.removed, ["workspace/likec4-dsl"])
+            XCTAssertEqual(preview.skills.retained, ["workspace/likec4-dsl", "workspace/stc"])
+            XCTAssertEqual(preview.skills.removed, [])
             XCTAssertEqual(preview.instructions.added, ["engineering"])
-            XCTAssertEqual(preview.instructions.retained, ["base-zh"])
-            XCTAssertEqual(preview.instructions.removed, ["ui-craft"])
+            XCTAssertEqual(preview.instructions.retained, ["base-zh", "ui-craft"])
+            XCTAssertEqual(preview.instructions.removed, [])
             XCTAssertTrue(preview.canLoad)
             XCTAssertEqual(model.projects, beforePreview, "预览不能先改动草稿")
 
@@ -42,8 +43,8 @@ final class PresetSelectionTests: XCTestCase {
             XCTAssertEqual(model.selectedProjectID, second)
             XCTAssertEqual(model.section, .projects)
             let saved = try XCTUnwrap(store.load(projectID: UUID(uuidString: second)!))
-            XCTAssertEqual(saved.skillIDs, ["workspace/collaboration-style", "workspace/project-guide", "workspace/stc"])
-            XCTAssertEqual(saved.instructionIDs, ["base-zh", "engineering"])
+            XCTAssertEqual(saved.skillIDs, ["workspace/collaboration-style", "workspace/likec4-dsl", "workspace/project-guide", "workspace/stc"])
+            XCTAssertEqual(saved.instructionIDs, ["base-zh", "engineering", "ui-craft"])
             XCTAssertEqual(saved.agents, ["claude-code"])
             XCTAssertEqual(try store.load(projectID: UUID(uuidString: first)!), firstBefore)
             XCTAssertEqual(model.projects[index].agents, [AgentHost.claude.rawValue])
@@ -53,6 +54,39 @@ final class PresetSelectionTests: XCTestCase {
                 XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent(name).path), ["sentinel.txt"])
                 XCTAssertEqual(try String(contentsOf: root.appendingPathComponent(name + "/sentinel.txt"), encoding: .utf8), "项目原有内容\n")
             }
+        }
+    }
+
+    /// 多预设并集与差集取消的应用层行为。
+    ///
+    /// 用片段而不是技能做断言，验证不依赖本机技能库是否安装。
+    func testApplyingTwoPresetsKeepsOverlapAndCancellingOneKeepsSharedContent() throws {
+        try withFixture { model, root in
+            let projectID = try register("multi", model: model, root: root)
+            var first = PresetEditorDraft()
+            first.name = "组合一"
+            first.instructions = ["base-zh", "engineering"]
+            XCTAssertTrue(model.savePreset(first))
+            var second = PresetEditorDraft()
+            second.name = "组合二"
+            second.instructions = ["base-zh", "ui-craft"]
+            XCTAssertTrue(model.savePreset(second))
+            let firstPreset = try XCTUnwrap(model.snapshot.presets.first { $0.name == "组合一" })
+            let secondPreset = try XCTUnwrap(model.snapshot.presets.first { $0.name == "组合二" })
+
+            // 同时应用两个预设，重叠片段只保留一份。
+            XCTAssertTrue(model.applyPresets([firstPreset, secondPreset], into: projectID))
+            let store = ProjectDraftStore(rootURL: model.runtimePaths.applicationSupportRoot)
+            let applied = try XCTUnwrap(store.load(projectID: UUID(uuidString: projectID)!))
+            XCTAssertEqual(applied.instructionIDs, ["base-zh", "engineering", "ui-craft"])
+            XCTAssertEqual(Set(applied.presetApplications.map(\.presetID)), Set([firstPreset.id, secondPreset.id]))
+
+            // 取消其中一个预设后，重叠片段仍由另一个预设提供。
+            XCTAssertTrue(model.cancelPreset(firstPreset.id, into: projectID))
+            let cancelled = try XCTUnwrap(store.load(projectID: UUID(uuidString: projectID)!))
+            XCTAssertEqual(cancelled.instructionIDs, ["base-zh", "ui-craft"])
+            XCTAssertEqual(cancelled.presetApplications.map(\.presetID), [secondPreset.id])
+            XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent("multi").path), ["sentinel.txt"])
         }
     }
 
@@ -172,7 +206,7 @@ final class PresetSelectionTests: XCTestCase {
             preferences.language = language
             for (index, request) in requests.enumerated() {
                 let controller = NSHostingController(rootView: PresetSelectionSheet(model: model, request: request).appPreferences())
-                let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 860, height: 620), styleMask: [.titled], backing: .buffered, defer: false)
+                let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 880, height: 640), styleMask: [.titled], backing: .buffered, defer: false)
                 window.isReleasedWhenClosed = false
                 window.contentViewController = controller
                 window.makeKeyAndOrderFront(nil)
@@ -181,8 +215,8 @@ final class PresetSelectionTests: XCTestCase {
                     window.appearance = NSAppearance(named: appearance)
                     try await Task.sleep(for: .milliseconds(80))
                     controller.view.layoutSubtreeIfNeeded()
-                    XCTAssertLessThanOrEqual(controller.view.fittingSize.width, 860)
-                    XCTAssertLessThanOrEqual(controller.view.fittingSize.height, 620)
+                    XCTAssertLessThanOrEqual(controller.view.fittingSize.width, 880)
+                    XCTAssertLessThanOrEqual(controller.view.fittingSize.height, 640)
                     let scrolls = descendants(controller.view).compactMap { $0 as? NSScrollView }
                     XCTAssertEqual(scrolls.count, 2, "预设列表与变更明细应独立滚动")
                     for scroll in scrolls {

@@ -273,8 +273,39 @@ struct PresetSelectionSheet: View {
                 Text(L10n.tr("与项目当前使用的预设一致。"))
                     .font(AppFont.metadata).foregroundStyle(.secondary)
             }
+            // 列出已选预设的说明，用户在写入前要能逐个核对内容。
+            if !selectedPresets.isEmpty {
+                Divider()
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(selectedPresets) { preset in
+                        selectedPresetRow(preset)
+                    }
+                }
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func selectedPresetRow(_ preset: PresetRecord) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 6) {
+                Text(preset.status == "local" ? preset.name : L10n.text(preset.name))
+                    .font(AppFont.secondary.weight(.medium))
+                if appliedPresetIDs.contains(preset.id) {
+                    Text(L10n.tr("已用"))
+                        .font(AppFont.metadata)
+                        .foregroundStyle(AppColor.accentText)
+                        .padding(.horizontal, 6).padding(.vertical, 1)
+                        .background(AppColor.accentSoft, in: RoundedRectangle(cornerRadius: 4))
+                }
+                Spacer(minLength: 0)
+            }
+            Text(preset.status == "local" ? preset.description : L10n.text(preset.description))
+                .font(AppFont.metadata).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
     }
 
     private func presetChangeLine(title: LocalizedText, presets: [PresetRecord], icon: String, color: Color) -> some View {

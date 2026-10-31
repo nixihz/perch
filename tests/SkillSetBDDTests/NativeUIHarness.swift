@@ -99,6 +99,7 @@ final class NativeUIHarness {
         skillIDs: [String],
         instructionIDs: [String],
         agents: [String],
+        librarySkillDocuments: [String: String] = [:],
         prepareRiskyPluginFixture: Bool = false
     ) throws {
         let uiRoot = temporaryRoot.appendingPathComponent("native-ui", isDirectory: true)
@@ -111,6 +112,14 @@ final class NativeUIHarness {
             withIntermediateDirectories: true
         )
         try FileManager.default.createDirectory(at: codex, withIntermediateDirectories: true)
+        // 夹具技能直接落在本机 custom 来源；自建技能不需要库存软链，应用启动后即可在技能库看到。
+        for (slug, document) in librarySkillDocuments {
+            let package = applicationSupportRoot
+                .appendingPathComponent("sources/custom", isDirectory: true)
+                .appendingPathComponent(slug, isDirectory: true)
+            try FileManager.default.createDirectory(at: package, withIntermediateDirectories: true)
+            try document.write(to: package.appendingPathComponent("SKILL.md"), atomically: true, encoding: .utf8)
+        }
         let pluginFixture = prepareRiskyPluginFixture
             ? try Self.createRiskyPluginFixture(home: home, uiRoot: uiRoot)
             : nil
@@ -616,11 +625,26 @@ final class NativeUIHarness {
         }
         if selectionError != .success { try pressKey(CGKeyCode(0), flags: .maskCommand) }
         typeText(value)
-        try waitUntil("文本字段 \(text) 接受输入") {
-            self.nodes().contains {
+        func inputLanded() -> Bool {
+            nodes().contains {
                 [kAXTextFieldRole as String, kAXTextAreaRole as String].contains($0.role) && $0.value == value
             }
         }
+        for _ in 0..<2 {
+            var landed = false
+            for _ in 0..<50 {
+                if inputLanded() { landed = true; break }
+                pump(for: 0.1)
+            }
+            if landed {
+                return
+            }
+            // 展开的表单偶尔先丢一次焦点，重新聚焦后再输入一次。
+            AXUIElementSetAttributeValue(field.element, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+            pump(for: 0.2)
+            typeText(value)
+        }
+        throw NativeUIHarnessError.timeout("文本字段 \(text) 接受输入")
     }
 
     func selectRadioButton(_ label: String) throws {
@@ -768,6 +792,36 @@ final class NativeUIHarness {
                 "enabled=\(node.enabled)"
             ].joined(separator: " | ")
         }.joined(separator: "\n")
+    }
+
+    /// 长页面的底部控件在默认窗口高度外，测试前把窗口放大到屏幕高度。
+    func enlargeWindowForLongPage() throws {
+        guard let window = nodes().first(where: { $0.role == kAXWindowRole as String }) else {
+            throw NativeUIHarnessError.windowNotFound
+        }
+        let bounds = try frame(of: window.element)
+        let screen = NSScreen.main?.frame ?? CGRect(x: 0, y: 0, width: 2560, height: 1440)
+        var size = bounds.size
+        size.height = min(screen.height - 40, max(size.height, screen.height - 40))
+        var origin = bounds.origin
+        origin.y = max(0, min(origin.y, screen.height - size.height))
+        guard let positionValue = AXValueCreate(.cgPoint, &origin),
+              let sizeValue = AXValueCreate(.cgSize, &size) else {
+            throw NativeUIHarnessError.elementNotFound("窗口的可调整边界")
+        }
+        let positionResult = AXUIElementSetAttributeValue(
+            window.element, kAXPositionAttribute as CFString, positionValue
+        )
+        let sizeResult = AXUIElementSetAttributeValue(
+            window.element, kAXSizeAttribute as CFString, sizeValue
+        )
+        guard positionResult == .success, sizeResult == .success else {
+            throw NativeUIHarnessError.accessibilityFailure(
+                positionResult == .success ? sizeResult : positionResult,
+                "放大窗口以便触达长页面底部的控件"
+            )
+        }
+        pump(for: 0.3)
     }
 
     /// 只截取当前隔离测试进程的窗口，避免把其他应用内容带进验证产物。

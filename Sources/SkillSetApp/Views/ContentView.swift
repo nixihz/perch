@@ -131,7 +131,10 @@ struct DetailView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(.horizontal, AppLayout.pageHorizontalInset)
-        .padding(.vertical, AppLayout.pageVerticalInset)
+        // 详情区横跨标题栏下方的安全区，只保留小段顶部呼吸空间，避免空工具栏挤占首屏高度。
+        .padding(.top, AppLayout.pageTopInset)
+        .padding(.bottom, AppLayout.pageBottomInset)
+        .ignoresSafeArea(.container, edges: .top)
         .background {
             Rectangle()
                 .fill(.regularMaterial)

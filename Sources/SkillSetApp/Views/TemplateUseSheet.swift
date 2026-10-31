@@ -55,7 +55,7 @@ struct TemplateUseSheet: View {
                     VStack(alignment: .leading, spacing: 10) {
                         Text(L10n.tr("规则文件")).font(AppFont.heading)
                         ForEach(preview.paths, id: \.self) { Text($0).font(AppFont.code).textSelection(.enabled) }
-                        Text(L10n.tr("这份配置草稿包含 \(preview.skillCount) 个技能和 \(preview.instructionIDs.count) 个片段。"))
+                        Text(L10n.tr("\(preview.skillCount) 个技能 · \(preview.instructionIDs.count) 个片段"))
                             .font(AppFont.secondary).foregroundStyle(.secondary)
                         Text(L10n.tr("预览包含这份草稿所选技能和全部片段的变更；插件和 MCP 服务需分别预览。"))
                             .font(AppFont.secondary).foregroundStyle(.secondary)

@@ -26,8 +26,6 @@ struct SkillEditorSheet: View {
                 Spacer()
                 StatusBadge(text: L10n.tr("本机技能库"), tone: .accent)
             }
-            Text(L10n.tr("编辑完整 SKILL.md，包含 name、description 和正文。保存后可在项目草稿中选择。"))
-                .font(AppFont.secondary).foregroundStyle(.secondary)
             HStack {
                 Text(L10n.tr("技能标识"))
                 TextField("my-skill", text: $draft.slug)

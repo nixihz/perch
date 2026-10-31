@@ -5,7 +5,8 @@ enum AppLayout {
     static let listWidth: CGFloat = 320
     static let columnSpacing: CGFloat = 18
     static let pageHorizontalInset: CGFloat = 28
-    static let pageVerticalInset: CGFloat = 24
+    static let pageTopInset: CGFloat = 12
+    static let pageBottomInset: CGFloat = 24
 }
 
 enum AppFont {

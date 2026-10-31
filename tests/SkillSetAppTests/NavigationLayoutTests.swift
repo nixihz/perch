@@ -117,6 +117,24 @@ final class NavigationLayoutTests: XCTestCase {
         XCTAssertLessThanOrEqual(controller.view.fittingSize.height, 700)
     }
 
+    func testDetailHeaderUsesTopContentBoundary() async throws {
+        let model = AppModel(snapshot: AppSnapshot.load())
+        model.section = .settings
+        let controller = NSHostingController(rootView: ContentView(model: model))
+        let window = makeWindow(controller, size: NSSize(width: 1080, height: 700))
+        defer { window.close() }
+
+        try await settle(controller.view)
+
+        let split = try XCTUnwrap(descendants(of: controller.view).compactMap { $0 as? NSSplitView }.first)
+        let splitController = try XCTUnwrap(split.delegate as? NSSplitViewController)
+        let detailView = try XCTUnwrap(splitController.splitViewItems.last?.viewController.view)
+        let detailScroll = try XCTUnwrap(descendants(of: detailView).compactMap { $0 as? NSScrollView }.first)
+        let detailRect = detailScroll.convert(detailScroll.bounds, to: window.contentView)
+        XCTAssertEqual(detailRect.minY, AppLayout.pageTopInset, accuracy: 1,
+                       "详情页应保留紧凑的顶部内边距，避免标题贴边")
+    }
+
     func testAllDestinationsKeepSidebarStableAndContentScrollable() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let variables = ["CFFIXED_USER_HOME", "SKILLSET_HOME", "CODEX_HOME"]
@@ -162,8 +180,14 @@ final class NavigationLayoutTests: XCTestCase {
         for candidate in try pluginLibrary.scan(records: inventory.records) {
             _ = try pluginLibrary.importCandidate(candidate)
         }
-        // 长列表使用明确 fixture；生产初次启动不再隐式提供内置技能。
+        // 长列表使用本机 custom 夹具；生产初次启动不再隐式提供内置技能。
         let model = AppModel(snapshot: AppSnapshot.load(), runtimePaths: paths)
+        for index in 0..<24 {
+            XCTAssertTrue(model.saveSkill(SkillEditorDraft(
+                slug: "layout-skill-\(index)",
+                document: "---\nname: layout-skill-\(index)\ndescription: 布局测试技能\n---\n正文\n"
+            )))
+        }
         XCTAssertEqual(model.mcpServers.count, 24)
         XCTAssertEqual(model.plugins.count, 24)
         let controller = NSHostingController(rootView: ContentView(model: model))

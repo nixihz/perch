@@ -86,8 +86,8 @@ struct PresetDraftPreview {
 
         var issues: [String] = []
         // 内置旧预设允许空组合；新增预设的完整性由本机保存边界校验。
-        if presets.contains(where: { $0.componentCount > 0 }), let issue = PresetStore.validationIssue(presets[0]) {
-            issues.append(issue)
+        for preset in presets where preset.componentCount > 0 {
+            if let issue = PresetStore.validationIssue(preset) { issues.append(issue) }
         }
         let targetPlugins = presets.flatMap(\.plugins)
         let missingPlugins = targetPlugins.filter { reference in
@@ -96,6 +96,13 @@ struct PresetDraftPreview {
         }
         unavailablePluginNames = missingPlugins.map { $0.name.isEmpty ? $0.pluginID : $0.name }
         if !missingPlugins.isEmpty { issues.append("插件版本不可用，请重新扫描并更新预设。") }
+        // 多个预设指向同一插件但版本不同时不能静默取其中一个。
+        let conflictingPlugins = Dictionary(grouping: targetPlugins, by: \.id)
+            .filter { $0.value.count > 1 && Set($0.value.map(\.manifestDigest)).count > 1 }
+        for (pluginID, references) in conflictingPlugins.sorted(by: { $0.key < $1.key }) {
+            let name = references.first?.name.isEmpty == false ? references[0].name : pluginID
+            issues.append("预设里的插件「\(name)」版本不一致，请先统一版本。")
+        }
         componentIssues = issues
 
         let targetSkillIDs = Set(presets.flatMap(\.skills))
@@ -120,9 +127,11 @@ struct PresetDraftPreview {
     }
 
     /// 单个预设的预览，保留给预设编辑器的可用性检查。
+    ///
+    /// 这里按并集计算：预设编辑器只关心这个预设能不能用，不该顺手取消项目里已生效的其他预设。
     init(preset: PresetRecord, project: ProjectRecord, snapshot: AppSnapshot,
          availablePlugins: [PluginInventoryRecord]? = nil) {
-        self.init(presets: [preset], project: project, snapshot: snapshot, availablePlugins: availablePlugins)
+        self.init(presets: [preset], project: project, snapshot: snapshot, availablePlugins: availablePlugins, mode: .merge)
     }
 
     /// 同名技能只比较 slug。提示必须带上名称和来源，否则无法判断该取消哪一项。

@@ -15,16 +15,21 @@ final class SkillInvocationMetadataTests: XCTestCase {
         )
         let model = AppModel(runtimePaths: paths)
 
-        XCTAssertTrue(model.setInvocationPolicy(skill, target: .codex, manualOnly: true), model.skillMetadataError ?? "")
+        XCTAssertTrue(model.setImplicitInvocation(skill, allowed: false), model.skillMetadataError ?? "")
         let current = try XCTUnwrap(model.snapshot.catalog.entries.first { $0.id == skill.id })
         let source = try XCTUnwrap(paths.makeLibraryStore().sourceURLs()[current.id])
         XCTAssertTrue(try String(contentsOf: source.appendingPathComponent("agents/openai.yaml"), encoding: .utf8)
             .contains("allow_implicit_invocation: false"))
 
-        XCTAssertTrue(model.setInvocationPolicy(current, target: .claudeCode, manualOnly: true), model.skillMetadataError ?? "")
         XCTAssertTrue(try String(contentsOf: source.appendingPathComponent("SKILL.md"), encoding: .utf8)
             .contains("disable-model-invocation: true"))
         XCTAssertEqual(model.invocationPolicy(for: try XCTUnwrap(model.snapshot.catalog.entries.first { $0.id == skill.id })),
                        SkillInvocationPolicy(codexManualOnly: true, claudeManualOnly: true))
+
+        XCTAssertTrue(model.setImplicitInvocation(current, allowed: true), model.skillMetadataError ?? "")
+        XCTAssertFalse(try String(contentsOf: source.appendingPathComponent("agents/openai.yaml"), encoding: .utf8)
+            .contains("allow_implicit_invocation: false"))
+        XCTAssertFalse(try String(contentsOf: source.appendingPathComponent("SKILL.md"), encoding: .utf8)
+            .contains("disable-model-invocation: true"))
     }
 }

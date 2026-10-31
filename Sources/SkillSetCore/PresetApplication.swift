@@ -126,8 +126,9 @@ public enum PresetDraftMerge {
 
         var selections = state.selections
         var selection = selections[host] ?? ProjectHarnessSelection()
-        selection.skillIDs = (selection.skillIDs.filter { !obsoleteSkillIDs.contains($0) } + targetSkillIDs).sorted()
-        selection.instructionIDs = (selection.instructionIDs.filter { !obsoleteInstructionIDs.contains($0) } + targetInstructionIDs).sorted()
+        // 目标内容可能已经存在于草稿中，取并集避免出现重复条目。
+        selection.skillIDs = Set(selection.skillIDs.filter { !obsoleteSkillIDs.contains($0) }).union(targetSkillIDs).sorted()
+        selection.instructionIDs = Set(selection.instructionIDs.filter { !obsoleteInstructionIDs.contains($0) }).union(targetInstructionIDs).sorted()
         selections[host] = selection
 
         var plugins = state.plugins.filter { !obsoletePluginIDs.contains($0.id) }

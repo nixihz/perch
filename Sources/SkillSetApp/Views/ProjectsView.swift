@@ -218,6 +218,7 @@ struct ProjectConfigurationDetails: View {
     let project: ProjectRecord
     let onReview: (StoredDeploymentPlan) -> Void
     @Environment(\.dismiss) private var dismiss
+    @State private var confirmingRemoval = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -275,8 +276,19 @@ struct ProjectConfigurationDetails: View {
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading)
             }
-            HStack { Spacer(); Button(L10n.tr("完成")) { dismiss() }.keyboardShortcut(.cancelAction) }
+            HStack {
+                Button(L10n.tr("删除项目…"), role: .destructive) { confirmingRemoval = true }
+                    .accessibilityIdentifier("projects.details.remove")
+                Spacer()
+                Button(L10n.tr("完成")) { dismiss() }.keyboardShortcut(.cancelAction)
+            }
         }.padding(24).frame(width: 720, height: 600).appControls()
+        .confirmationDialog(L10n.tr("从栖集删除这个项目？"), isPresented: $confirmingRemoval, titleVisibility: .visible) {
+            Button(L10n.tr("删除项目"), role: .destructive) { removeProject() }
+            Button(L10n.tr("先不删"), role: .cancel) {}
+        } message: {
+            Text(L10n.tr("项目会从栖集的登记列表移除，栖集不再跟踪它的配置。项目文件夹和已写入的文件保持不变，需要时可以重新添加。"))
+        }
     }
 
     private func observationStatus(_ status: String) -> String {
@@ -286,6 +298,12 @@ struct ProjectConfigurationDetails: View {
         case "symlink": L10n.tr("符号链接，保留不改")
         default: L10n.tr("内容待核对")
         }
+    }
+
+    private func removeProject() {
+        guard let id = UUID(uuidString: project.id) else { return }
+        // 删除失败时保留详情页，让用户看到失败原因后重试。
+        if model.unregisterProject(id) { dismiss() }
     }
 }
 
@@ -430,8 +448,8 @@ struct PlanSheet: View {
             if let record = model.preparedPlan {
                 Text(
                     isPluginPlan
-                        ? L10n.tr("将在 \(record.plan.projectPath) 调用 AI 工具运行命令。批准只对本次计划有效；插件状态变化或命令失败会保留操作记录。")
-                        : L10n.tr("将修改 \(record.plan.projectPath) 中列出的 \(record.plan.changes.count) 项内容。批准只对本次计划有效；文件内容改变后需要重新生成计划。")
+                        ? L10n.tr("将在 \(record.plan.projectPath) 调用 AI 工具运行命令。插件状态变化或命令失败会保留操作记录。")
+                        : L10n.tr("将修改 \(record.plan.projectPath) 中列出的 \(record.plan.changes.count) 项内容。文件内容改变后需要重新生成计划。")
                 )
             }
         }
