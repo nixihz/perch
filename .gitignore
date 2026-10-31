@@ -36,5 +36,8 @@ artifacts/
 .agents/skills/
 .claude/skills
 
+# 本机编辑器调试配置
+.vscode/
+
 # 本机技能库内容由来源导入，不随公开仓库发布
 skills/
