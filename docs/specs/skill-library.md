@@ -153,7 +153,7 @@
 
 技能在库中，还不等于已经应用。取消应用只去掉目标位置的软链，不删除库中的技能。写入应用位置必须由用户明确执行。
 
-技能库列表还提供调用策略元信息的单击开关。Codex 目标在技能包的 `agents/openai.yaml` 写入或移除 `policy.allow_implicit_invocation: false`；Claude Code 目标在 `SKILL.md` 的 YAML 头部写入或移除 `disable-model-invocation: true`。开关只修改技能包元信息，不修改正文；Agents 标准没有对应的调用策略字段。跟随来源的只读技能需先复制并编辑，软链接部署会跟随来源变化，复制部署需重新部署后才会带上新元信息。
+技能详情提供一个“允许模型隐式调用”开关。关闭时，同时在 Codex 技能包的 `agents/openai.yaml` 写入 `policy.allow_implicit_invocation: false`，并在 Claude Code 的 `SKILL.md` YAML 头部写入 `disable-model-invocation: true`；开启时移除这两个字段。开关只修改技能包元信息，不修改正文；Agents 标准没有对应的调用策略字段。跟随来源的只读技能需先复制并编辑，软链接部署会跟随来源变化，复制部署需重新部署后才会带上新元信息。
 
 ## 名字
 

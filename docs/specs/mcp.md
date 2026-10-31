@@ -42,7 +42,7 @@
 | --- | --- | --- |
 | 技能库 | `skills_get`、`skills_create`、`skills_update`、`skills_delete` | 读取正文；新建、完整复制、编辑 custom 技能或删除库条目。软链部署会跟随编辑，并在库条目删除后失效；复制部署不变 |
 | 规则片段 | `templates_list`、`templates_get`、`templates_create`、`templates_update`、`templates_delete`、`templates_apply_plan` | 库 CRUD；追加用于一个宿主的项目或全局，保留已部署技能和其他片段 |
-| 预设 | `presets_get`、`presets_create`、`presets_update`、`presets_delete`、`presets_apply_draft` | 保留完整技能、片段、插件与 MCP 组件；完整载入指定宿主的项目草稿，不部署 |
+| 预设 | `presets_get`、`presets_create`、`presets_update`、`presets_delete`、`presets_apply_draft` | 保留完整技能、片段、插件与 MCP 组件；并集载入指定宿主的项目草稿，多个预设取并集，不部署 |
 | 来源 | `sources_get`、`sources_update`、`sources_delete`、`sources_import_skill` | 预览详情、重新同步、删除缓存，按 symlink（默认）或 copy 导入完整包；跟随来源的库条目及软链部署受同步、删除影响 |
 | 项目 | `projects_create`、`projects_update`、`projects_delete`、`projects_draft_get` | 显式登记绝对路径、修改名称/登记宿主、取消登记、读取编辑草稿；不删除项目文件 |
 | MCP 配置库 | `mcp_library_list`、`mcp_library_get`、`mcp_library_create`、`mcp_library_update`、`mcp_library_delete` | 本机连接库 CRUD，不写宿主 |
@@ -58,6 +58,8 @@
 `global_config_get` 与 `global_config_plan` 的 `host` 额外支持 `agents`，用于共享技能目录；其 `instructionIds` 必须为空。其他工具的宿主枚举仍只有 `codex` / `claude-code`。
 
 `templates_apply_plan` 是追加操作；需要替换或移除片段时，使用 `deployment_harness_plan` 或 `global_config_plan` 提供完整选择。`presets_apply_draft` 可载入混合预设，插件和 MCP 组件仍须分别生成计划；`presets_install` 保留原有混合预设拒绝行为，避免产生部分安装。插件来源条目与宿主已安装插件分开管理，不通过编辑 manifest 实现插件更新。
+
+`presets_apply_draft` 取并集语义：`presetIds` 传入多个预设时同时生效，重叠技能、片段、插件和 MCP 只保留一份，其他预设与手动选择的内容不受影响；`presetId` 保留单个预设的写法。取消预设在 UI 的“已用预设”区域完成，按差集只回收该预设独有的内容，两个入口共用 `PresetDraftMerge` 的同一实现。
 
 所有新增 `*_plan` 返回 `status: awaiting-approval`、完整 digest 和下一步调用参数；不会签发批准。库管理和草稿保存无需批准，写宿主继续通过本机批准及 `deployment_apply`。MCP 仍不提供 approve。扫描 MCP/插件入库、全局历史恢复和宿主 marketplace 浏览不在本轮接口内，仍按已有本机能力或后续里程碑处理。
 
