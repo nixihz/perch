@@ -1,11 +1,11 @@
 # 栖集在线更新
 
-已接入 Sparkle 2.10.0，参考 `the Sparkle update reference implementation` 的单更新器与设置交互。从迁移版 `0.0.1 (4)` 起，[官网](https://updates.example.com/x/perch/)、下载包和更新清单均迁至 `updates.example.com`，不再更新 legacy.example.com。旧版内置旧清单地址，须从新官网手动安装一次迁移版；之后使用新清单检查更新。下方 build 2 / 3 的 legacy.example.com 验收记录保留为历史，不作为后续发布入口。
+已接入 Sparkle 2.10.0，参考 `the Sparkle update reference implementation` 的单更新器与设置交互。当前[官网](https://perch.u1.fan/)提供下载，更新清单位于 `app.u1.fan`。仍使用旧清单地址的版本须从新官网手动安装一次迁移版；之后使用新清单检查更新。较早版本的旧站验收记录保留为历史，不作为后续发布入口。
 
 首次启用的配置：
 
-- 当前清单：`https://updates.example.com/x/perch/updates/macos/appcast.xml`。
-- 公钥：`AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=`；私钥保存在发布机登录钥匙串的 `com.example.perch` account。
+- 当前清单：`https://app.u1.fan/x/perch/updates/macos/appcast.xml`。
+- 公钥：`3EB2chk/1iPXBBWYoCpL1IMTXf09D0IsFnH9oceg5oI=`；私钥保存在发布机登录钥匙串的 `com.xiezhixin.perch` account。
 - 已发布的 `0.0.1 (1)` 未包含 `SUFeedURL`、`SUPublicEDKey`，须手动安装一次启用版。旧下载地址继续保留，不覆盖原包。
 - 发布 CLI 0.1.3 的请求体上限为 200 MiB、解压上限为 100 MiB，官网与 Sparkle 统一使用 DMG；ZIP 仅保留为本地离线分发产物。见[网站部署说明](../your deployment documentation)。清单引用同一应用挂载路径下唯一命名的 DMG。
 - 不能仅凭 HTTP 200 判定 appcast 可用，必须核对 RSS XML 内容、enclosure、签名和实际下载字节；缺失静态路径可能回退到 HTML 首页。
@@ -20,7 +20,7 @@
 
 ## 配置与构建
 
-公开配置放在 `config/updates.json`。当前线上构建为 `0.0.1 (12)`；源码配置已推进到 build 13，待完成构建、公证和平台发布。发布仍保留原 Bundle ID 与 Sparkle 公钥，使用新平台清单地址重新签名、公证；每次正式发包都递增 `build`，同一个构建号不能重发不同内容。此版本是桌面整包版本，与 skill revision、项目锁版本无关。
+公开配置放在 `config/updates.json`。当前发布版本为 `0.0.1 (15)`；发布仍保留栖集 Bundle ID 与 Sparkle 公钥，使用生产清单地址签名和公证。每次正式发包都递增 `build`，同一个构建号不能重发不同内容。此版本是桌面整包版本，与 skill revision、项目锁版本无关。
 
 可直接修改该 JSON，或通过以下环境变量覆盖：
 
@@ -44,16 +44,16 @@ PERCH_SIGNING_IDENTITY='Developer ID Application: <name> (<team>)' \
 
 输出默认是 `dist/栖集.app`。`PERCH_BUILD_PATH` 可指定独立 SwiftPM 构建目录；`PERCH_DIST_DIR` 可指定独立输出目录。框架来自已锁定的 SwiftPM artifact，用 `ditto` 保留软链与权限，应用通过包内 Frameworks runpath 加载。打包脚本按 XPC、Autoupdate、Updater.app、framework、Helpers 资源包、内置 CLI、主应用的顺序签名，并执行严格递归验签和仓库外 CLI/MCP 握手验证。
 
-当前发布 Bundle ID 为 `com.example.perch`，内置 CLI 位于 `Contents/Helpers/skillset`。后续更新保持同一 Bundle ID 和稳定的安装路径，使宿主配置引用的内置 CLI 路径持续有效。
+当前发布 Bundle ID 为 `com.xiezhixin.perch`，内置 CLI 位于 `Contents/Helpers/skillset`。后续更新保持同一 Bundle ID 和稳定的安装路径，使宿主配置引用的内置 CLI 路径持续有效。
 
 ## 后续发版步骤
 
 Sparkle 工具随依赖下载至 `<构建目录>/artifacts/sparkle/Sparkle/bin/`。发布机使用公证 profile：`APP-Notary-2026`；它由 notarytool 从钥匙串读取，不在仓库保存凭据。此前一次提交返回 profile lookup failure，后续 history 与 submit 均成功，最初失败的具体原因尚未确认；撤回此前“缺少 profile”的结论。
 
-1. 先核对发布机是否已有栖集专用的 Sparkle 密钥；有则沿用。尚未创建时，使用 `generate_keys --account com.example.perch` 创建独立密钥。私钥保留在发布机 Keychain，并安排安全的独立备份；仅把输出公钥写入配置。之后 `generate_appcast` 使用同一 account。
+1. 先核对发布机是否已有栖集专用的 Sparkle 密钥；有则沿用。尚未创建时，使用 `generate_keys --account com.xiezhixin.perch` 创建独立密钥。私钥保留在发布机 Keychain，并安排安全的独立备份；仅把输出公钥写入配置。之后 `generate_appcast` 使用同一 account。
 2. 配置独立 appcast 地址，递增构建号，以 Developer ID 签名构建 Release 通用包。核对 `codesign -dv --verbose=4` 的 TeamIdentifier、hardened runtime、包版本和公钥。
 3. 将应用打成 ZIP，使用 `xcrun notarytool submit --keychain-profile APP-Notary-2026 --wait` 完成 Apple 公证；执行 `xcrun stapler staple`、`xcrun stapler validate` 和 `spctl --assess --type execute --verbose=4`。将已装订应用与 `/Applications` 链接制作成 DMG，Developer ID 签名后再提交 DMG 公证并装订。官网下载 ZIP 从已装订应用重新生成。
-4. 使用 `python3 script/prepare_sparkle_update.py <已公证DMG> <新的输出目录>` 生成签名 appcast。脚本验证应用版本、公钥、地址、公证和系统信任，再调用 `generate_appcast --account com.example.perch` 与 `sign_update --verify`，核对 enclosure URL、版本、长度、Ed25519 签名和最低 macOS 14。签名覆盖最终 DMG 字节，之后不能修改包；脚本拒绝覆盖既有输出目录，也不自动上传。
+4. 使用 `python3 script/prepare_sparkle_update.py <已公证DMG> <新的输出目录>` 生成签名 appcast。脚本验证应用版本、公钥、地址、公证和系统信任，再调用 `generate_appcast --account com.xiezhixin.perch` 与 `sign_update --verify`，核对 enclosure URL、版本、长度、Ed25519 签名和最低 macOS 14。签名覆盖最终 DMG 字节，之后不能修改包；脚本拒绝覆盖既有输出目录，也不自动上传。
 5. 按[网站部署说明](../your deployment documentation)，从干净源码提交组装官网、品牌图、唯一 DMG 与 appcast，在同一平台版本中发布；核对五个来源文件、生成元数据、包体积与隔离预览。发布后匿名核对完整下载 SHA-256、长度、GET/HEAD/Range，并独立执行官方 Sparkle 验签。清单应返回 `Cache-Control: no-cache`；旧版本保留在平台发布历史，不覆盖已经公开的构建。
 6. 用前一版正式安装包检查更新，完成下载、安装、重启，并验证项目数据与包内 CLI/MCP。记录签名、公证和线上校验结果后再宣称更新可用。
 

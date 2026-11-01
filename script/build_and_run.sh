@@ -23,7 +23,7 @@ if [[ -n "${PERCH_BUILD_PATH:-}" ]]; then
     BUILD_ARGS+=(--scratch-path "$PERCH_BUILD_PATH")
 fi
 UPDATE_CONFIG="${PERCH_UPDATE_CONFIG:-config/updates.json}"
-BUNDLE_ID="${PERCH_BUNDLE_ID:-com.example.perch}"
+BUNDLE_ID="${PERCH_BUNDLE_ID:-com.xiezhixin.perch}"
 python3 script/configure_updates.py --config "$UPDATE_CONFIG"
 
 swift build "${BUILD_ARGS[@]}" --product "$APP_PRODUCT"

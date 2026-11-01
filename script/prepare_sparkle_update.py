@@ -16,7 +16,7 @@ from configure_updates import load_configuration
 
 ROOT = Path(__file__).resolve().parents[1]
 SPARKLE_NS = "http://www.andymatuschak.org/xml-namespaces/sparkle"
-BUNDLE_ID = os.environ.get("PERCH_BUNDLE_ID", "com.example.perch")
+BUNDLE_ID = os.environ.get("PERCH_BUNDLE_ID", "com.xiezhixin.perch")
 
 
 def validate_info(info, config):

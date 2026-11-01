@@ -61,7 +61,7 @@ class SparkleAppcastTests(unittest.TestCase):
                 self.validate(text)
 
     def test_client_metadata_must_match_release_and_require_verification(self):
-        info = {"CFBundleIdentifier": "com.example.perch", "CFBundleShortVersionString": "0.0.1",
+        info = {"CFBundleIdentifier": "com.xiezhixin.perch", "CFBundleShortVersionString": "0.0.1",
                 "CFBundleVersion": "2", "SUFeedURL": self.config["feedURL"], "SUPublicEDKey": "fixture-key",
                 "SUVerifyUpdateBeforeExtraction": True, "SUAllowsAutomaticUpdates": False}
         updates.validate_info(info, self.config)
