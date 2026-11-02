@@ -289,7 +289,7 @@ struct CLIInvocation {
             emitJSON(["plans": try plans.map(planJSON)])
         } else {
             for plan in plans {
-                print("\(plan.id.uuidString)\t\(plan.approvalState.rawValue)\t\(plan.expiresAt.formatted(date: .abbreviated, time: .shortened))\t\(plan.plan.projectPath)")
+                print("\(plan.id.uuidString)\t\(plan.state.rawValue)\t\(plan.expiresAt.formatted(date: .abbreviated, time: .shortened))\t\(plan.plan.projectPath)")
             }
         }
     }
@@ -319,7 +319,7 @@ struct CLIInvocation {
     private static func apply(arguments: [String], paths: SkillSetRuntimePaths, json: Bool) throws {
         var rest = arguments
         guard let rawID = rest.first, let id = UUID(uuidString: rawID) else {
-            throw CLIError("用法：skillset apply <plan-id> [--digest ...]", exitCode: 2)
+            throw CLIError("用法：skillset apply <plan-id> [--digest ...] [--idempotency-key ...]", exitCode: 2)
         }
         rest.removeFirst()
         let service = try SkillSetService(paths: paths)
@@ -329,7 +329,8 @@ struct CLIInvocation {
         } else {
             digest = try service.plan(id).plan.digest
         }
-        let result = try service.apply(planID: id, digest: digest)
+        let idempotencyKey = consumeOption("--idempotency-key", from: &rest)
+        let result = try service.apply(planID: id, digest: digest, idempotencyKey: idempotencyKey)
         if json {
             emitJSON(try jsonValue(result))
         } else {
@@ -355,7 +356,7 @@ struct CLIInvocation {
         if json {
             emitJSON(try jsonValue(operation))
         } else {
-            print("operation：\(operation.operationID.uuidString)  kind=\(operation.kind.rawValue)  state=\(operation.state)")
+            print("operation：\(operation.operationID.uuidString)  kind=\(operation.kind.rawValue)  state=\(operation.state.rawValue)")
             operation.steps.forEach { print("  \($0.state)  \($0.relativePath)") }
             if let plugin = operation.plugin {
                 print("\(plugin.host.displayName) · \(plugin.action.displayName) · \(plugin.pluginID)")
@@ -592,8 +593,10 @@ struct CLIInvocation {
             "projectPath": record.plan.projectPath,
             "createdAt": ISO8601DateFormatter().string(from: record.plan.createdAt),
             "expiresAt": ISO8601DateFormatter().string(from: record.expiresAt),
+            "state": record.state.rawValue,
             "approvalState": record.approvalState.rawValue,
-            "approvalRequired": record.approvalState == .pending,
+            "approvalRequired": record.state == .pending,
+            "idempotencyKey": record.idempotencyKey ?? NSNull(),
             "changes": try jsonValue(record.plan.changes),
             "warnings": record.plan.warnings,
             "metadata": record.plan.metadata ?? [:]

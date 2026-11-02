@@ -229,7 +229,12 @@ final class MCPStdioServer {
                 guard let digest = arguments["planDigest"] as? String, !digest.isEmpty else {
                     throw MCPToolError(code: "INVALID_ARGUMENTS", message: "deployment_apply 需要完整 planDigest。")
                 }
-                let result = try service.apply(planID: id, digest: digest)
+                let idempotencyKey = arguments["idempotencyKey"] as? String
+                let result = try service.apply(
+                    planID: id,
+                    digest: digest,
+                    idempotencyKey: idempotencyKey
+                )
                 return toolResult(
                     isError: false,
                     text: result.message ?? "已执行 \(result.changedPaths.count) 个受管目标。",
@@ -249,7 +254,7 @@ final class MCPStdioServer {
                 let operation = try service.operationInspection(id)
                 return toolResult(
                     isError: false,
-                    text: "操作 \(id.uuidString)（\(operation.kind.rawValue)）状态：\(operation.state)。",
+                    text: "操作 \(id.uuidString)（\(operation.kind.rawValue)）状态：\(operation.state.rawValue)。",
                     structured: ["operation": try jsonValue(operation)]
                 )
 
@@ -546,7 +551,8 @@ final class MCPStdioServer {
                 description: "只执行已由本机 UI 或 CLI 人工批准且 digest 完全一致的项目、MCP 或 Plugin 计划。",
                 properties: [
                     "planId": ["type": "string", "format": "uuid"],
-                    "planDigest": ["type": "string", "minLength": 64, "maxLength": 64]
+                    "planDigest": ["type": "string", "minLength": 64, "maxLength": 64],
+                    "idempotencyKey": ["type": "string", "minLength": 1, "maxLength": 256]
                 ],
                 required: ["planId", "planDigest"],
                 readOnly: false
@@ -675,8 +681,10 @@ final class MCPStdioServer {
             "projectPath": record.plan.projectPath,
             "createdAt": ISO8601DateFormatter().string(from: record.plan.createdAt),
             "expiresAt": ISO8601DateFormatter().string(from: record.expiresAt),
+            "state": record.state.rawValue,
             "approvalState": record.approvalState.rawValue,
-            "approvalRequired": record.approvalState == .pending,
+            "approvalRequired": record.state == .pending,
+            "idempotencyKey": record.idempotencyKey ?? NSNull(),
             "changes": (try? jsonValue(record.plan.changes)) ?? [],
             "warnings": record.plan.warnings,
             "metadata": record.plan.metadata ?? [:]
