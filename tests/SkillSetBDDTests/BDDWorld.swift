@@ -1,5 +1,6 @@
 import Foundation
 import SkillSetCore
+import SkillSetTestSupport
 
 enum BDDWorldError: Error, LocalizedError {
     case repositoryNotFound
@@ -61,6 +62,7 @@ final class BDDWorld {
     let repositoryRoot: URL
     let temporaryRoot: URL
     let applicationSupportRoot: URL
+    let libraryRepositoryRoot: URL
 
     private let fileManager: FileManager
     private(set) var service: SkillSetService?
@@ -95,15 +97,16 @@ final class BDDWorld {
             .appendingPathComponent("skillset-bdd-\(UUID().uuidString)", isDirectory: true)
         applicationSupportRoot = temporaryRoot.appendingPathComponent("state", isDirectory: true)
         try fileManager.createDirectory(at: applicationSupportRoot, withIntermediateDirectories: true)
-        // 应用不再内置技能；BDD 夹具直接以仓库目录作为库存，模拟已同步的来源内容。
-        let repositorySnapshot = AppSnapshot.load(repositoryRoot: repositoryRoot)
+        libraryRepositoryRoot = temporaryRoot.appendingPathComponent("repository", isDirectory: true)
+        try SkillInventoryFixture.create(at: libraryRepositoryRoot)
+        let repositorySnapshot = AppSnapshot.load(repositoryRoot: libraryRepositoryRoot)
         let repositorySkillSources = Dictionary(uniqueKeysWithValues: repositorySnapshot.catalog.entries.map {
-            ($0.id, repositoryRoot.appendingPathComponent($0.path))
+            ($0.id, libraryRepositoryRoot.appendingPathComponent($0.path))
         })
         service = try SkillSetService(
             paths: SkillSetRuntimePaths(
                 applicationSupportRoot: applicationSupportRoot,
-                repositoryRoot: repositoryRoot
+                repositoryRoot: libraryRepositoryRoot
             ),
             snapshot: repositorySnapshot,
             skillSourceURLs: repositorySkillSources
@@ -481,8 +484,9 @@ final class BDDWorld {
     func captureInventorySnapshot() throws {
         let registry = try fingerprint(repositoryRoot.appendingPathComponent("registry"))
         let vendor = try fingerprint(repositoryRoot.appendingPathComponent("vendor"))
+        let fixture = try fingerprint(libraryRepositoryRoot)
         inventorySnapshot = TreeFingerprint(
-            digest: SkillAssetCopier.sha256(Data("\(registry.digest)|\(vendor.digest)".utf8))
+            digest: SkillAssetCopier.sha256(Data("\(registry.digest)|\(vendor.digest)|\(fixture.digest)".utf8))
         )
     }
 
@@ -490,14 +494,15 @@ final class BDDWorld {
         guard let inventorySnapshot else { throw BDDWorldError.missingInventorySnapshot }
         let registry = try fingerprint(repositoryRoot.appendingPathComponent("registry"))
         let vendor = try fingerprint(repositoryRoot.appendingPathComponent("vendor"))
+        let fixture = try fingerprint(libraryRepositoryRoot)
         let current = TreeFingerprint(
-            digest: SkillAssetCopier.sha256(Data("\(registry.digest)|\(vendor.digest)".utf8))
+            digest: SkillAssetCopier.sha256(Data("\(registry.digest)|\(vendor.digest)|\(fixture.digest)".utf8))
         )
         return current == inventorySnapshot
     }
 
     func catalogContains(_ skillID: String) -> Bool {
-        AppSnapshot.load(repositoryRoot: repositoryRoot).catalog.entries.contains { $0.id == skillID }
+        AppSnapshot.load(repositoryRoot: libraryRepositoryRoot).catalog.entries.contains { $0.id == skillID }
     }
 
     func captureProjectSnapshot() throws {
@@ -522,6 +527,7 @@ final class BDDWorld {
             skillIDs: selectedSkillID.map { [$0] } ?? [],
             instructionIDs: instructions,
             agents: [selectedAgent ?? "codex"],
+            libraryRepositoryRoot: libraryRepositoryRoot,
             prepareRiskyPluginFixture: nativeUIPreparesRiskyPlugin
         )
     }

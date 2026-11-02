@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import XCTest
+import SkillSetTestSupport
 @testable import SkillSetCore
 @testable import SkillSetApp
 
@@ -24,7 +25,9 @@ final class PresetSelectionTests: XCTestCase {
             }
             XCTAssertEqual(model.projects[index].editingAgent, "claude-code")
             XCTAssertNil(model.projects[index].harnessSelections["codex"])
-            let preset = try XCTUnwrap(model.snapshot.presets.first { $0.id == "personal-base" })
+            let preset = PresetRecord(id: "skill-merge", name: "测试技能组合",
+                skills: ["workspace/collaboration-style", "workspace/project-guide"],
+                instructionFragments: ["base-zh", "engineering"])
             let beforePreview = model.projects
             let preview = PresetDraftPreview(preset: preset, project: model.projects[index], snapshot: model.snapshot)
             // 预设是追加内容：草稿里已有的选择不因为载入预设而消失。
@@ -249,7 +252,7 @@ final class PresetSelectionTests: XCTestCase {
             draft.instructions = ["engineering"]
             draft.mcpServers = [MCPConfigurationDraft(name: "docs", scope: .user, commandOrURL: "/usr/bin/true", args: ["one value"])]
             XCTAssertTrue(model.savePreset(draft))
-            let restarted = AppModel(snapshot: AppSnapshot.load(), runtimePaths: model.runtimePaths)
+            let restarted = AppModel(snapshot: AppSnapshot.load(repositoryRoot: model.runtimePaths.repositoryRoot), runtimePaths: model.runtimePaths)
             let preset = try XCTUnwrap(restarted.snapshot.presets.first { $0.id == draft.id })
             XCTAssertTrue(restarted.loadPreset(preset, into: projectID))
             let saved = try XCTUnwrap(ProjectDraftStore(rootURL: model.runtimePaths.applicationSupportRoot).load(projectID: UUID(uuidString: projectID)!))
@@ -282,7 +285,7 @@ final class PresetSelectionTests: XCTestCase {
             editor.skills = ["workspace/stc"]
             editor.instructions = ["engineering"]
             XCTAssertTrue(model.savePreset(editor))
-            let restarted = AppModel(snapshot: AppSnapshot.load(), runtimePaths: model.runtimePaths)
+            let restarted = AppModel(snapshot: AppSnapshot.load(repositoryRoot: model.runtimePaths.repositoryRoot), runtimePaths: model.runtimePaths)
             let saved = try XCTUnwrap(restarted.snapshot.presets.first { $0.id == original.id })
             XCTAssertEqual(saved.name, "我的日常组合")
             XCTAssertEqual(saved.revision, original.revision + 1)
@@ -478,7 +481,10 @@ final class PresetSelectionTests: XCTestCase {
 
         init() throws {
             for variable in variables { setenv(variable, root.appendingPathComponent(variable).path, 1) }
-            model = AppModel(snapshot: AppSnapshot.load(), runtimePaths: SkillSetRuntimePaths(applicationSupportRoot: root.appendingPathComponent("state"), repositoryRoot: nil))
+            let repository = root.appendingPathComponent("repository")
+            try SkillInventoryFixture.create(at: repository)
+            model = AppModel(snapshot: AppSnapshot.load(repositoryRoot: repository),
+                runtimePaths: SkillSetRuntimePaths(applicationSupportRoot: root.appendingPathComponent("state"), repositoryRoot: repository))
         }
 
         func cleanup() {

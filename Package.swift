@@ -43,13 +43,19 @@ let package = Package(
         ),
         .testTarget(
             name: "SkillSetAppTests",
-            dependencies: ["SkillSetApp"]
+            dependencies: ["SkillSetApp", "SkillSetTestSupport"]
+        ),
+        .target(
+            name: "SkillSetTestSupport",
+            dependencies: ["SkillSetCore"],
+            path: "tests/Support"
         ),
         .testTarget(
             name: "SkillSetBDDTests",
             dependencies: [
                 "SkillSetCore",
                 "SkillSetApp",
+                "SkillSetTestSupport",
                 .product(name: "CucumberSwift", package: "cucumberswift")
             ],
             resources: [

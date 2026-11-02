@@ -130,6 +130,6 @@ task macos:publish -- dist/release-v0.0.1-16
 - Python 全量测试 60 项、Node 测试 5 项、Swift 更新配置／设置／翻译／布局回归 25 项通过；Python 编译和 `git diff --check` 通过。
 - 使用公开测试向量调用实际 Sparkle `sign_update`，私钥文件签名、官方工具验签、OpenSSL 客户端公钥验签通过；错误公钥和被修改的包均被拒绝。
 - 使用临时测试包调用实际 `app-platform package`，平台 manifest、官网、品牌图、DMG 和 appcast 共 5 个文件被完整收录；官网两处下载入口和显示版本对应指定发布版本。
-- 本机 Developer ID 可用。第一次完整凭据预检通过，后续两次 `notarytool history` 返回退出码 69，报告找不到 `APP-Notary-2026` 的 Keychain 项；显式指定登录钥匙串仍失败，原因尚未确认。预检正确停止，未重新保存或覆盖凭据。
-- `app.u1.fan` 的 CLI 默认目录和历史 `~/data` 目录均报告未认证，实际上传前需要恢复有效登录。
-- 本轮完成自动化入口，未提交源码、递增仓库版本、提交新的公证任务、安装应用或上传平台；完整新版本公证及客户端实际升级仍待执行。
+- 本机 Developer ID、`APP-Notary-2026` 和原 Sparkle 私钥的完整预检通过；`app.u1.fan` 的 CLI 登录已恢复。
+- 首次完整准备在测试阶段发现部分历史测试仍依赖已移除的个人技能。预设与 BDD 测试改用临时生成、具有真实内容指纹的技能夹具，不把个人技能重新放回公开仓库。
+- 每次实际构建、公证和发布的结果以产物目录中的 `release.json`、`publication.json` 和 `public-verification.json` 为准；客户端升级验收需另行记录。

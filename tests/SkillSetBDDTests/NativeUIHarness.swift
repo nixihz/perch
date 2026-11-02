@@ -99,6 +99,7 @@ final class NativeUIHarness {
         skillIDs: [String],
         instructionIDs: [String],
         agents: [String],
+        libraryRepositoryRoot: URL? = nil,
         librarySkillDocuments: [String: String] = [:],
         prepareRiskyPluginFixture: Bool = false
     ) throws {
@@ -144,7 +145,7 @@ final class NativeUIHarness {
         environment["CFFIXED_USER_HOME"] = home.path
         environment["SKILLSET_HOME"] = home.path
         environment["CODEX_HOME"] = codex.path
-        environment["SKILLSET_REPOSITORY_ROOT"] = repositoryRoot.path
+        environment["SKILLSET_REPOSITORY_ROOT"] = (libraryRepositoryRoot ?? repositoryRoot).path
         // 夹具没有用户导入流程，显式让应用使用仓库快照，保持技能 ID 与场景一致。
         environment["SKILLSET_REPOSITORY_LIBRARY"] = "1"
         if let executable = pluginFixture?.executableURL {
