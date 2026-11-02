@@ -130,10 +130,10 @@ public struct PluginSourceLibrary: Sendable {
         }
         let copied = try SkillAssetCopier.copy(from: URL(fileURLWithPath: original.sourcePath), to: checkout)
         guard copied.contentHash == expected else { throw PluginSourceError.changed }
-        let evidence = PluginImportEvidence(scannedAt: Date(), contentHash: expected, installations: candidate.records)
-        try JSONEncoder().encode(evidence).write(to: destination.appendingPathComponent("import.json"), options: .atomic)
+        let importEvidence = PluginImportEvidence(scannedAt: Date(), contentHash: expected, installations: candidate.records)
+        try JSONEncoder().encode(importEvidence).write(to: destination.appendingPathComponent("import.json"), options: .atomic)
         let record = SourcePreviewRecord(id: id, inputURL: original.sourcePath, canonicalURL: original.sourcePath,
-            namespace: original.name, resolvedCommit: expected, createdAt: evidence.scannedAt,
+            namespace: original.name, resolvedCommit: expected, createdAt: importEvidence.scannedAt,
             workspacePath: checkout.path, licenseEvidence: original.license ?? "", candidates: [], excludedCounts: [:], warnings: [])
         try SourcePreviewStore(rootURL: rootURL).save(record)
         published = true
