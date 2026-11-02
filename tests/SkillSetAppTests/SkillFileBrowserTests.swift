@@ -144,7 +144,7 @@ final class SkillFileBrowserTests: XCTestCase {
             .write(to: directory.appendingPathComponent(name + ".png"))
     }
 
-    private func withFixture<T>(_ body: (AppModel, URL) async throws -> T) async throws -> T {
+    private func withFixture<T>(_ body: @MainActor (AppModel, URL) async throws -> T) async throws -> T {
         let fixture = try makeFixture()
         defer { fixture.cleanup() }
         return try await body(fixture.model, fixture.root)
