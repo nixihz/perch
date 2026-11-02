@@ -135,7 +135,7 @@ CUCUMBER_TAGS=bdd CUCUMBER_VERBOSE=1 swift test
 - 不使用 `--skip` 缩小 BDD 的测试范围，XCTest 的选择清单同样可能遗漏动态场景。按标签运行后，核对日志确实包含目标场景的步骤；其他测试通过不代表该场景已执行。
 - 使用标签筛选：在功能或场景前添加 `@bdd`，再设置 `CUCUMBER_TAGS=bdd`。
 - 展开标题与空白点击场景另有 `@disclosuretargets` 标签，可用 `CUCUMBER_TAGS=disclosuretargets swift test` 定向执行真实鼠标交互。
-- 常规 `swift test` 同时执行 Swift Testing、XCTest 布局回归与 Cucumber 场景，CI 沿用该入口。
+- 常规 `swift test` 同时执行 Swift Testing、XCTest 布局回归与 Cucumber 场景；CI 的 macOS job 使用 `swift test --filter SkillSetCoreTests`，只验证不依赖外部技能库的核心测试。
 - 原生 UI 场景需要交互式 macOS 桌面会话与 Accessibility 权限。`CI=true` 或测试进程未获授权时，场景以 `XCTSkip` 明确跳过；本机运行 `task bdd` 时仍会执行这些场景。
 
 ## 5. 当前边界

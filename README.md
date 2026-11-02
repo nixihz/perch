@@ -75,7 +75,7 @@ swift build --product SkillSetDesktop
 swift build --product skillset
 ```
 
-CI 在 Ubuntu 上执行结构、目录和 Python/Node 检查，在 macOS 14 上构建应用、CLI、MCP 并运行 Swift 测试。原生 UI 场景需要交互式 macOS 会话和 Accessibility 权限；无此条件时会跳过，并不会伪造通过结果。
+CI 在 Ubuntu 上执行结构、目录和 Python/Node 检查，在 macOS 15 上构建应用、CLI、MCP 并运行仓库内可独立复现的 Swift core 测试。原生 UI 场景需要交互式 macOS 会话和 Accessibility 权限；无此条件时不会伪造通过结果。
 
 ## 文档
 
