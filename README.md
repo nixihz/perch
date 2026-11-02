@@ -44,6 +44,8 @@ task macos:build
 # 产物：dist/栖集.app
 ```
 
+正式发版可运行 `task macos:release:preflight` 检查凭据，再用 `task macos:release` 自动选择下一构建号、测试、签名、公证并生成更新包。`task macos:publish -- <发布目录>` 发布到 `app.u1.fan`，具体参数与验收边界见 [macOS 快速发版](docs/macos-release-pipeline.md)。
+
 首次使用建议从“项目”开始：登记一个本地项目，选择宿主和 Skills，点击“预览变更”，确认差异后再批准写入。
 
 ## 仓库结构

@@ -13,6 +13,7 @@ from urllib.parse import urljoin, urlsplit
 import xml.etree.ElementTree as ET
 
 from configure_updates import load_configuration
+from mac_release_support import capture, check_sparkle, verify_signature
 
 ROOT = Path(__file__).resolve().parents[1]
 SPARKLE_NS = "http://www.andymatuschak.org/xml-namespaces/sparkle"
@@ -68,16 +69,12 @@ def run(*arguments):
     subprocess.run([str(arg) for arg in arguments], check=True)
 
 
-def prepare(dmg, output, config, sparkle_bin):
+def prepare(dmg, output, config, sparkle_bin, account=None, ed_key_file=None):
     if output.exists():
         raise ValueError("输出目录已存在，拒绝覆盖已发布内容")
     if not config["feedURL"] or not urlsplit(config["feedURL"]).path.endswith("/appcast.xml"):
         raise ValueError("请先配置 HTTPS appcast.xml 地址及公钥")
-    public_key = subprocess.check_output([
-        str(sparkle_bin / "generate_keys"), "--account", BUNDLE_ID, "-p"
-    ], text=True).strip()
-    if public_key != config["publicEDKey"]:
-        raise ValueError("发布机签名公钥与客户端公钥不同")
+    options = check_sparkle(sparkle_bin, config["publicEDKey"], account, ed_key_file)
     run("codesign", "--verify", "--strict", dmg)
     run("xcrun", "stapler", "validate", dmg)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -101,12 +98,14 @@ def prepare(dmg, output, config, sparkle_bin):
         release.mkdir()
         archive = release / f"Perch-{config['version']}-{config['build']}-universal.dmg"
         shutil.copy2(dmg, archive)
-        run(sparkle_bin / "generate_appcast", "--account", BUNDLE_ID,
+        capture([sparkle_bin / "generate_appcast", *options,
             "--download-url-prefix", config["feedURL"].rsplit("/", 1)[0] + "/",
             "--link", urljoin(config["feedURL"], "../../"),
-            "--maximum-deltas", "0", release)
+            "--maximum-deltas", "0", release], "生成 Sparkle 清单", timeout=600)
         signature = validate_appcast(release / "appcast.xml", config, archive)
-        run(sparkle_bin / "sign_update", "--account", BUNDLE_ID, "--verify", archive, signature)
+        capture([sparkle_bin / "sign_update", *options, "--verify", archive, signature],
+                "Sparkle 官方工具验签", timeout=120)
+        verify_signature(archive, signature, config["publicEDKey"])
         release.rename(output)
     print(f"更新包与签名清单已生成：{output}；尚未上传")
 
@@ -117,10 +116,14 @@ def main():
     parser.add_argument("output", type=Path)
     parser.add_argument("--config", type=Path, default=ROOT / "config/updates.json")
     parser.add_argument("--sparkle-bin", type=Path, default=ROOT / ".build/artifacts/sparkle/Sparkle/bin")
+    source = parser.add_mutually_exclusive_group()
+    source.add_argument("--account", help="默认沿用 com.xiezhixin.perch")
+    source.add_argument("--ed-key-file", type=Path)
     args = parser.parse_args()
     try:
-        prepare(args.dmg.resolve(), args.output.resolve(), load_configuration(args.config), args.sparkle_bin.resolve())
-    except (ValueError, OSError, subprocess.CalledProcessError, ET.ParseError) as error:
+        prepare(args.dmg.resolve(), args.output.resolve(), load_configuration(args.config),
+                args.sparkle_bin.resolve(), args.account, args.ed_key_file)
+    except (ValueError, OSError, subprocess.SubprocessError, ET.ParseError) as error:
         parser.exit(1, f"准备 Sparkle 更新失败：{error}\n")
 
 

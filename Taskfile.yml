@@ -1,6 +1,24 @@
 version: '3'
 
 tasks:
+  macos:release:preflight:
+    desc: 检查 Developer ID、公证凭据与 Sparkle 私钥，不构建、不发布
+    platforms: [darwin]
+    cmds:
+      - python3 script/release_macos.py preflight {{.CLI_ARGS}}
+
+  macos:release:
+    desc: 自动递增构建号，检查源码、测试、构建、公证并准备平台发布包
+    platforms: [darwin]
+    cmds:
+      - python3 script/release_macos.py prepare {{.CLI_ARGS}}
+
+  macos:publish:
+    desc: 发布到 app.u1.fan，核对公网 appcast 与完整 DMG
+    platforms: [darwin]
+    cmds:
+      - python3 script/release_macos.py publish {{.CLI_ARGS}}
+
   macos:build:
     desc: 构建并打包 macOS 应用，不启动
     platforms: [darwin]

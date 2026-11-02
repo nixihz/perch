@@ -27,7 +27,7 @@ jobs:
       - name: Verify catalog snapshots
         run: python scripts/catalog.py verify
       - name: Test catalog and UI localization
-        run: python -m unittest tests.test_catalog tests.test_ui_localization tests.test_update_packaging -v
+        run: python -m unittest tests.test_catalog tests.test_ui_localization tests.test_update_packaging tests.test_sparkle_appcast tests.test_macos_release -v
 
   macos:
     name: Native macOS app
