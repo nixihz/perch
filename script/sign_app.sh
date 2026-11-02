@@ -15,8 +15,7 @@ codesign "${SIGN_ARGS[@]}" "$FRAMEWORK/Versions/B/XPCServices/Installer.xpc"
 codesign "${SIGN_ARGS[@]}" "$FRAMEWORK/Versions/B/Autoupdate"
 codesign "${SIGN_ARGS[@]}" "$FRAMEWORK/Versions/B/Updater.app"
 codesign "${SIGN_ARGS[@]}" "$FRAMEWORK"
-# Helpers 属于嵌套代码目录，Release 的纯资源 bundle 也必须独立签名。
-codesign "${SIGN_ARGS[@]}" "$APP_BUNDLE/Contents/Helpers/SkillSet_SkillSetCore.bundle"
+# 资源 bundle 不含可执行代码，由外层应用签名时一并封存。
 codesign "${SIGN_ARGS[@]}" "$APP_BUNDLE/Contents/Helpers/skillset"
 codesign "${SIGN_ARGS[@]}" "$APP_BUNDLE"
 codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
