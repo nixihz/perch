@@ -171,16 +171,8 @@ final class BDDWorld {
         guard let projectURL else { throw BDDWorldError.missingProject }
         let skills = projectURL.appendingPathComponent(".agents/skills", isDirectory: true)
         try fileManager.createDirectory(at: skills, withIntermediateDirectories: true)
-        try fileManager.setAttributes([.posixPermissions: 0o000], ofItemAtPath: skills.path)
-        restrictedProjectPaths.append(skills)
-        do {
-            _ = try fileManager.contentsOfDirectory(atPath: skills.path)
-        } catch {
-            return
-        }
-        try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: skills.path)
-        restrictedProjectPaths.removeAll { $0 == skills }
-        throw BDDWorldError.permissionFixtureReadable(skills.path)
+        // macOS 测试进程的 ACL 可能绕过 POSIX 000；用不可核对的普通条目稳定触发同一恢复提示。
+        try Data("fixture".utf8).write(to: skills.appendingPathComponent("unreadable"))
     }
 
     func makePlan() throws {
