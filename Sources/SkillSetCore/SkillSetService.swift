@@ -391,107 +391,330 @@ public struct SkillSetService {
         try planStore.approve(id: planID, digest: digest)
     }
 
-    public func apply(planID: UUID, digest: String) throws -> ApplyServiceResult {
-        let record = try planStore.requireApprovedForApply(id: planID, digest: digest)
+    public func apply(
+        planID: UUID,
+        digest: String,
+        idempotencyKey: String? = nil
+    ) throws -> ApplyServiceResult {
+        let initial = try planStore.load(planID)
+        let projectScope = URL(
+            fileURLWithPath: initial.plan.projectPath,
+            isDirectory: true
+        ).resolvingSymlinksInPath().standardizedFileURL.path
+        let lock = try ApplyLock.acquire(
+            rootURL: paths.applicationSupportRoot,
+            scope: projectScope
+        )
+        return try withExtendedLifetime(lock) {
+
+        if let recovered = try reconcileInterruptedApply(initial, digest: digest, idempotencyKey: idempotencyKey) {
+            return recovered
+        }
+        let operationID = UUID()
+        let record = try planStore.beginApply(
+            id: planID,
+            digest: digest,
+            operationID: operationID,
+            idempotencyKey: idempotencyKey
+        )
+        if let receipt = record.applyReceipt, record.state.isApplied {
+            return applyResult(from: receipt, planID: planID, digest: digest)
+        }
+
         let planType = record.plan.metadata?["planType"] ?? "skill-deployment"
-        if planType == "plugin-lifecycle" {
-            let execution = try pluginLifecycle.execute(record)
-            if execution.planConsumed {
-                _ = try planStore.markApplied(
-                    id: planID,
-                    digest: digest,
-                    operationID: execution.operationID
-                )
-            }
-            if !execution.succeeded {
-                if execution.state.contains("uncertain") {
-                    throw PluginLifecycleError.executionUncertain(
+        do {
+            if planType == "plugin-lifecycle" {
+                let execution = try pluginLifecycle.execute(record, operationID: operationID)
+                let receipt = pluginApplyReceipt(record: record, execution: execution)
+                if execution.planConsumed {
+                    _ = try planStore.markApplied(
+                        id: planID,
+                        digest: digest,
+                        operationID: execution.operationID,
+                        receipt: receipt,
+                        state: execution.state
+                    )
+                } else {
+                    _ = try? planStore.markFailed(
+                        id: planID,
+                        digest: digest,
+                        operationID: execution.operationID
+                    )
+                }
+                if !execution.succeeded {
+                    if execution.state.requiresRecovery {
+                        _ = try? planStore.markUncertain(
+                            id: planID,
+                            digest: digest,
+                            operationID: execution.operationID
+                        )
+                        throw PluginLifecycleError.executionUncertain(
+                            execution.operationID,
+                            execution.message
+                        )
+                    }
+                    throw PluginLifecycleError.executionFailed(
                         execution.operationID,
+                        execution.state.rawValue,
                         execution.message
                     )
                 }
-                throw PluginLifecycleError.executionFailed(
-                    execution.operationID,
-                    execution.state,
-                    execution.message
+                return applyResult(from: receipt, planID: planID, digest: digest)
+            }
+
+            let staging = URL(fileURLWithPath: record.stagingPath, isDirectory: true).standardizedFileURL
+            guard isInside(staging, root: paths.stagingRoot.standardizedFileURL) else {
+                throw SkillSetServiceError.invalidStagingPath(staging.path)
+            }
+            if record.plan.metadata?["mcpLibrarySelection"] == "1" {
+                try validateMCPLibraryPlan(record.plan)
+            }
+            if planType == "global-configuration" {
+                try globalConfiguration.validate(plan: record.plan)
+                let calculated = DeploymentPlanner.calculateDigest(
+                    projectPath: record.plan.projectPath, changes: record.plan.changes, selectedSkills: [],
+                    metadata: record.plan.metadata, observations: record.plan.observations
                 )
+                guard calculated == record.plan.digest else { throw DeploymentPlanStoreError.digestMismatch }
             }
-            return ApplyServiceResult(
-                operationID: execution.operationID,
-                planID: planID,
-                planDigest: digest,
-                changedPaths: [
-                    "\(record.plan.metadata?["pluginHost"] ?? "plugin"):"
-                        + "\(record.plan.metadata?["pluginID"] ?? "unknown")"
-                ],
-                journalPath: execution.journalPath,
-                message: execution.message
+            if planType == "skill-deployment" {
+                guard record.plan.ownershipReceipt != nil, record.plan.observations != nil,
+                      record.plan.metadata?["projectStateStorage"] == "application-v1",
+                      record.plan.changes.filter({ $0.scope != "project-state" }).allSatisfy({
+                          ![ProjectLockStore.manifestFileName, ProjectLockStore.lockFileName].contains($0.relativePath)
+                      }) else {
+                    // 升级前生成的计划没有归属与读取依赖，不能沿用旧审批绕过新保护。
+                    throw DeploymentPlanStoreError.invalidState("需要重新生成包含管理归属的计划")
+                }
+                let repositoryRoot = paths.applicationSupportRoot
+                let stagedLock = staging.appendingPathComponent(ProjectLockStore.lockFileName)
+                let projectLock = ProjectLockStore(
+                    projectRoot: URL(fileURLWithPath: record.plan.projectPath, isDirectory: true),
+                    stateRoot: paths.applicationSupportRoot
+                ).lockURL
+                let lockURL = fileManagerExists(at: stagedLock) ? stagedLock : projectLock
+                guard fileManagerExists(at: lockURL) else {
+                    throw ProjectLockError.corruptLock(lockURL.path)
+                }
+                let lock: ProjectLockDocument
+                do {
+                    lock = try JSONDecoder().decode(ProjectLockDocument.self, from: Data(contentsOf: lockURL))
+                } catch {
+                    throw ProjectLockError.corruptLock(lockURL.path)
+                }
+                _ = try SkillObjectStore(repositoryRoot: repositoryRoot).verify(lock: lock)
+            }
+            let result = try executor.apply(plan: record.plan, from: staging, operationID: operationID)
+            let receipt = ApplyReceipt(
+                operationID: result.operationID,
+                changedPaths: result.changedPaths,
+                journalPath: result.journalURL.path
             )
-        }
-        let staging = URL(fileURLWithPath: record.stagingPath, isDirectory: true).standardizedFileURL
-        guard isInside(staging, root: paths.stagingRoot.standardizedFileURL) else {
-            throw SkillSetServiceError.invalidStagingPath(staging.path)
-        }
-        if record.plan.metadata?["mcpLibrarySelection"] == "1" {
-            try validateMCPLibraryPlan(record.plan)
-        }
-        if planType == "global-configuration" {
-            try globalConfiguration.validate(plan: record.plan)
-            let calculated = DeploymentPlanner.calculateDigest(
-                projectPath: record.plan.projectPath, changes: record.plan.changes, selectedSkills: [],
-                metadata: record.plan.metadata, observations: record.plan.observations
-            )
-            guard calculated == record.plan.digest else { throw DeploymentPlanStoreError.digestMismatch }
-        }
-        if planType == "skill-deployment" {
-            guard record.plan.ownershipReceipt != nil, record.plan.observations != nil,
-                  record.plan.metadata?["projectStateStorage"] == "application-v1",
-                  record.plan.changes.filter({ $0.scope != "project-state" }).allSatisfy({
-                      ![ProjectLockStore.manifestFileName, ProjectLockStore.lockFileName].contains($0.relativePath)
-                  }) else {
-                // 升级前生成的计划没有归属与读取依赖，不能沿用旧审批绕过新保护。
-                throw DeploymentPlanStoreError.invalidState("需要重新生成包含管理归属的计划")
-            }
-            let repositoryRoot = paths.applicationSupportRoot
-            let stagedLock = staging.appendingPathComponent(ProjectLockStore.lockFileName)
-            let projectLock = ProjectLockStore(
-                projectRoot: URL(fileURLWithPath: record.plan.projectPath, isDirectory: true),
-                stateRoot: paths.applicationSupportRoot
-            ).lockURL
-            let lockURL = fileManagerExists(at: stagedLock) ? stagedLock : projectLock
-            guard fileManagerExists(at: lockURL) else {
-                throw ProjectLockError.corruptLock(lockURL.path)
-            }
-            let lock: ProjectLockDocument
             do {
-                lock = try JSONDecoder().decode(ProjectLockDocument.self, from: Data(contentsOf: lockURL))
+                if planType == "mcp-configuration" {
+                    try MCPConfigurationManager(
+                        projectRoot: nil,
+                        applicationSupportRoot: paths.applicationSupportRoot
+                    ).recordApplied(plan: record.plan)
+                }
+                _ = try planStore.markApplied(
+                    id: planID,
+                    digest: digest,
+                    operationID: result.operationID,
+                    receipt: receipt
+                )
             } catch {
-                throw ProjectLockError.corruptLock(lockURL.path)
+                if planType == "mcp-configuration" {
+                    _ = try? executor.rollback(operationID: result.operationID)
+                    _ = try? planStore.markFailed(
+                        id: planID,
+                        digest: digest,
+                        operationID: result.operationID
+                    )
+                }
+                throw error
             }
-            _ = try SkillObjectStore(repositoryRoot: repositoryRoot).verify(lock: lock)
-        }
-        let result = try executor.apply(plan: record.plan, from: staging)
-        do {
-            if planType == "mcp-configuration" {
-                try MCPConfigurationManager(
-                    projectRoot: nil,
-                    applicationSupportRoot: paths.applicationSupportRoot
-                ).recordApplied(plan: record.plan)
-            }
-            _ = try planStore.markApplied(id: planID, digest: digest, operationID: result.operationID)
+            return applyResult(from: receipt, planID: planID, digest: digest)
         } catch {
-            if planType == "mcp-configuration" {
-                _ = try? executor.rollback(operationID: result.operationID)
+            if planType != "plugin-lifecycle" {
+                markFailedApplyIfPossible(planID: planID, digest: digest, operationID: operationID)
             }
             throw error
         }
-        return ApplyServiceResult(
-            operationID: result.operationID,
+        }
+    }
+
+    private func reconcileInterruptedApply(
+        _ record: StoredDeploymentPlan,
+        digest: String,
+        idempotencyKey: String?
+    ) throws -> ApplyServiceResult? {
+        guard record.plan.digest == digest else {
+            throw DeploymentPlanStoreError.digestMismatch
+        }
+        if let existingKey = record.idempotencyKey, existingKey != idempotencyKey {
+            throw DeploymentPlanStoreError.idempotencyKeyMismatch(record.id.uuidString)
+        }
+        guard record.state == .applying else {
+            if let receipt = record.applyReceipt, record.state.isApplied {
+                guard let idempotencyKey, record.idempotencyKey == idempotencyKey else {
+                    throw DeploymentPlanStoreError.alreadyApplied(record.id.uuidString)
+                }
+                return applyResult(from: receipt, planID: record.id, digest: digest)
+            }
+            return nil
+        }
+        guard let operationID = record.operationID else {
+            _ = try? planStore.markRetryable(id: record.id, digest: digest)
+            return nil
+        }
+        let planType = record.plan.metadata?["planType"] ?? "skill-deployment"
+        if planType == "plugin-lifecycle" {
+            guard let operation = try? pluginLifecycle.loadOperation(operationID) else {
+                _ = try? planStore.markRetryable(id: record.id, digest: digest)
+                return nil
+            }
+            if operation.state.isApplied {
+                let receipt = pluginApplyReceipt(record: record, operation: operation)
+                _ = try planStore.markApplied(
+                    id: record.id,
+                    digest: digest,
+                    operationID: operationID,
+                    receipt: receipt,
+                    state: operation.state
+                )
+                return applyResult(from: receipt, planID: record.id, digest: digest)
+            }
+            if [.applying, .executing, .uncertainInterrupted].contains(operation.state) {
+                if [.applying, .executing].contains(operation.state) {
+                    _ = try? pluginLifecycle.recoverInterruptedOperations()
+                }
+                _ = try? planStore.markUncertain(
+                    id: record.id,
+                    digest: digest,
+                    operationID: operationID
+                )
+                throw DeploymentPlanStoreError.recoveryRequired(record.id.uuidString)
+            }
+            _ = try? planStore.markRetryable(id: record.id, digest: digest)
+            return nil
+        }
+
+        guard let journal = try? executor.loadJournal(operationID) else {
+            _ = try? planStore.markRetryable(id: record.id, digest: digest)
+            return nil
+        }
+        if journal.state.isApplied {
+            let receipt = fileApplyReceipt(record: record, operationID: operationID, journalPath: executorJournalPath(operationID))
+            _ = try planStore.markApplied(
+                id: record.id,
+                digest: digest,
+                operationID: operationID,
+                receipt: receipt
+            )
+            return applyResult(from: receipt, planID: record.id, digest: digest)
+        }
+        if journal.state.isIncompleteFileTransaction {
+            do {
+                _ = try executor.rollback(operationID: operationID)
+            } catch {
+                _ = try? planStore.markRecoveryRequired(
+                    id: record.id,
+                    digest: digest,
+                    operationID: operationID
+                )
+                throw DeploymentPlanStoreError.recoveryRequired(record.id.uuidString)
+            }
+        }
+        let recovered = try? executor.loadJournal(operationID)
+        if recovered?.state == .rolledBack || recovered?.state == .failedRolledBack {
+            _ = try? planStore.markRetryable(id: record.id, digest: digest)
+            return nil
+        }
+        if recovered?.state.isApplied == true {
+            let receipt = fileApplyReceipt(record: record, operationID: operationID, journalPath: executorJournalPath(operationID))
+            _ = try planStore.markApplied(
+                id: record.id,
+                digest: digest,
+                operationID: operationID,
+                receipt: receipt
+            )
+            return applyResult(from: receipt, planID: record.id, digest: digest)
+        }
+        _ = try? planStore.markRecoveryRequired(
+            id: record.id,
+            digest: digest,
+            operationID: operationID
+        )
+        throw DeploymentPlanStoreError.recoveryRequired(record.id.uuidString)
+    }
+
+    private func markFailedApplyIfPossible(planID: UUID, digest: String, operationID: UUID) {
+        guard let journal = try? executor.loadJournal(operationID) else {
+            _ = try? planStore.markFailed(id: planID, digest: digest, operationID: operationID)
+            return
+        }
+        if journal.state == .rolledBack || journal.state == .failedRolledBack {
+            _ = try? planStore.markFailed(id: planID, digest: digest, operationID: operationID)
+        } else if journal.state.isIncompleteFileTransaction {
+            _ = try? planStore.markRecoveryRequired(id: planID, digest: digest, operationID: operationID)
+        }
+    }
+
+    private func applyResult(from receipt: ApplyReceipt, planID: UUID, digest: String) -> ApplyServiceResult {
+        ApplyServiceResult(
+            operationID: receipt.operationID,
             planID: planID,
             planDigest: digest,
-            changedPaths: result.changedPaths,
-            journalPath: result.journalURL.path
+            changedPaths: receipt.changedPaths,
+            journalPath: receipt.journalPath,
+            message: receipt.message
         )
+    }
+
+    private func pluginApplyReceipt(record: StoredDeploymentPlan, execution: PluginLifecycleExecution) -> ApplyReceipt {
+        ApplyReceipt(
+            operationID: execution.operationID,
+            changedPaths: [
+                "\(record.plan.metadata?["pluginHost"] ?? "plugin"):\(record.plan.metadata?["pluginID"] ?? "unknown")"
+            ],
+            journalPath: execution.journalPath,
+            message: execution.message
+        )
+    }
+
+    private func pluginApplyReceipt(record: StoredDeploymentPlan, operation: PluginLifecycleOperation) -> ApplyReceipt {
+        ApplyReceipt(
+            operationID: operation.operationID,
+            changedPaths: [
+                "\(record.plan.metadata?["pluginHost"] ?? "plugin"):\(record.plan.metadata?["pluginID"] ?? "unknown")"
+            ],
+            journalPath: paths.operationsRoot
+                .appendingPathComponent(operation.operationID.uuidString)
+                .appendingPathComponent("plugin-operation.json").path,
+            message: operation.message
+        )
+    }
+
+    private func fileApplyReceipt(record: StoredDeploymentPlan, operationID: UUID, journalPath: String) -> ApplyReceipt {
+        let projectRoot = URL(fileURLWithPath: record.plan.projectPath, isDirectory: true)
+        let changedPaths = record.plan.changes.map { change in
+            guard change.scope == "project-state" else { return change.relativePath }
+            return ProjectLockStore(
+                projectRoot: projectRoot,
+                stateRoot: paths.applicationSupportRoot
+            ).directoryURL.appendingPathComponent(change.relativePath).path
+        }
+        return ApplyReceipt(
+            operationID: operationID,
+            changedPaths: changedPaths,
+            journalPath: journalPath
+        )
+    }
+
+    private func executorJournalPath(_ operationID: UUID) -> String {
+        paths.operationsRoot.appendingPathComponent(operationID.uuidString)
+            .appendingPathComponent("journal.json").path
     }
 
     public func operation(_ operationID: UUID) throws -> FileTransactionJournal {

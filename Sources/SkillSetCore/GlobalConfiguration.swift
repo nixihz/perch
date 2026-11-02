@@ -282,7 +282,7 @@ public struct GlobalConfigurationManager {
         return try journals(host).sorted { $0.createdAt > $1.createdAt }.map { journal in
             let statePath = relativeIfInside(locations.stateURL(host), root: URL(fileURLWithPath: journal.projectPath))
             return GlobalOperationRecord(journal: journal, action: journal.metadata?["globalAction"] ?? "deploy",
-                canUndo: journal.state == "applied" && statePath.map { path in
+                canUndo: journal.state == .applied && statePath.map { path in
                     journal.steps.contains { $0.relativePath == path && $0.afterHash == currentHash }
                 } ?? false)
         }
@@ -292,7 +292,7 @@ public struct GlobalConfigurationManager {
         let url = locations.stateURL(host)
         try check(url, root: locations.transactionRoot(host))
         let history = try journals(host)
-        if history.contains(where: { ["applying", "failed", "rolling-back"].contains($0.state) }) {
+        if history.contains(where: { [.applying, .failed, .rollingBack].contains($0.state) }) {
             throw FileTransactionError.journalCorrupt(paths.operationsRoot.path)
         }
         guard let data = try dataIfPresent(url) else { return nil }
@@ -339,7 +339,7 @@ public struct GlobalConfigurationManager {
 
     func hasStateReceipt(_ stateHash: String, host: SkillConfigurationTarget, journals: [FileTransactionJournal]) -> Bool {
         journals.contains { journal in
-            guard journal.state == "applied",
+            guard journal.state == .applied,
                   journal.metadata?["globalHost"] == host.rawValue,
                   let statePath = relativeIfInside(locations.stateURL(host), root: URL(fileURLWithPath: journal.projectPath)) else {
                 return false

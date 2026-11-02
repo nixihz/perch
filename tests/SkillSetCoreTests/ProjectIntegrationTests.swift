@@ -269,13 +269,13 @@ struct ProjectIntegrationTests {
                 journal.steps[index].state = "old-moved"
             }
         }
-        journal.state = "applying"
+        journal.state = .applying
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         try encoder.encode(journal).write(to: result.journalURL)
         #expect(try executor.recoverPendingOperations() == [result.operationID])
         #expect(try String(contentsOf: skillURL(fixture).appendingPathComponent("SKILL.md"), encoding: .utf8) == "# Demo\n")
-        #expect(try executor.loadJournal(result.operationID).state == "rolled-back")
+        #expect(try executor.loadJournal(result.operationID).state == .rolledBack)
         #expect(try executor.recoverPendingOperations().isEmpty)
     }
 
@@ -297,7 +297,7 @@ struct ProjectIntegrationTests {
         journal.steps[index].state = "restoring"
         journal.steps[index].restorePath = restore.path
         journal.steps[index].discardedPath = discarded.path
-        journal.state = "rolling-back"
+        journal.state = .rollingBack
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         try encoder.encode(journal).write(to: result.journalURL)
@@ -331,14 +331,14 @@ struct ProjectIntegrationTests {
         let temporary = URL(fileURLWithPath: try #require(journal.steps[0].temporaryPath))
         if beforeRename { try FileManager.default.moveItem(at: target, to: temporary) }
         journal.steps[0].state = "staged"
-        journal.state = "applying"
+        journal.state = .applying
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         try encoder.encode(journal).write(to: result.journalURL)
         #expect(try executor.recoverPendingOperations() == [result.operationID])
         #expect(!FileManager.default.fileExists(atPath: target.path))
         #expect(!FileManager.default.fileExists(atPath: temporary.path))
-        #expect(try executor.loadJournal(result.operationID).state == "rolled-back")
+        #expect(try executor.loadJournal(result.operationID).state == .rolledBack)
     }
 
     @Test

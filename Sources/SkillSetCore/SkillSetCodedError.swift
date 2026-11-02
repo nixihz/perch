@@ -22,6 +22,7 @@ extension SkillAssetCopyError: SkillSetCodedError {
 extension SkillSetStoreError: SkillSetCodedError {}
 extension ManagedBlockError: SkillSetCodedError {}
 extension FileTransactionError: SkillSetCodedError {}
+extension ApplyLockError: SkillSetCodedError {}
 extension DeploymentPlanStoreError: SkillSetCodedError {}
 extension ProjectDraftStoreError: SkillSetCodedError {}
 extension SkillSetServiceError: SkillSetCodedError {}

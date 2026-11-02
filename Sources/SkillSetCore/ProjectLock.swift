@@ -387,7 +387,7 @@ public struct ProjectLockStore {
         let hasReceipt = directories.contains { directory in
             guard let id = UUID(uuidString: directory.lastPathComponent),
                   let journal = try? executor.loadJournal(id) else { return false }
-            return journal.state == "applied" && journal.projectPath == projectRoot.path
+            return journal.state == .applied && journal.projectPath == projectRoot.path
                 && journal.ownershipReceipt?.lockHash == lockHash
         }
         return hasReceipt ? [oldManifest, oldLock] : []

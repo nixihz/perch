@@ -328,7 +328,7 @@ public struct PluginLifecycleOperation: Codable, Hashable, Sendable {
     public let keepData: Bool
     public let createdAt: Date
     public var finishedAt: Date?
-    public var state: String
+    public var state: OperationState
     public var exitCode: Int32?
     public var timedOut: Bool
     public var before: PluginLifecycleObservation
@@ -353,7 +353,7 @@ public struct PluginLifecycleOperation: Codable, Hashable, Sendable {
         keepData: Bool,
         createdAt: Date,
         finishedAt: Date? = nil,
-        state: String,
+        state: OperationState,
         exitCode: Int32? = nil,
         timedOut: Bool = false,
         before: PluginLifecycleObservation,
@@ -392,7 +392,7 @@ public struct PluginLifecycleOperation: Codable, Hashable, Sendable {
 public struct PluginLifecycleExecution: Codable, Hashable, Sendable {
     public let operationID: UUID
     public let journalPath: String
-    public let state: String
+    public let state: OperationState
     public let message: String
     public let planConsumed: Bool
     public let succeeded: Bool
@@ -400,7 +400,7 @@ public struct PluginLifecycleExecution: Codable, Hashable, Sendable {
     public init(
         operationID: UUID,
         journalPath: String,
-        state: String,
+        state: OperationState,
         message: String,
         planConsumed: Bool,
         succeeded: Bool
@@ -422,7 +422,7 @@ public enum OperationKind: String, Codable, Sendable {
 public struct OperationInspection: Codable, Hashable, Sendable {
     public let operationID: UUID
     public let kind: OperationKind
-    public let state: String
+    public let state: OperationState
     public let projectPath: String
     public let planID: UUID
     public let planDigest: String
@@ -433,7 +433,7 @@ public struct OperationInspection: Codable, Hashable, Sendable {
     public init(
         operationID: UUID,
         kind: OperationKind,
-        state: String,
+        state: OperationState,
         projectPath: String,
         planID: UUID,
         planDigest: String,
@@ -641,7 +641,10 @@ public struct PluginLifecycleManager {
         }
     }
 
-    public func execute(_ planRecord: StoredDeploymentPlan) throws -> PluginLifecycleExecution {
+    public func execute(
+        _ planRecord: StoredDeploymentPlan,
+        operationID suppliedOperationID: UUID? = nil
+    ) throws -> PluginLifecycleExecution {
         let command = try stagedCommand(for: planRecord)
         guard command.action.rawValue == planRecord.plan.metadata?["pluginAction"],
               command.host.rawValue == planRecord.plan.metadata?["pluginHost"],
@@ -664,7 +667,7 @@ public struct PluginLifecycleManager {
             throw PluginLifecycleError.stateChanged(command.pluginID)
         }
 
-        let operationID = idGenerator()
+        let operationID = suppliedOperationID ?? idGenerator()
         let operationRoot = operationsRoot.appendingPathComponent(operationID.uuidString, isDirectory: true)
         try fileManager.createDirectory(at: operationRoot, withIntermediateDirectories: true)
         var operation = PluginLifecycleOperation(
@@ -680,14 +683,14 @@ public struct PluginLifecycleManager {
             arguments: command.arguments,
             keepData: command.keepData,
             createdAt: clock(),
-            state: "applying",
+            state: .applying,
             before: before
         )
         try write(operation)
 
         let executable = URL(fileURLWithPath: command.executablePath)
         guard fileManager.isExecutableFile(atPath: executable.path) else {
-            operation.state = "failed-before-launch"
+            operation.state = .failedBeforeLaunch
             operation.finishedAt = clock()
             operation.message = "宿主 CLI 不存在或不可执行。"
             try write(operation)
@@ -722,27 +725,27 @@ public struct PluginLifecycleManager {
         let planConsumed: Bool
         let succeeded: Bool
         if output.timedOut {
-            operation.state = "uncertain-interrupted"
+            operation.state = .uncertainInterrupted
             operation.message = "宿主命令超时；不自动重试，请核对插件实际状态。"
             planConsumed = true
             succeeded = false
         } else if output.exitCode == 0, targetObserved {
-            operation.state = "applied"
+            operation.state = .applied
             operation.message = "宿主命令成功，回读已观察到目标状态。"
             planConsumed = true
             succeeded = true
         } else if output.exitCode == 0 {
-            operation.state = "applied-verification-pending"
+            operation.state = .appliedVerificationPending
             operation.message = "宿主命令已成功退出，但回读尚未观察到目标状态；可能需要刷新宿主或重启会话。"
             planConsumed = true
             succeeded = true
         } else if targetObserved {
-            operation.state = "applied-after-nonzero-exit"
+            operation.state = .appliedAfterNonzeroExit
             operation.message = "宿主命令非零退出，但回读已观察到目标状态；保留原始退出码供排查。"
             planConsumed = true
             succeeded = true
         } else {
-            operation.state = "failed"
+            operation.state = .failed
             operation.message = "宿主命令失败，回读未观察到目标状态。"
             planConsumed = false
             succeeded = false
@@ -785,10 +788,10 @@ public struct PluginLifecycleManager {
         for directory in directories {
             guard let id = UUID(uuidString: directory.lastPathComponent),
                   var operation = try? loadOperation(id),
-                  ["applying", "executing"].contains(operation.state) else {
+                  [.applying, .executing].contains(operation.state) else {
                 continue
             }
-            operation.state = "uncertain-interrupted"
+            operation.state = .uncertainInterrupted
             operation.finishedAt = clock()
             operation.message = "应用启动时发现未完成的 Plugin 命令；为避免重复副作用，没有自动重试。"
             try write(operation)

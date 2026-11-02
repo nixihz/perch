@@ -996,7 +996,7 @@ struct SkillSetCoreTests {
         ]])
         #expect(applied.message?.contains("回读已观察到目标状态") == true)
         let operation = try service.pluginOperation(applied.operationID)
-        #expect(operation.state == "applied")
+        #expect(operation.state == .applied)
         #expect(operation.action == .enable)
         #expect(operation.before.enabled == false)
         #expect(operation.after?.enabled == true)
@@ -1274,7 +1274,7 @@ struct SkillSetCoreTests {
             "--json"
         ]])
         let operation = try service.pluginOperation(applied.operationID)
-        #expect(operation.state == "applied")
+        #expect(operation.state == .applied)
         #expect(operation.before.manifestDigest == selected.manifestDigest)
         #expect(operation.after?.manifestDigest == selected.manifestDigest)
     }

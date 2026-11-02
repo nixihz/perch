@@ -43,10 +43,10 @@ enum ProjectOwnershipReader {
                   let journal = try? executor.loadJournal(id),
                   journal.projectPath == projectRoot.path else { continue }
             // 未收尾的事务不能作为新计划的起点，否则可能丢失恢复依据。
-            if journal.state == "applying" || journal.state == "failed" || journal.state == "rolling-back" {
+            if journal.state == .applying || journal.state == .failed || journal.state == .rollingBack {
                 throw FileTransactionError.journalCorrupt(directory.path)
             }
-            if journal.state == "applied", journal.ownershipReceipt?.lockHash == lockHash {
+            if journal.state == .applied, journal.ownershipReceipt?.lockHash == lockHash {
                 matches.append(journal)
             }
         }

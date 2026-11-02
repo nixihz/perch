@@ -82,7 +82,7 @@ public struct FileTransactionJournal: Codable, Hashable, Sendable {
     public let planID: UUID
     public let planDigest: String
     public let createdAt: Date
-    public var state: String
+    public var state: OperationState
     public var steps: [FileTransactionStep]
     public let ownershipReceipt: ProjectOwnershipReceipt?
     public let metadata: [String: String]?
@@ -93,7 +93,7 @@ public struct FileTransactionJournal: Codable, Hashable, Sendable {
         planID: UUID,
         planDigest: String,
         createdAt: Date,
-        state: String,
+        state: OperationState,
         steps: [FileTransactionStep],
         ownershipReceipt: ProjectOwnershipReceipt? = nil,
         metadata: [String: String]? = nil
@@ -150,12 +150,16 @@ public struct FileTransactionExecutor {
         self.idGenerator = idGenerator
     }
 
-    public func apply(plan: DeploymentPlan, from stagingRoot: URL) throws -> TransactionResult {
+    public func apply(
+        plan: DeploymentPlan,
+        from stagingRoot: URL,
+        operationID suppliedOperationID: UUID? = nil
+    ) throws -> TransactionResult {
         let projectRoot = URL(fileURLWithPath: plan.projectPath, isDirectory: true).resolvingSymlinksInPath().standardizedFileURL
         let allowingCorruptSnapshot = plan.metadata?["allowSnapshotRepair"] == "1"
             && plan.metadata?["globalAction"] == "repair-snapshot"
         try validate(plan: plan, stagingRoot: stagingRoot, projectRoot: projectRoot)
-        let operationID = idGenerator()
+        let operationID = suppliedOperationID ?? idGenerator()
         let operationRoot = operationsRoot.appendingPathComponent(operationID.uuidString, isDirectory: true)
         try fileManager.createDirectory(at: operationRoot, withIntermediateDirectories: true)
 
@@ -174,7 +178,7 @@ public struct FileTransactionExecutor {
             planID: plan.id,
             planDigest: plan.digest,
             createdAt: clock(),
-            state: "applying",
+            state: .applying,
             steps: steps,
             ownershipReceipt: plan.ownershipReceipt,
             metadata: plan.metadata
@@ -278,7 +282,7 @@ public struct FileTransactionExecutor {
                 try writeJournal(journal)
                 try removeIfPresent(displaced)
             }
-            journal.state = "applied"
+            journal.state = .applied
             try writeJournal(journal)
             return TransactionResult(
                 operationID: operationID,
@@ -297,7 +301,7 @@ public struct FileTransactionExecutor {
                 planID: plan.id,
                 planDigest: plan.digest,
                 createdAt: journal.createdAt,
-                state: "applying",
+                state: .applying,
                 steps: steps,
                 ownershipReceipt: plan.ownershipReceipt,
                 metadata: plan.metadata
@@ -311,7 +315,7 @@ public struct FileTransactionExecutor {
             }
             // 保留回滚逐步持久化的结果，不能用旧 steps 覆盖已恢复记录。
             journal = (try? loadJournal(operationID)) ?? rollbackJournal
-            journal.state = recovered ? "failed-rolled-back" : "failed"
+            journal.state = recovered ? .failedRolledBack : .failed
             try? writeJournal(journal)
             throw error
         }
@@ -328,7 +332,7 @@ public struct FileTransactionExecutor {
         for directory in directories {
             guard let id = UUID(uuidString: directory.lastPathComponent),
                   let journal = try? loadJournal(id),
-                  ["applying", "failed", "rolling-back"].contains(journal.state) else {
+                  [.applying, .failed, .rollingBack].contains(journal.state) else {
                 continue
             }
             _ = try rollback(journal: journal, allowingCorruptSnapshot: journal.metadata?["allowSnapshotRepair"] == "1"
@@ -345,7 +349,7 @@ public struct FileTransactionExecutor {
     }
 
     private func rollback(journal: FileTransactionJournal, allowingCorruptSnapshot: Bool = false) throws -> [String] {
-        guard journal.state != "rolled-back", journal.state != "failed-rolled-back", journal.state != "recovered" else { return [] }
+        guard journal.state != .rolledBack, journal.state != .failedRolledBack else { return [] }
         let projectRoot = URL(fileURLWithPath: journal.projectPath, isDirectory: true).resolvingSymlinksInPath()
         let operationRoot = operationsRoot.appendingPathComponent(journal.operationID.uuidString, isDirectory: true)
         var restored: [String] = []
@@ -375,7 +379,7 @@ public struct FileTransactionExecutor {
                 }
             }
         }
-        updated.state = "rolling-back"
+        updated.state = .rollingBack
         try writeJournal(updated)
 
         for step in updated.steps.reversed() where step.state == "applied" || step.state == "restoring" {
@@ -449,7 +453,7 @@ public struct FileTransactionExecutor {
             try writeJournal(updated)
         }
 
-        updated.state = "rolled-back"
+        updated.state = .rolledBack
         try writeJournal(updated)
         return restored
     }
