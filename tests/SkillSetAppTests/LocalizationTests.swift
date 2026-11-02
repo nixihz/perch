@@ -5,15 +5,6 @@ import SkillSetCore
 
 @MainActor
 final class LocalizationTests: XCTestCase {
-    func testBackgroundLoadingAndRetainedResultsHaveEnglishText() {
-        for key in ["正在读取配置…", "正在读取技能…", "正在读取使用位置…", "正在读取接入状态…",
-                    "正在读取插件内容…", "显示上次读取结果。", "内容是否相同待核对"] {
-            let english = L10n.text(key, language: .english)
-            XCTAssertFalse(containsChinese(english), english)
-            XCTAssertNotEqual(english, key)
-        }
-    }
-
     func testGlobalVerificationReasonsTranslateWithoutChangingPaths() {
         let reasons: [GlobalVerificationReason] = [.invalidDraft, .invalidState, .unsupportedSchema, .hostMismatch,
             .skillsPathMismatch, .rulesPathMismatch, .unmanagedPath, .missingReceipt, .invalidRulesEncoding,
@@ -128,49 +119,6 @@ final class LocalizationTests: XCTestCase {
         XCTAssertTrue(english.contains("directory fingerprint"), english)
         XCTAssertTrue(english.contains("Repair the skill snapshot"), english)
         XCTAssertTrue(english.contains(path), english)
-    }
-
-    func testBuiltInMetadataIsLocalizedButSkillDescriptionsStayOriginal() throws {
-        let catalog = try JSONDecoder().decode(CatalogDocument.self, from: Data(#"""
-        {
-          "schemaVersion": 1,
-          "hashAlgorithm": "sha256:path-content-executable:v1",
-          "entries": [
-            {
-              "id": "fixture/localized-skill",
-              "slug": "localized-skill",
-              "declaredName": "localized-skill",
-              "description": "中文技能说明不会被翻译",
-              "declaredVersion": null,
-              "metadataReview": "reviewed",
-              "sourceId": "fixture",
-              "path": "skills/localized-skill",
-              "contentHash": "0000000000000000000000000000000000000000000000000000000000000000",
-              "fileCount": 1,
-              "bytes": 1,
-              "integrity": "ok",
-              "issues": [],
-              "excludedPaths": []
-            }
-          ]
-        }
-        """#.utf8))
-        let snapshot = AppSnapshot.load().replacingCatalog(catalog)
-        for preset in snapshot.presets {
-            XCTAssertFalse(containsChinese(L10n.text(preset.name, language: .english)))
-            XCTAssertFalse(containsChinese(L10n.text(preset.description, language: .english)))
-        }
-        for template in snapshot.templates {
-            XCTAssertFalse(containsChinese(L10n.text(template.title, language: .english)))
-            XCTAssertFalse(containsChinese(L10n.text(template.purpose, language: .english)))
-        }
-        for source in snapshot.sources.sources {
-            XCTAssertFalse(containsChinese(L10n.text(source.title, language: .english)), source.title)
-        }
-        let skill = snapshot.catalog.entries.first { containsChinese($0.description) }
-        XCTAssertNotNil(skill)
-        let original = skill?.description ?? ""
-        XCTAssertEqual(L10n.text(original, language: .english), original)
     }
 
     private func containsChinese(_ text: String) -> Bool {

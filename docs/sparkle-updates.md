@@ -48,7 +48,7 @@ PERCH_SIGNING_IDENTITY='Developer ID Application: <name> (<team>)' \
 
 ## 后续发版步骤
 
-日常发版使用 [macOS 快速发版](macos-release-pipeline.md)：`task macos:release:preflight` 检查凭据，`task macos:release` 自动确定构建号并完成测试、构建、公证和本地包准备，再用 `task macos:publish -- <发布目录>` 上传现有 `app.u1.fan` 平台。旧包地址保留与分段续传的实际边界见该文档。
+日常发版使用 [macOS 快速发版](macos-release-pipeline.md)：测试通过 `task test` 单独执行；`task macos:release:preflight` 检查凭据，`task macos:release` 自动确定构建号并完成源码检查、构建、公证和本地包准备，不运行测试，再用 `task macos:publish -- <发布目录>` 上传现有 `app.u1.fan` 平台。旧包地址保留与分段续传的实际边界见该文档。
 
 Sparkle 工具随依赖下载至 `<构建目录>/artifacts/sparkle/Sparkle/bin/`。发布机使用公证 profile：`APP-Notary-2026`；它由 notarytool 从钥匙串读取，不在仓库保存凭据。此前一次提交返回 profile lookup failure，后续 history 与 submit 均成功，最初失败的具体原因尚未确认；撤回此前“缺少 profile”的结论。
 

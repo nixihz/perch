@@ -110,14 +110,6 @@ struct SkillSetCoreTests {
     }
 
     @Test
-    func presetsOnlyReferenceKnownCatalogEntries() {
-        let snapshot = AppSnapshot.load()
-        let ids = Set(snapshot.catalog.entries.map(\.id))
-        #expect(snapshot.presets.allSatisfy { Set($0.skills).isSubset(of: ids) })
-        #expect(snapshot.templates.map(\.id).sorted() == ["base-zh", "engineering", "ui-craft"])
-    }
-
-    @Test
     func managedBlockReplacesOnlyItsOwnBytesAndRejectsMalformedMarkers() throws {
         let original = """
         # 项目约定

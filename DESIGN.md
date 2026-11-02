@@ -226,7 +226,7 @@ Agents 写入 `~/.agents/skills`，Codex 沿用 `CODEX_HOME/skills`，Claude Cod
 - 连续切换侧栏全部页面，尤其是来源长列表与 AGENTS 片段：侧栏分组、底部说明和页面标题不得上移到标题栏外；详情内容尺寸不得反向撑大根分栏。
 - `swift test --filter NavigationLayoutTests` 检查三种窗口尺寸下的正反向切页、侧栏位置和内容边界，并用隔离的 24 条 MCP 配置及插件验证长列表末尾可达；另用单独的标题组件验证最小高度测量。
 - 验证 Light/Dark、键盘焦点、VoiceOver 可读的状态文字；减少动效时没有位移依赖。
-- `ButtonInteractionTests` 验证按钮按下与禁用状态只触发一次，`ControlHitTargetTests` 验证按钮、复选框、分段选择、搜索清空的留白命中；`SkillHostToggleUITests` 验证技能目标开关的选中与键盘状态。
+- `ControlHitTargetTests` 验证三种按钮样式的中心与留白点击恰好执行一次、控件外及禁用点击不执行，并验证复选框、分段选择、搜索清空的留白命中；`SkillHostToggleUITests` 验证技能目标开关的选中与键盘状态。
 - `swift test --filter SkillSetAppTests` 同时检查两种外观下的文字对比度、深色强调面亮度，以及三种窗口尺寸下全部页面的布局边界和长列表滚动。
 - 验证来源同步时只能写入隔离的栖集状态目录；验证项目或 MCP 写入时必须使用临时项目。自动化测试不得修改真实 `.claude`、Codex TOML、Claude JSON、Keychain、全局 skill，也不得启动真实 MCP/Plugin 或宿主 CLI；Plugin 生命周期回归使用隔离 HOME、fixture 和假 CLI。应用页面可以只读展示这些宿主事实。
 

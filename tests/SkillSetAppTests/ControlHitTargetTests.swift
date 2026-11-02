@@ -5,7 +5,7 @@ import XCTest
 
 @MainActor
 final class ControlHitTargetTests: XCTestCase {
-    func testButtonPaddingRespondsOnceAndDisabledButtonIgnoresIt() async throws {
+    func testButtonCenterAndPaddingRespondOnceAndDisabledButtonIgnoresBoth() async throws {
         for kind in [AppButtonKind.primary, .secondary, .quiet] {
             var actions = 0
             let controller = NSHostingController(rootView:
@@ -17,15 +17,16 @@ final class ControlHitTargetTests: XCTestCase {
             let window = makeWindow(controller)
             defer { window.close() }
             try await settle(controller.view)
-            let points = [NSPoint(x: 120, y: 27), NSPoint(x: 120, y: 53),
+            let points = [NSPoint(x: 120, y: 40),
+                          NSPoint(x: 120, y: 27), NSPoint(x: 120, y: 53),
                           NSPoint(x: 24, y: 40), NSPoint(x: 216, y: 40)]
             for (index, point) in points.enumerated() {
                 try click(window, at: point)
                 try await settle(controller.view)
-                XCTAssertEqual(actions, index + 1, "按钮留白必须可点击且只执行一次：\(kind)，\(point)")
+                XCTAssertEqual(actions, index + 1, "按钮中心与留白必须可点击且只执行一次：\(kind)，\(point)")
             }
             try click(window, at: NSPoint(x: 120, y: 20))
-            XCTAssertEqual(actions, 4, "按钮外不能误触")
+            XCTAssertEqual(actions, points.count, "按钮外不能误触")
             let disabled = NSHostingController(rootView:
                 Button { actions += 1 } label: { Text("操作").frame(maxWidth: .infinity) }
                     .buttonStyle(AppButtonStyle(kind: kind)).disabled(true)
@@ -33,8 +34,11 @@ final class ControlHitTargetTests: XCTestCase {
             )
             window.contentViewController = disabled
             try await settle(disabled.view)
-            try click(window, at: points[0])
-            XCTAssertEqual(actions, 4)
+            for point in points.prefix(2) {
+                try click(window, at: point)
+                try await settle(disabled.view)
+                XCTAssertEqual(actions, points.count, "禁用按钮的中心与留白都不能执行动作")
+            }
         }
     }
 

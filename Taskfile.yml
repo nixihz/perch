@@ -8,7 +8,7 @@ tasks:
       - python3 script/release_macos.py preflight {{.CLI_ARGS}}
 
   macos:release:
-    desc: 自动递增构建号，检查源码、测试、构建、公证并准备平台发布包
+    desc: 自动递增构建号，检查源码、构建、公证并准备平台发布包，不运行测试
     platforms: [darwin]
     cmds:
       - python3 script/release_macos.py prepare {{.CLI_ARGS}}

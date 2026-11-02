@@ -11,6 +11,14 @@ swift package resolve
 task macos:release:preflight
 ```
 
+全量测试独立执行，不随发布准备自动运行：
+
+```bash
+task test
+```
+
+该任务包含 Node、Python、Swift 与原生 BDD；原生交互需要已解锁的桌面会话及 Accessibility 权限。`macos:release` 不调用此任务，也不检查它此前是否通过；发布包准备成功不代表全量测试通过。
+
 提交源码和本次发布脚本后，生成下一版：
 
 ```bash
@@ -73,14 +81,26 @@ task macos:release -- --ed-key-file /private/release/perch-sparkle.key
 1. 读取匿名公网清单，确定递增构建号；检查干净工作区。
 2. 检查 Developer ID、公证 profile、Sparkle 工具和私钥签名能力，失败时不开始构建。
 3. 保存源码 commit、所有受版本控制文件的内容与权限指纹，以及固定的发布配置。
-4. 执行项目已有的 `task check` 和 `task test`，包括 Swift、Python、Node 与原生 BDD。原生 BDD 需要已解锁的交互会话及 Accessibility 权限，失败时停止。
+4. 执行项目已有的 `task check`，检查技能结构、目录指纹并构建原生应用，失败时停止；不运行 `task test` 中的测试套件。
 5. 调用 `script/build_and_run.sh --release --universal --no-open`，生成 Developer ID 签名的应用和内置 CLI。既有脚本继续负责嵌套代码签名和仓库外 MCP 握手。
 6. 检查版本、Bundle ID、公钥、更新策略、hardened runtime 和 arm64 / x86_64 架构；对应用提交公证并要求 `Accepted`，再装订并执行 Gatekeeper 检查。
 7. 从已装订应用创建含 `/Applications` 链接的 DMG，对 DMG 签名、公证、装订。
 8. 复用 `prepare_sparkle_update.py` 检查 DMG 内应用、生成单版本 appcast、关闭增量包，校验最终包长度、URL 和两种工具的 Ed25519 验签。
 9. 生成与本次版本一致的平台目录及离线 ZIP，最后再次核对源码未变，写入发布记录。未生成 `release.json` 的目录不能进入新发布器。
 
-测试后、构建后或打包后源码发生变化都会停止。发布目录应放在 Git 忽略的 `dist/` 中，或仓库之外，避免中间产物影响干净工作区检查。此命令只准备产物，不修改线上服务或本机安装。
+检查后、构建后或打包后源码发生变化都会停止。发布目录应放在 Git 忽略的 `dist/` 中，或仓库之外，避免中间产物影响干净工作区检查。此命令只准备产物，不修改线上服务或本机安装。
+
+### 测试取舍
+
+测试沿用已有的独立入口 `task test`，`macos:release` 只调用 `task check`，不再自动执行测试，也不增加跳过测试的发布参数。测试套件不按名称过滤，精简只删除无效断言和重复覆盖：
+
+- 不检查测试自己创建且未被操作的不可变值。例如，排序函数返回新数组，检查输入数组的固定正文不能验证排序结果；保留顺序、完整记录、同名次序和空列表测试。
+- 不用源码包含 `Text(...)` 等写法证明界面行为；重构写法不应导致失败，未翻译正文也不能仅凭这些字符串宣称通过。
+- 翻译键覆盖、英文目录内容与占位符数量统一由 Python 检查；Swift 保留插值、语言切换、用户内容保留、错误恢复与敏感信息隐藏测试，不重复维护背景加载文案清单或已退出正常启动流程的内置示例清单。
+- 空技能目录下的预设引用检查与“没有内置技能”重复，只保留后者；用户预设的保存、合并、冲突和失效引用行为继续测试。
+- 同类按钮的中心、边缘、控件外和禁用点击集中在命中区域测试，不再另建只覆盖中心点击的测试窗口。
+
+审批、真实文件写入与回读、来源漂移、回滚、签名验签和原生交互测试不因耗时而删除。原生交互仍需要交互式会话和 Accessibility 权限；跳过不等于通过。
 
 输出示例：
 
@@ -133,3 +153,23 @@ task macos:publish -- dist/release-v0.0.1-16
 - 本机 Developer ID、`APP-Notary-2026` 和原 Sparkle 私钥的完整预检通过；`app.u1.fan` 的 CLI 登录已恢复。
 - 首次完整准备在测试阶段发现部分历史测试仍依赖已移除的个人技能。预设与 BDD 测试改用临时生成、具有真实内容指纹的技能夹具，不把个人技能重新放回公开仓库。
 - 每次实际构建、公证和发布的结果以产物目录中的 `release.json`、`publication.json` 和 `public-verification.json` 为准；客户端升级验收需另行记录。
+
+## 测试精简验证（2026-11-02）
+
+以下是测试精简阶段的记录，早于后续将 `task test` 从发布流程移除的改动。
+
+- 本轮净减 5 个测试方法，另删除 1 条同义反复断言；未修改产品源码、发布脚本或 Taskfile。
+- `task check` 通过，仍有原先的 `.claude/skills` 入口缺失或失效警告；Node 5 项、Python 59 项、Swift Testing 198 项、Core XCTest 18 项和 App XCTest 218 项通过。
+- 完整 `task test` 未通过：原生 BDD 有 3 处失败，分别为展开详情后等待“来源标识”、计划确认场景填写规则正文、片段用法场景填写标题；前一轮未精简的完整基线通过。这些交互失败不是同义反复，保留测试，根因尚未确定。
+- 使用 `CUCUMBER_TAGS=disclosuretargets swift test` 复跑，展开场景仍在搜索框接受输入时超时，另有预设确认按钮的 AX 操作失败；两个片段文案场景通过。标签只筛选 Cucumber 场景，其余 XCTest 和 Swift Testing 仍执行，不能将该次运行视为全部 BDD 通过。
+- 合并后的按钮中心、留白及禁用点击回归通过。原生 UI 自动化问题仍需排查，本轮不声称发布验证通过，也未重新签名、公证或发布。
+
+## 提交前复核
+
+- 审查范围为发布测试分离、重复测试精简及配套文档；未发现本次差异引入的可确认缺陷。`git diff --check` 通过。
+- `task test` 中 Node 5 项、Python 60 项、Swift Testing 198 项及 Core、App XCTest 通过；原生 BDD 的 423 个测试步骤及用例中有 2 处失败，因此完整任务仍为失败。
+- 两处失败分别为 `InterfaceCopyUITests.testMCPLibraryKeepsUsageScopeCardWithoutRedundantStateExplanation` 等待隔离窗口获得输入焦点超时，以及 `PresetWorkflowUITests.testEveryPresetCanBeEditedAndDuplicatedWithoutChangingOriginalOrProject` 等待名称字段接受输入超时。失败位置均在未修改的 `NativeUIHarness`；未删除测试或放宽断言。
+- 未修改代码，使用 `swift test --filter 'InterfaceCopyUITests/testMCPLibraryKeepsUsageScopeCardWithoutRedundantStateExplanation|PresetWorkflowUITests/testEveryPresetCanBeEditedAndDuplicatedWithoutChangingOriginalOrProject'` 定向复跑，两项均通过。现象与焦点或输入时序波动一致，根因尚未确认；复跑通过不替代完整任务的失败记录。
+- `swift build --product SkillSetDesktop` 和 `swift build --product skillset` 通过；`ControlHitTargetTests`、`LocalizationTests`、`TemplateSortOrderTests` 定向回归均通过。
+- 当前工作区的 `task check` 在技能结构检查阶段失败：Git 忽略的 `.claude/skills` 是独立目录，未复用 `.agents/skills`。未改写本机技能配置；导出受版本控制的源码并叠加当前差异后，结构检查为 0 个错误、1 个缺少发现入口警告，目录指纹核验通过。
+- 本次未执行正式签名、公证或发布，不据此宣称发布验收通过。

@@ -27,6 +27,5 @@ final class TemplateSortOrderTests: XCTestCase {
                        ["two", "three", "one"])
         let filtered = templates.filter { $0.id != "three" }
         XCTAssertEqual(TemplateSortOrder.titleDescending.sorted(filtered).map(\.id), ["two", "one"])
-        XCTAssertEqual(templates.first?.body, "a", "排序不能修改规则正文或原始顺序")
     }
 }

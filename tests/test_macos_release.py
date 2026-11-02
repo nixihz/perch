@@ -102,6 +102,32 @@ class MacReleaseTests(unittest.TestCase):
         preflight.assert_not_called()
         run.assert_not_called()
 
+    def test_prepare_checks_source_then_builds_without_running_test_suite(self):
+        config = {"version": "0.0.1", "build": "15", "feedURL": "", "publicEDKey": ""}
+        config_path = self.directory / "updates.json"
+        config_path.write_text(json.dumps(config))
+        output = self.directory / "release"
+        args = argparse.Namespace(config=config_path, build=None, version=None, output=output)
+        build_script = ROOT / "script/build_and_run.sh"
+
+        def stop_at_build(*arguments, env=None):
+            # 在构建边界停止，避免回归测试触碰真实签名和公证。
+            if arguments[0] == build_script:
+                raise subprocess.CalledProcessError(1, [str(build_script)])
+
+        with patch.object(release, "online_release", return_value=({"build": 15}, b"")), \
+                patch.object(release, "source_snapshot", return_value={"commit": "fixture", "files": []}), \
+                patch.object(release, "preflight", return_value="Developer ID Application: Fixture"), \
+                patch.object(release, "run", side_effect=stop_at_build) as commands:
+            with self.assertRaises(subprocess.CalledProcessError):
+                release.prepare_release(args, config)
+
+        self.assertEqual([command.args for command in commands.call_args_list], [
+            ("task", "check"),
+            (build_script, "--release", "--universal", "--no-open"),
+        ])
+        self.assertFalse((output / "release.json").exists())
+
     def test_platform_package_uses_release_version_in_both_download_links(self):
         sparkle = self.directory / "sparkle"
         sparkle.mkdir()

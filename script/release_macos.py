@@ -179,7 +179,6 @@ def prepare_release(args, config):
     write_json(output / "source-before.json", snapshot)
     print(f"准备栖集 {config['version']} ({config['build']})：{output}", flush=True)
     run("task", "check")
-    run("task", "test")
     check_source(snapshot)
     environment = os.environ | {ENV_KEYS[key]: value for key, value in config.items() if key in ENV_KEYS}
     environment.update(PERCH_SIGNING_IDENTITY=identity, PERCH_DIST_DIR=str(output / "app"),
