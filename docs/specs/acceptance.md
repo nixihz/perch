@@ -1,13 +1,13 @@
 # 验收与实施拆分
 
-当前完成 Alpha 工作流切片：M0 研究和原型已完成，M1 的项目写入/项目锁/离线对象/plan/apply/rollback 与 M2 来源预览、M3 的 MCP 配置、Plugin 盘点与审批门控生命周期、legacy stdio MCP 已实现。跨进程锁、marketplace 浏览和真实宿主加载验证仍按后续里程碑验收。
+当前完成 Alpha 工作流切片：M0 研究和原型已完成，M1 的项目写入/项目锁/离线对象/plan/apply/rollback 与 M2 来源预览、M3 的 MCP 配置、Plugin 盘点与审批门控生命周期、legacy stdio MCP 已实现。marketplace 浏览和真实宿主加载验证仍按后续里程碑验收。
 
 ## 1. 里程碑
 
 | 阶段 | 交付 | 完成门槛 |
 | --- | --- | --- |
 | M0 · 研究与原生原型 | 库存快照、来源研究、SPEC、DESIGN、SwiftUI macOS 原型 | 已完成：内容可核验、没有自动启用外部快照、风险可见 |
-| M1 · 核心与 CLI | project inspect、plan/apply/rollback、CLI | 部分完成：文件事务、项目锁、离线对象和 CLI 可用；正式 Source Store、跨进程锁未完成 |
+| M1 · 核心与 CLI | project inspect、plan/apply/rollback、CLI | 部分完成：文件事务、项目锁、跨进程 apply 锁、可恢复 operation 和 CLI 可用；正式 Source Store 未完成 |
 | M2 · 正式本地应用 | 注册项目、来源预览、库、预设、规则、差异审批、审计 | 部分完成：项目、GitHub 预览、MCP 配置、Plugin 盘点与生命周期计划/执行可用；目录/UI 全量打磨未完成 |
 | M3 · MCP 与双宿主 | stdio 服务、Codex/Claude 配置向导、有效状态验证 | 部分完成：legacy stdio MCP、双宿主项目写入和 MCP 配置计划可用；真实宿主加载矩阵未完成 |
 | M4 · 更新与发布 | fork/三方冲突、预设升级、批量计划、release | 不丢本地修改、部分成功可解释、公开导出脱敏/许可核查 |
@@ -88,7 +88,7 @@
 | 粘贴 GitHub 仓库根、可选 ref、隔离 clone、固定 commit 并按实际文件夹展示技能 | 预览即自动加入技能库、vendor 或项目，或已自动启用 |
 | 原生来源页逐项审阅并导入本机技能库，保留完整文件、许可和来源证据；删除预览后仍可生成项目部署计划 | 自动更新来源、覆盖已有同名技能、导入即启用，或 CLI/MCP 已提供导入工具 |
 | 规则片段组合与受管块回读 | 已实现 Claude `CLAUDE.md` 加载链 |
-| CLI 和 MCP 查询、预览、生成计划、审批后 apply | MCP 能自行批准、modern 协议兼容或跨进程锁已具备 |
+| CLI 和 MCP 查询、预览、生成计划、审批后 apply | MCP 能自行批准或 modern 协议兼容 |
 | MCP 配置真实扫描与受管写入计划；Plugin 缓存、安装索引、组件与风险盘点；在本机已发现问题插件上生成生命周期计划 | MCP 进程已健康运行；marketplace 已浏览/收录，或当前宿主会话已加载 Plugin |
 
 推荐演示：启动 `./script/build_and_run.sh --verify` → 在一个临时目录登记项目 → 载入“个人基线” → 打开 plan sheet → 核对 digest 与路径 → 二次确认写入 → 检查 `.agents/skills`、`.claude/skills`、`AGENTS.md`、`CLAUDE.md`，确认项目没有管理器专用文件，再核对应用数据目录中的项目锁。随后到来源页粘贴 Matt 链接并固定 ref，确认候选未进入项目；在 Skills 检查 `ponytail-review` 阻塞；在 MCP 页面用临时 scope 生成配置计划；在 Plugins 页面核对真实缓存、安装索引与 hooks 风险，并为本机已发现插件生成生命周期计划，核对命令与风险后取消。真实宿主命令只在明确授权的单独验收中执行。

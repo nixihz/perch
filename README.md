@@ -4,7 +4,7 @@ Perch 是一个本地 macOS 应用、CLI 和 stdio MCP 服务，用来管理 Cod
 
 它把“选了什么、来源是什么、将写入哪些文件、谁批准了写入”放进同一套可审阅的计划和事务模型。应用不会启动 HTTP server、WebView 或 localhost API。
 
-> 当前状态：Alpha。本仓库适合试用、评审和贡献；marketplace 搜索、依赖求解、跨进程锁和来源自动更新仍未实现。
+> 当前状态：Alpha。本仓库适合试用、评审和贡献；marketplace 搜索、依赖求解和来源自动更新仍未实现。
 
 ## 能做什么
 
@@ -40,7 +40,7 @@ swift build --product skillset
 打包应用：
 
 ```bash
-task macos-build
+task macos:build
 # 产物：dist/栖集.app
 ```
 

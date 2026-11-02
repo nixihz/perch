@@ -1,6 +1,6 @@
 # CLI 与本机 MCP 契约
 
-状态：Alpha 已实现 `skillset` CLI、stdio MCP legacy `2025-11-25`、Codex / Claude MCP 配置与 Plugin 生命周期；尚未实现 modern MCP、HTTP transport、跨进程项目锁、marketplace 浏览和真实宿主加载验证。
+状态：Alpha 已实现 `skillset` CLI、stdio MCP legacy `2025-11-25`、Codex / Claude MCP 配置与 Plugin 生命周期；尚未实现 modern MCP、HTTP transport、marketplace 浏览和真实宿主加载验证。
 
 ## 1. 运行边界
 
@@ -28,7 +28,7 @@
 | `projects_inspect` | `projectId` | 读取项目摘要和观察问题 | true / false / false |
 | `deployment_plan` | `projectId`、`skillIds`、`instructionIds?`、`agents?`、`ruleBlockId?` | 生成 10 分钟 pending plan 和完整 digest；不写项目 | false / false / false |
 | `plans_pending` | 无 | 列出未执行且未过期的计划 | true / false / false |
-| `deployment_apply` | `planId`、`planDigest` | 只执行已由 UI/CLI 批准且 digest 一致的计划 | false / true / false |
+| `deployment_apply` | `planId`、`planDigest`、`idempotencyKey?` | 只执行已由 UI/CLI 批准且 digest 一致的计划；同一幂等键重试返回原 operation | false / true / false |
 | `operations_get` | `operationId` | 读取 journal、步骤状态和恢复信息 | true / false / false |
 | `objects_verify` | `projectId?` | 核验项目锁引用的离线对象与 hash | true / false / false |
 | `mcp_servers_list` | `projectId?` | 读取 Codex / Claude MCP 配置、名称、transport 和变量名 | true / false / false |
@@ -91,11 +91,11 @@ AI 调用 deployment_plan / mcp_config_plan / plugin_lifecycle_plan
     ↓
 用户在本机 App 的 plan sheet 或终端执行 skillset approve
     ↓
-AI 调用 deployment_apply(planId, planDigest)
+AI 调用 deployment_apply(planId, planDigest, idempotencyKey)
     ↓
-核心复核 approved、digest、旧 hash / before observation、staging 和目标路径
+核心获取项目级跨进程锁，复核 approved、digest、旧 hash / before observation、staging 和目标路径
     ↓
-文件事务或固定宿主 CLI 执行；写 journal、回读、markApplied
+文件事务或固定宿主 CLI 执行；计划与 operation 共用可恢复状态、写 journal、回读、markApplied
 ```
 
 边界：
@@ -105,7 +105,8 @@ AI 调用 deployment_apply(planId, planDigest)
 - 计划过期、digest 不一致、未审批、已执行、目标漂移或 staging 越界都会被拒绝。
 - Plugin 计划还会复核安装事实、manifest digest、scope、CLI realpath 和 staging 命令描述；状态变化返回 `PLUGIN_STATE_STALE`。
 - approve 状态由本机计划存储持有，不通过 MCP 返回值签发可伪造 token。
-- 当前没有跨进程锁。两个进程同时 apply 的竞争仍需在正式版本中补齐。
+- 同一项目同时 apply 时，一个请求持有跨进程锁，另一个返回 `PLAN_BUSY`；锁由操作系统随进程退出释放。
+- 计划绑定首个 apply 请求的幂等键；相同幂等键重试返回原 operation，其他幂等键返回 `IDEMPOTENCY_KEY_MISMATCH`。
 
 ## 4. 来源预览契约
 
@@ -194,7 +195,7 @@ Claude 项目 `.mcp.json` 使用等价的 `mcpServers.perch.command/args` 结构
 未完成：
 
 - modern MCP、真实 Codex/Claude 客户端版本矩阵、重连和 progress notification。
-- 跨进程项目锁、approval handle、idempotency key 和 operation 去重。
+- approval handle。
 - Plugin marketplace 搜索/浏览、依赖图求解、command-source 逐项确认和跨宿主 enable/update 能力矩阵；当前只操作本机已发现插件。
 - MCP 配置 ownership 漂移检测、OAuth / Keychain 健康检查和真实客户端加载验证。
 
