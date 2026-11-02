@@ -52,9 +52,12 @@ cp -R "$BUILD_DIR/SkillSet_SkillSetApp.bundle" "$APP_BUNDLE/Contents/Resources/"
 python3 script/package_library.py . "$APP_BUNDLE/Contents/Resources/SkillSetLibrary"
 rm -rf "$DIST_DIR/SkillSetLibrary"
 cp -R "$APP_BUNDLE/Contents/Resources/SkillSetLibrary" "$DIST_DIR/SkillSetLibrary"
-# 原生侧栏从主 bundle 读取强调色，与 SwiftUI 共用编译后的颜色资源。
-cp "$BUILD_DIR/SkillSet_SkillSetApp.bundle/Contents/Resources/Assets.car" \
-    "$APP_BUNDLE/Contents/Resources/Assets.car"
+# 原生侧栏从主 bundle 读取强调色；部分 SwiftPM/Xcode 版本不会输出 Assets.car，资源 bundle 仍可独立运行。
+ASSET_CATALOG="$(find "$BUILD_DIR" -type f \
+    -path '*/SkillSet_SkillSetApp.bundle/Contents/Resources/Assets.car' -print -quit)"
+if [[ -n "$ASSET_CATALOG" ]]; then
+    cp "$ASSET_CATALOG" "$APP_BUNDLE/Contents/Resources/Assets.car"
+fi
 
 # 从 AppIcon 单一源生成 icns，避免 PNG 资源与打包图标各自漂移。
 ICON_BUILD_DIR="$(mktemp -d "${TMPDIR:-/tmp}/perch-icon.XXXXXX")"
