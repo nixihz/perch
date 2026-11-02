@@ -15,7 +15,15 @@ codesign "${SIGN_ARGS[@]}" "$FRAMEWORK/Versions/B/XPCServices/Installer.xpc"
 codesign "${SIGN_ARGS[@]}" "$FRAMEWORK/Versions/B/Autoupdate"
 codesign "${SIGN_ARGS[@]}" "$FRAMEWORK/Versions/B/Updater.app"
 codesign "${SIGN_ARGS[@]}" "$FRAMEWORK"
-# 资源 bundle 不含可执行代码，由外层应用签名时一并封存。
+RESOURCE_BUNDLE="$APP_BUNDLE/Contents/Helpers/SkillSet_SkillSetCore.bundle"
+RESOURCE_PLIST="$RESOURCE_BUNDLE/Contents/Info.plist"
+# 不同 SwiftPM 版本生成的资源 bundle 元数据不完整时，codesign --deep 会拒绝整个应用。
+if [[ -f "$RESOURCE_PLIST" ]]; then
+    /usr/libexec/PlistBuddy -c "Set :CFBundlePackageType BNDL" "$RESOURCE_PLIST"
+    /usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string perch.SkillSetCore.resources" "$RESOURCE_PLIST" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 1" "$RESOURCE_PLIST" 2>/dev/null || true
+    codesign "${SIGN_ARGS[@]}" "$RESOURCE_BUNDLE"
+fi
 codesign "${SIGN_ARGS[@]}" "$APP_BUNDLE/Contents/Helpers/skillset"
 codesign "${SIGN_ARGS[@]}" "$APP_BUNDLE"
 codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
