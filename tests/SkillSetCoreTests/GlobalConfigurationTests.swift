@@ -70,7 +70,7 @@ struct GlobalConfigurationTests {
         let second = try f.apply(f.plan(method: method))
         #expect(try f.read(f.skill.appendingPathComponent("SKILL.md")).contains("第二版"))
         _ = try f.apply(f.manager.makeUndoPlan(host: host, operationID: second.operationID))
-        #expect(try f.read(f.skill.appendingPathComponent("SKILL.md")).contains("第一版"))
+        #expect(try f.read(f.skill.appendingPathComponent("SKILL.md")).contains(method == .symlink ? "第二版" : "第一版"))
         _ = try f.apply(f.manager.makeRestorePlan(host: host, mode: .baseline))
         #expect(try f.read(alias.appendingPathComponent("demo/SKILL.md")) == "已有技能")
         #expect(try f.read(alias.appendingPathComponent("neighbor/SKILL.md")) == "保留邻居")
@@ -258,6 +258,11 @@ struct GlobalConfigurationTests {
         #expect(try f.read(f.skill.appendingPathComponent("SKILL.md")) == "用户保留的技能")
         let observed = try #require(try f.manager.inspect(host: f.host).resources.first { $0.path == f.skill.path })
         #expect(!observed.modified)
+        _ = try f.apply(f.plan(rule: "更新其他规则"))
+        #expect(try f.read(f.skill.appendingPathComponent("SKILL.md")) == "用户保留的技能")
+        _ = try f.apply(f.manager.makeDeploymentPlan(host: f.host, selection: GlobalConfigurationDraft(),
+            catalog: CatalogDocument(schemaVersion: 1, hashAlgorithm: "sha256", entries: []), sourceURLs: [:], fragments: [:]))
+        #expect(try f.read(f.skill.appendingPathComponent("SKILL.md")) == "用户保留的技能")
     }
 
     @Test
@@ -273,6 +278,12 @@ struct GlobalConfigurationTests {
         #expect(try f.read(f.rules).contains("用户保留的规则"))
         let observed = try #require(try f.manager.inspect(host: f.host).resources.first { $0.path == f.rules.path })
         #expect(!observed.modified)
+        _ = try f.revise()
+        _ = try f.apply(f.plan(rule: "第三条规则"))
+        #expect(try f.read(f.rules) == edited)
+        _ = try f.apply(f.manager.makeDeploymentPlan(host: f.host, selection: GlobalConfigurationDraft(),
+            catalog: CatalogDocument(schemaVersion: 1, hashAlgorithm: "sha256", entries: []), sourceURLs: [:], fragments: [:]))
+        #expect(try f.read(f.rules) == edited)
     }
 
     @Test
@@ -397,17 +408,21 @@ struct GlobalConfigurationTests {
 }
 
 struct GlobalVerificationDiagnosticsTests {
-    @Test
-    func corruptedSnapshotDoesNotBlockInspectionAndCanBeRepairedThroughAnApprovedPlan() throws {
+    @Test(arguments: [false, true])
+    func corruptedSnapshotIsRepairedFromCurrentFilesWithoutOverwritingLocalChanges(explicitRepair: Bool) throws {
         let f = try GlobalFixture()
         defer { f.cleanup() }
         _ = try f.apply(f.plan(method: .symlink))
 
-        let snapshot = f.paths.versionsRoot.appendingPathComponent(String(repeating: "a", count: 64), isDirectory: true)
+        let originalHash = try SkillAssetCopier.analyze(from: f.source).contentHash
+        let snapshot = f.paths.versionsRoot.appendingPathComponent(originalHash, isDirectory: true)
         _ = try SkillAssetCopier.copy(from: f.source, to: snapshot)
         try FileManager.default.removeItem(at: f.skill)
         try FileManager.default.createSymbolicLink(at: f.skill, withDestinationURL: snapshot)
         try f.write("被意外改写的快照", to: snapshot.appendingPathComponent("SKILL.md"))
+        let executable = snapshot.appendingPathComponent("scripts/local.sh")
+        try f.write("#!/bin/sh\nexit 7\n", to: executable)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
 
         let inspection = try f.manager.inspect(host: f.host)
         let observed = try #require(inspection.resources.first { $0.path == f.skill.path })
@@ -415,22 +430,78 @@ struct GlobalVerificationDiagnosticsTests {
         #expect(observed.modified)
         #expect(inspection.resources.contains { $0.path == f.rules.path })
 
-        let repair = try f.manager.makeSnapshotRepairPlan(host: f.host)
-        #expect(repair.plan.metadata?["globalAction"] == "repair-snapshot")
+        let repair = try explicitRepair ? f.manager.makeSnapshotRepairPlan(host: f.host) : f.plan(method: .symlink)
+        #expect(repair.plan.metadata?["globalAction"] == (explicitRepair ? "repair-snapshot" : "deploy"))
         #expect(repair.plan.metadata?["allowSnapshotRepair"] == "1")
         let relativeSkillPath = f.manager.relative(f.skill, root: URL(fileURLWithPath: repair.plan.projectPath))
         #expect(repair.plan.changes.contains { $0.relativePath == relativeSkillPath && $0.action == "update" })
         _ = try f.apply(repair)
 
-        let repairedTarget = try FileManager.default.destinationOfSymbolicLink(atPath: f.skill.path)
-        let repairedHash = try SkillAssetCopier.analyze(from: f.source).contentHash
-        #expect(repairedTarget == f.paths.versionsRoot.appendingPathComponent(repairedHash).path)
+        #expect((try? FileManager.default.destinationOfSymbolicLink(atPath: f.skill.path)) == nil)
         let repaired = try #require(try f.manager.inspect(host: f.host).resources.first { $0.path == f.skill.path })
         #expect(!repaired.snapshotCorrupt)
         #expect(!repaired.modified)
-        #expect(try f.read(f.skill.appendingPathComponent("SKILL.md")).contains("第一版"))
-        let followUp = try f.plan(method: .symlink)
+        #expect(try f.read(f.skill.appendingPathComponent("SKILL.md")) == "被意外改写的快照")
+        #expect(try f.read(f.skill.appendingPathComponent("assets/data.txt")) == "完整附件")
+        #expect(try FileManager.default.attributesOfItem(atPath: f.skill.appendingPathComponent("scripts/local.sh").path)[.posixPermissions] as? Int == 0o755)
+        #expect(try f.read(snapshot.appendingPathComponent("SKILL.md")) == "被意外改写的快照")
+        #expect(try f.read(f.source.appendingPathComponent("SKILL.md")).contains("第一版"))
+        let followUp = try f.plan(rule: "另一条规则", method: .symlink)
         #expect(!followUp.plan.changes.contains { $0.relativePath == relativeSkillPath })
+        _ = try f.apply(followUp)
+        #expect(try f.read(f.skill.appendingPathComponent("SKILL.md")) == "被意外改写的快照")
+    }
+
+    @Test
+    func snapshotChangedAfterAutomaticRepairPreviewRejectsOldPlan() throws {
+        let f = try GlobalFixture()
+        defer { f.cleanup() }
+        _ = try f.apply(f.plan(method: .symlink))
+        let snapshot = f.paths.versionsRoot.appendingPathComponent(String(repeating: "a", count: 64))
+        _ = try SkillAssetCopier.copy(from: f.source, to: snapshot)
+        try FileManager.default.removeItem(at: f.skill)
+        try FileManager.default.createSymbolicLink(at: f.skill, withDestinationURL: snapshot)
+        let pending = try f.plan(rule: "待写入规则", method: .symlink)
+        let rules = try Data(contentsOf: f.rules)
+        let state = try Data(contentsOf: f.locations.stateURL(f.host))
+        try f.write("预览后的用户修改", to: snapshot.appendingPathComponent("SKILL.md"))
+
+        #expect(throws: FileTransactionError.self) { try f.apply(pending) }
+
+        #expect(try f.read(f.skill.appendingPathComponent("SKILL.md")) == "预览后的用户修改")
+        #expect(try Data(contentsOf: f.rules) == rules)
+        #expect(try Data(contentsOf: f.locations.stateURL(f.host)) == state)
+    }
+
+    @Test
+    func signedLegacyJSONUsesOriginalBytesAndStillDetectsLaterChanges() throws {
+        let f = try GlobalFixture()
+        defer { f.cleanup() }
+        let applied = try f.apply(f.plan())
+        let stateURL = f.locations.stateURL(f.host)
+        let object = try JSONSerialization.jsonObject(with: Data(contentsOf: stateURL))
+        let legacyBytes = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+        try legacyBytes.write(to: stateURL)
+        let journalURL = f.paths.operationsRoot.appendingPathComponent(applied.operationID.uuidString + "/journal.json")
+        var journal = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: journalURL)) as? [String: Any])
+        var steps = try #require(journal["steps"] as? [[String: Any]])
+        let statePath = f.manager.relative(stateURL, root: URL(fileURLWithPath: try #require(journal["projectPath"] as? String)))
+        for index in steps.indices where steps[index]["relativePath"] as? String == statePath {
+            steps[index]["afterHash"] = SkillAssetCopier.sha256(legacyBytes)
+        }
+        journal["steps"] = steps
+        try JSONSerialization.data(withJSONObject: journal).write(to: journalURL)
+
+        let observed = try f.manager.loadState(f.host)
+        let builder = try GlobalPlanBuilder(manager: f.manager, host: f.host, action: "deploy")
+        defer { builder.cleanup() }
+        try builder.requireState(observed)
+        _ = try f.apply(f.plan(rule: "旧配置升级后仍可保存"))
+        #expect(try f.read(f.rules).contains("旧配置升级后仍可保存"))
+
+        let laterBuilder = try GlobalPlanBuilder(manager: f.manager, host: f.host, action: "deploy")
+        defer { laterBuilder.cleanup() }
+        #expect(throws: FileTransactionError.self) { try laterBuilder.requireState(observed) }
     }
 
     @Test

@@ -588,10 +588,24 @@ public struct DeploymentPlanner {
 
         let skillsByID = skillLookup(catalog.entries)
         let selected = try manifest.skills.map { id -> SkillEntry in
+            let source = skillsByID[id].map { skillSourceURLs[id] ?? repositoryRoot.appendingPathComponent($0.path) }
+            if (skillsByID[id] == nil || skillsByID[id]?.isBlocked == true),
+               source.map({ !fileManager.fileExists(atPath: $0.path) }) ?? true,
+               let locked = currentLock?.skills.first(where: { $0.id == id }) {
+                // 来源丢失不能连带阻塞其他配置；已有选择仍可从核验过的离线对象恢复。
+                return SkillEntry(id: id, slug: String(id.split(separator: "/").last ?? ""),
+                    declaredName: id, description: "", declaredVersion: locked.declaredVersion,
+                    metadataReview: "retained", sourceId: locked.sourceId, path: locked.sourcePath,
+                    contentHash: locked.contentHash, fileCount: locked.files.count,
+                    bytes: locked.files.reduce(0) { $0 + $1.bytes }, integrity: "snapshotted", issues: [], excludedPaths: [])
+            }
             guard let entry = skillsByID[id] else {
                 throw DeploymentError.skillNotFound(id)
             }
             guard !entry.isBlocked else {
+                if let source, !fileManager.fileExists(atPath: source.path) {
+                    throw DeploymentError.skillSourceMissing(source.path)
+                }
                 throw DeploymentError.skillBlocked(id)
             }
             return entry
@@ -657,6 +671,7 @@ public struct DeploymentPlanner {
                 } else {
                     throw DeploymentError.skillSourceMissing(catalogSource.path)
                 }
+                selectionWarnings.append("\(entry.slug)：来源暂不可用，已从本机离线对象恢复技能内容。")
             }
             let materialized = if let reusable {
                 try objectStore.materialize(reusable)
@@ -688,8 +703,10 @@ public struct DeploymentPlanner {
                     try fileManager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
                     if let libraryRoot {
                         let linkTarget = libraryRoot.appendingPathComponent(entry.slug, isDirectory: true)
-                        if fileManager.fileExists(atPath: linkTarget.path)
-                            || (try? fileManager.destinationOfSymbolicLink(atPath: linkTarget.path)) != nil {
+                        if fileManager.fileExists(atPath: linkTarget.path) {
+                            guard try SkillAssetCopier.analyze(from: linkTarget).contentHash == materialized.contentHash else {
+                                throw DeploymentError.skillSourceChanged(linkTarget.path)
+                            }
                             try fileManager.createSymbolicLink(at: destination, withDestinationURL: linkTarget)
                         } else if let versionsRoot {
                             let version = if let reusable {
@@ -725,14 +742,8 @@ public struct DeploymentPlanner {
                 let beforeHash = try directoryDigest(observedTarget)
                 observations.append(PlannedObservation(relativePath: relativePath, contentHash: beforeHash))
                 if let expected = ownedSkills[relativePath], let beforeHash, beforeHash != expected {
-                    let linkTarget = libraryRoot?.appendingPathComponent(entry.slug, isDirectory: true)
-                    let followedLibraryUpdate = if let linkTarget,
-                       let previousContentHash = currentLock?.skills.first(where: { $0.id == entry.id })?.contentHash {
-                        expected == ManagedSkillLink.expectedHash(destination: linkTarget, contentHash: previousContentHash)
-                            && beforeHash == ManagedSkillLink.expectedHash(destination: linkTarget, contentHash: materialized.contentHash)
-                    } else {
-                        false
-                    }
+                    let followedLibraryUpdate = try followsLibrary(entryID: entry.id, slug: entry.slug,
+                        expected: expected, actual: beforeHash, currentLock: currentLock)
                     if !followedLibraryUpdate {
                         throw DeploymentError.managedSkillDrift(relativePath)
                     }
@@ -789,7 +800,12 @@ public struct DeploymentPlanner {
             let actual = try directoryDigest(destination)
             observations.append(PlannedObservation(relativePath: path, contentHash: actual))
             guard let actual else { continue }
-            guard actual == expected else { throw DeploymentError.managedSkillDrift(path) }
+            let slug = destination.lastPathComponent
+            let entryID = currentLock?.skills.first(where: { String($0.id.split(separator: "/").last ?? "") == slug })?.id
+            let followedLibraryUpdate = try entryID.map {
+                try followsLibrary(entryID: $0, slug: slug, expected: expected, actual: actual, currentLock: currentLock)
+            } ?? false
+            guard actual == expected || followedLibraryUpdate else { throw DeploymentError.managedSkillDrift(path) }
             changes.append(PlannedChange(
                 action: "remove", relativePath: path, beforeHash: actual, afterHash: nil,
                 unifiedDiff: "移除未漂移的受管技能 \(path)；操作备份可用于撤销"
@@ -929,7 +945,7 @@ public struct DeploymentPlanner {
             manifestDigest: manifest.digest,
             changes: executableChanges,
             selectedSkills: selected.map { "\($0.id)@\($0.contentHash)" },
-            metadata: ["planType": "skill-deployment", "projectStateStorage": "application-v1"],
+            metadata: ["planType": "skill-deployment", "projectStateStorage": "application-v1", "skillInstallMethod": request.installMethod.rawValue],
             ownershipReceipt: receipt,
             observations: observations
         )
@@ -942,7 +958,7 @@ public struct DeploymentPlanner {
             changes: executableChanges,
             warnings: selectionWarnings
                 + ["对象存储新增 \(objectCount) 个对象，共 \(objectBytes) 字节；项目锁绑定 manifest \(manifest.digest)。"],
-            metadata: ["planType": "skill-deployment", "projectStateStorage": "application-v1"],
+            metadata: ["planType": "skill-deployment", "projectStateStorage": "application-v1", "skillInstallMethod": request.installMethod.rawValue],
             ownershipReceipt: receipt,
             observations: observations
         )
@@ -990,6 +1006,16 @@ public struct DeploymentPlanner {
             throw DeploymentError.projectNotFound(root.path)
         }
         return root
+    }
+
+    private func followsLibrary(entryID: String, slug: String, expected: String, actual: String,
+                                currentLock: ProjectLockDocument?) throws -> Bool {
+        guard let libraryRoot, let previous = currentLock?.skills.first(where: { $0.id == entryID }) else { return false }
+        let target = libraryRoot.appendingPathComponent(slug, isDirectory: true)
+        guard expected == ManagedSkillLink.expectedHash(destination: target, contentHash: previous.contentHash) else { return false }
+        let contentHash = fileManager.fileExists(atPath: target.path)
+            ? try SkillAssetCopier.analyze(from: target).contentHash : ManagedSkillLink.missingContentHash
+        return actual == ManagedSkillLink.expectedHash(destination: target, contentHash: contentHash)
     }
 
     private func ensureSafeTarget(_ target: URL, root: URL, allowManagedLink: Bool = false) throws {

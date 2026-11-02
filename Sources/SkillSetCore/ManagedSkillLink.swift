@@ -7,6 +7,8 @@ public enum SkillInstallMethod: String, Codable, CaseIterable, Sendable {
 
 /// 链接指纹同时绑定目标路径和内容，换到同内容的外部目录也属于漂移。
 enum ManagedSkillLink {
+    static let missingContentHash = "missing"
+
     static func hash(_ url: URL, versionsRoot: URL?, libraryRoot: URL? = nil, sourcesRoot: URL? = nil) throws -> String? {
         guard let target = try? FileManager.default.destinationOfSymbolicLink(atPath: url.path) else { return nil }
         let destination = URL(fileURLWithPath: target, relativeTo: url.deletingLastPathComponent()).standardizedFileURL
@@ -19,6 +21,10 @@ enum ManagedSkillLink {
             && destination.lastPathComponent.range(of: #"^[0-9a-f]{64}$"#, options: .regularExpression) != nil
         guard pointsAtLibrary || pointsAtSource || legacyVersion else { return nil }
         let contentRoot = destination.resolvingSymlinksInPath().standardizedFileURL
+        // 断链仍须绑定原目标路径，才能安全替换链接本身，而非写入来源目录。
+        if !FileManager.default.fileExists(atPath: contentRoot.path) {
+            return expectedHash(destination: destination, contentHash: missingContentHash)
+        }
         let content = try SkillAssetCopier.analyze(from: contentRoot).contentHash
         if legacyVersion, content != destination.lastPathComponent { throw FileTransactionError.snapshotCorrupt(url.path) }
         return expectedHash(destination: destination, contentHash: content)

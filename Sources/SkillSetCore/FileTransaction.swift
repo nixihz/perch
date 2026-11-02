@@ -157,7 +157,7 @@ public struct FileTransactionExecutor {
     ) throws -> TransactionResult {
         let projectRoot = URL(fileURLWithPath: plan.projectPath, isDirectory: true).resolvingSymlinksInPath().standardizedFileURL
         let allowingCorruptSnapshot = plan.metadata?["allowSnapshotRepair"] == "1"
-            && plan.metadata?["globalAction"] == "repair-snapshot"
+            && plan.metadata?["planType"] == "global-configuration"
         try validate(plan: plan, stagingRoot: stagingRoot, projectRoot: projectRoot)
         let operationID = suppliedOperationID ?? idGenerator()
         let operationRoot = operationsRoot.appendingPathComponent(operationID.uuidString, isDirectory: true)
@@ -266,7 +266,7 @@ public struct FileTransactionExecutor {
                 journal.steps = steps
                 try writeJournal(journal)
 
-                if fileManager.fileExists(atPath: destination.path) {
+                if itemExists(destination) {
                     try fileManager.moveItem(at: destination, to: displaced)
                     steps[index].state = "old-moved"
                     journal.steps = steps
@@ -336,7 +336,7 @@ public struct FileTransactionExecutor {
                 continue
             }
             _ = try rollback(journal: journal, allowingCorruptSnapshot: journal.metadata?["allowSnapshotRepair"] == "1"
-                && journal.metadata?["globalAction"] == "repair-snapshot")
+                && journal.metadata?["planType"] == "global-configuration")
             recovered.append(id)
         }
         return recovered
@@ -345,7 +345,7 @@ public struct FileTransactionExecutor {
     public func rollback(operationID: UUID) throws -> [String] {
         let journal = try loadJournal(operationID)
         return try rollback(journal: journal, allowingCorruptSnapshot: journal.metadata?["allowSnapshotRepair"] == "1"
-            && journal.metadata?["globalAction"] == "repair-snapshot")
+            && journal.metadata?["planType"] == "global-configuration")
     }
 
     private func rollback(journal: FileTransactionJournal, allowingCorruptSnapshot: Bool = false) throws -> [String] {
@@ -428,7 +428,7 @@ public struct FileTransactionExecutor {
                     throw FileTransactionError.rollbackConflict(step.relativePath)
                 }
                 try removeIfPresent(discarded)
-                if fileManager.fileExists(atPath: destination.path) {
+                if itemExists(destination) {
                     try fileManager.moveItem(at: destination, to: discarded)
                 }
                 try fileManager.moveItem(at: restore, to: destination)
@@ -441,7 +441,7 @@ public struct FileTransactionExecutor {
                     try ensureSameParent(displaced, as: destination)
                     try removeIfPresent(displaced)
                 }
-            } else if fileManager.fileExists(atPath: destination.path) {
+            } else if itemExists(destination) {
                 try fileManager.removeItem(at: destination)
             }
             try cleanupRollbackTemporaries(step, destination: destination,
@@ -488,7 +488,7 @@ public struct FileTransactionExecutor {
 
     private func validate(plan: DeploymentPlan, stagingRoot: URL, projectRoot: URL) throws {
         let allowingCorruptSnapshot = plan.metadata?["allowSnapshotRepair"] == "1"
-            && plan.metadata?["globalAction"] == "repair-snapshot"
+            && plan.metadata?["planType"] == "global-configuration"
         if plan.metadata?["planType"] == "skill-deployment",
            plan.metadata?["projectStateStorage"] != "application-v1" {
             throw DeploymentError.invalidPlan
@@ -634,9 +634,14 @@ public struct FileTransactionExecutor {
     }
 
     private func removeIfPresent(_ url: URL) throws {
-        if fileManager.fileExists(atPath: url.path) {
+        if itemExists(url) {
             try fileManager.removeItem(at: url)
         }
+    }
+
+    private func itemExists(_ url: URL) -> Bool {
+        fileManager.fileExists(atPath: url.path)
+            || (try? fileManager.destinationOfSymbolicLink(atPath: url.path)) != nil
     }
 
     private func currentContentHash(_ url: URL, allowingCorruptSnapshot: Bool = false) throws -> String? {

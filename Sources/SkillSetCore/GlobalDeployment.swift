@@ -38,10 +38,17 @@ extension GlobalConfigurationManager {
                 throw DeploymentError.pathOutsideRoot(target.path)
             }
             let old = current?.managed[target.path]
-            if let old, actual != old.hash, actual != nil {
+            let libraryTarget = paths.libraryDirectoryURL.appendingPathComponent(entry.slug, isDirectory: true)
+            let followsLibrary = linksToLibrary(target)
+                && actual == ManagedSkillLink.expectedHash(destination: libraryTarget, contentHash: entry.contentHash)
+            if let old, let actual, !followsLibrary,
+               actual != old.hash || old.preservesLocalChanges == true || builder.corruptSnapshots.contains(target.path) {
                 // 外部修改保留在原地；本次计划只重新登记实际指纹，避免阻塞其他全局配置。
-                next.managed[target.path] = GlobalManagedResource(hash: actual!, baselineID: old.baselineID,
-                    baselineHash: old.baselineHash, originalRules: old.originalRules, writtenRules: old.writtenRules)
+                let preservedHash = try builder.corruptSnapshots.contains(target.path)
+                    ? builder.repairSnapshot(at: target, before: actual) : actual
+                next.managed[target.path] = GlobalManagedResource(hash: preservedHash, baselineID: old.baselineID,
+                    baselineHash: old.baselineHash, originalRules: old.originalRules, writtenRules: old.writtenRules,
+                    preservesLocalChanges: true)
                 builder.warnings.append("检测到外部修改，保留当前技能文件并更新管理指纹：\(target.path)")
                 continue
             }
@@ -60,13 +67,17 @@ extension GlobalConfigurationManager {
             guard try SkillAssetCopier.analyze(from: source).contentHash == entry.contentHash else { throw DeploymentError.skillSourceChanged(source.path) }
             let installedHash: String
             if installMethod == .symlink {
-                let versionTarget = try ManagedSkillLink.prepare(source: source, contentHash: entry.contentHash, root: paths.versionsRoot)
+                let linkTarget = fileManager.fileExists(atPath: libraryTarget.path) ? libraryTarget
+                    : try ManagedSkillLink.prepare(source: source, contentHash: entry.contentHash, root: paths.versionsRoot)
                 try fileManager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
-                try fileManager.createSymbolicLink(at: destination, withDestinationURL: versionTarget)
+                try fileManager.createSymbolicLink(at: destination, withDestinationURL: linkTarget)
                 installedHash = try ManagedSkillLink.hash(
                     destination, versionsRoot: paths.versionsRoot,
                     libraryRoot: paths.libraryDirectoryURL, sourcesRoot: paths.sourcesRoot
                 )!
+                guard installedHash == ManagedSkillLink.expectedHash(destination: linkTarget, contentHash: entry.contentHash) else {
+                    throw DeploymentError.skillSourceChanged(source.path)
+                }
             } else {
                 let result = try SkillAssetCopier.copy(from: source, to: destination)
                 guard result.contentHash == entry.contentHash else { throw DeploymentError.skillSourceChanged(source.path) }
@@ -87,7 +98,7 @@ extension GlobalConfigurationManager {
             next.managed[target.path] = GlobalManagedResource(hash: installedHash, baselineID: baseline,
                 baselineHash: old?.baselineHash ?? actual, originalRules: nil, writtenRules: nil)
             builder.append(target, before: actual, after: installedHash,
-                summary: actual != nil && old == nil ? "接管全局技能并保留原始备份" : (installMethod == .symlink ? "软链接到栖集固定版本" : "复制全局技能完整包"))
+                summary: actual != nil && old == nil ? "接管全局技能并保留原始备份" : (installMethod == .symlink ? "软链接到技能库" : "复制全局技能完整包"))
         }
 
         let bodies = try selection.instructionIDs.map { id in
@@ -102,10 +113,11 @@ extension GlobalConfigurationManager {
             let observedBody = try original.flatMap { try ruleBody($0, path: rules.path) }
             let old = current?.managed[rules.path]
             let observedHash = observedBody.map { SkillAssetCopier.sha256(Data($0.utf8)) }
-            if let old, observedHash != old.hash, observedBody != nil {
+            if let old, let observedHash, observedHash != old.hash || old.preservesLocalChanges == true {
                 // 保留用户修改，只更新管理记录；下次计划仍可继续处理其他内容。
-                next.managed[rules.path] = GlobalManagedResource(hash: observedHash!, baselineID: old.baselineID,
-                    baselineHash: old.baselineHash, originalRules: old.originalRules, writtenRules: old.writtenRules)
+                next.managed[rules.path] = GlobalManagedResource(hash: observedHash, baselineID: old.baselineID,
+                    baselineHash: old.baselineHash, originalRules: old.originalRules, writtenRules: old.writtenRules,
+                    preservesLocalChanges: true)
                 builder.warnings.append("检测到外部修改，保留当前规则文件并更新管理指纹：\(rules.path)")
             } else if old == nil, observedBody != nil, !takeOverExisting {
                 guard observedBody == body else { throw DeploymentError.unmanagedRuleConflict(rules.path) }
@@ -135,7 +147,7 @@ extension GlobalConfigurationManager {
         return try builder.finish(state: next)
     }
 
-    /// 从同名技能库条目重建固定版本快照，仍通过普通部署计划执行。
+    /// 按本机当前内容修复旧快照，不用技能库版本覆盖用户修改。
     public func makeSnapshotRepairPlan(host: SkillConfigurationTarget) throws -> StoredDeploymentPlan {
         guard let current = try loadState(host) else { throw DeploymentError.noChanges }
         let corrupted = try inspect(host: host).resources.filter(\.snapshotCorrupt)
@@ -151,31 +163,11 @@ extension GlobalConfigurationManager {
             guard let resource = current.managed[target.path], allowedResource(target, host: host) else {
                 throw DeploymentError.invalidPlan
             }
-            let libraryTarget = paths.libraryDirectoryURL.appendingPathComponent(target.lastPathComponent, isDirectory: true)
-            guard libraryTarget.path.hasPrefix(paths.libraryDirectoryURL.standardizedFileURL.path + "/") else {
-                throw DeploymentError.pathOutsideRoot(libraryTarget.path)
-            }
-            var isDirectory: ObjCBool = false
-            guard fileManager.fileExists(atPath: libraryTarget.path, isDirectory: &isDirectory), isDirectory.boolValue else {
-                throw GlobalConfigurationError.snapshotRepairUnavailable(libraryTarget.path)
-            }
-            let contentHash = try SkillAssetCopier.analyze(
-                from: libraryTarget.resolvingSymlinksInPath().standardizedFileURL,
-                fileManager: fileManager
-            ).contentHash
-            let versionTarget = try ManagedSkillLink.prepare(
-                source: libraryTarget.resolvingSymlinksInPath().standardizedFileURL,
-                contentHash: contentHash,
-                root: paths.versionsRoot
-            )
-            let before = try builder.observe(target, allowingCorruptSnapshot: true)
-            let staged = builder.staged(target)
-            try fileManager.createDirectory(at: staged.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try fileManager.createSymbolicLink(at: staged, withDestinationURL: versionTarget)
-            let after = ManagedSkillLink.expectedHash(destination: versionTarget, contentHash: contentHash)
+            let before = try builder.observe(target)
+            let after = try builder.repairSnapshot(at: target, before: before)
             next.managed[target.path] = GlobalManagedResource(hash: after, baselineID: resource.baselineID,
-                baselineHash: resource.baselineHash, originalRules: resource.originalRules, writtenRules: resource.writtenRules)
-            builder.append(target, before: before, after: after, summary: "重建技能快照并更新软链")
+                baselineHash: resource.baselineHash, originalRules: resource.originalRules, writtenRules: resource.writtenRules,
+                preservesLocalChanges: true)
         }
 
         next.revision = UUID()
@@ -205,6 +197,11 @@ extension GlobalConfigurationManager {
 
     func restore(_ resource: GlobalManagedResource, at target: URL, host: SkillConfigurationTarget, builder: GlobalPlanBuilder) throws {
         let actual = try builder.observe(target)
+        if resource.preservesLocalChanges == true {
+            if builder.action == "deploy" { return }
+            throw target == locations.rulesURL(for: host)
+                ? DeploymentError.managedRuleDrift(target.path) : DeploymentError.managedSkillDrift(target.path)
+        }
         if target == locations.rulesURL(for: host) {
             let current = try dataIfPresent(target)
             guard current != nil else {
@@ -255,6 +252,7 @@ final class GlobalPlanBuilder {
     var changes: [PlannedChange] = []
     var warnings: [String] = []
     var observations: [String: PlannedObservation] = [:]
+    var corruptSnapshots: Set<String> = []
     var newBaselines: [URL] = []
     var saved = false
 
@@ -272,25 +270,36 @@ final class GlobalPlanBuilder {
     func staged(_ url: URL) -> URL { stage.appendingPathComponent(manager.relative(url, root: root)) }
     func requireState(_ state: GlobalConfigurationState?) throws {
         let path = manager.relative(manager.locations.stateURL(host), root: root)
-        let expected = try state.map { SkillAssetCopier.sha256(try manager.encode($0)) }
-        if state?.didRepairPaths == true {
-            // 旧状态的 JSON 仍需以历史收据为准；路径迁移只改变内存中的目标映射。
-            guard let actual = observations[path]?.contentHash,
-                  manager.hasStateReceipt(actual, host: host, journals: try manager.journals(host)) else {
-                throw FileTransactionError.staleFile(path)
-            }
-        } else {
-            guard observations[path]?.contentHash == expected else { throw FileTransactionError.staleFile(path) }
-        }
+        guard observations[path]?.contentHash == state?.observedContentHash else { throw FileTransactionError.staleFile(path) }
     }
     @discardableResult
-    func observe(_ url: URL, allowingCorruptSnapshot: Bool = false) throws -> String? {
-        try manager.check(url, root: root, allowingCorruptSnapshot: allowingCorruptSnapshot)
-        let hash = try manager.hash(url, allowingCorruptSnapshot: allowingCorruptSnapshot)
+    func observe(_ url: URL) throws -> String? {
+        let allowingCorruptSnapshot = ["deploy", "repair-snapshot"].contains(action)
+        let hash: String?
+        do {
+            try manager.check(url, root: root)
+            hash = try manager.hash(url)
+        } catch FileTransactionError.snapshotCorrupt where allowingCorruptSnapshot {
+            corruptSnapshots.insert(url.path)
+            try manager.check(url, root: root, allowingCorruptSnapshot: true)
+            hash = try manager.hash(url, allowingCorruptSnapshot: true)
+        }
         let path = manager.relative(url, root: root)
         if let previous = observations[path], previous.contentHash != hash { throw FileTransactionError.staleFile(path) }
         observations[path] = PlannedObservation(relativePath: path, contentHash: hash)
         return hash
+    }
+    func repairSnapshot(at target: URL, before: String?) throws -> String {
+        // 旧版本目录可能被多个安装共用，只替换当前目标，不改共享目录里的用户内容。
+        let copied = try SkillAssetCopier.copy(from: target, to: staged(target))
+        let linkPath = try manager.fileManager.destinationOfSymbolicLink(atPath: target.path)
+        let destination = URL(fileURLWithPath: linkPath, relativeTo: target.deletingLastPathComponent()).standardizedFileURL
+        guard ManagedSkillLink.expectedHash(destination: destination, contentHash: copied.contentHash) == before else {
+            throw FileTransactionError.staleFile(target.path)
+        }
+        _ = try observe(target)
+        append(target, before: before, after: copied.contentHash, summary: "保留本机技能内容并自动修复旧版快照")
+        return copied.contentHash
     }
     func append(_ url: URL, before: String?, after: String?, summary: String) {
         guard before != after else { return }
@@ -314,7 +323,7 @@ final class GlobalPlanBuilder {
         try write(manager.encode(state), to: manager.locations.stateURL(host), summary: "保存全局配置与本机管理归属")
         var metadata = ["planType": "global-configuration", "globalHost": host.rawValue,
                         "globalAction": action, "globalSkillsRoot": state.skillsPath]
-        if action == "repair-snapshot" { metadata["allowSnapshotRepair"] = "1" }
+        if !corruptSnapshots.isEmpty { metadata["allowSnapshotRepair"] = "1" }
         let dependencies = observations.values.sorted { $0.relativePath < $1.relativePath }
         let digest = DeploymentPlanner.calculateDigest(projectPath: root.path, changes: changes,
             selectedSkills: [], metadata: metadata, observations: dependencies)

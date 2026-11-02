@@ -124,6 +124,7 @@ struct GlobalManagedResource: Codable, Hashable {
     let baselineHash: String?
     let originalRules: Data?
     let writtenRules: Data?
+    var preservesLocalChanges: Bool? = nil
 }
 
 struct GlobalConfigurationState: Codable {
@@ -135,8 +136,8 @@ struct GlobalConfigurationState: Codable {
     var selection: GlobalConfigurationDraft
     var managed: [String: GlobalManagedResource]
 
-    // 仅在内存中标记路径迁移。原始 JSON 仍按旧版本格式编码，避免改变旧收据的校验输入。
-    var didRepairPaths = false
+    // 比较实际读到的字节，避免旧版本 JSON 的编码差异被误判为并发修改。
+    var observedContentHash: String? = nil
 
     private enum CodingKeys: String, CodingKey {
         case schemaVersion, revision, host, skillsPath, rulesPath, selection, managed
@@ -321,6 +322,7 @@ public struct GlobalConfigurationManager {
         }
         try require(state.managed.keys.allSatisfy({ allowedResource(URL(fileURLWithPath: $0), host: host) }), .unmanagedPath)
         try require(hasStateReceipt(rawHash, host: host, journals: history), .missingReceipt)
+        state.observedContentHash = rawHash
         return state
     }
 
@@ -384,7 +386,6 @@ public struct GlobalConfigurationManager {
         repaired.skillsPath = currentSkills
         repaired.rulesPath = currentRules
         repaired.managed = mapped
-        repaired.didRepairPaths = true
         return repaired
     }
 
@@ -392,6 +393,12 @@ public struct GlobalConfigurationManager {
         url.path == (locations.rulesURL(for: host)?.path ?? "")
             || (url.deletingLastPathComponent().path == locations.skillsRoot(host).path
                 && url.lastPathComponent.range(of: #"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$"#, options: .regularExpression) != nil)
+    }
+
+    func linksToLibrary(_ target: URL) -> Bool {
+        guard let destination = try? fileManager.destinationOfSymbolicLink(atPath: target.path) else { return false }
+        return URL(fileURLWithPath: destination, relativeTo: target.deletingLastPathComponent()).standardizedFileURL.path
+            == paths.libraryDirectoryURL.appendingPathComponent(target.lastPathComponent).path
     }
 
     /// 全局事务根可能包含宿主自定义目录；执行前仍只接受这两类资源和本机状态文件。
@@ -412,7 +419,7 @@ public struct GlobalConfigurationManager {
         guard plan.projectPath == locations.transactionRoot(host).path else { throw DeploymentError.invalidPlan }
         let root = locations.transactionRoot(host)
         let allowingCorruptSnapshot = plan.metadata?["allowSnapshotRepair"] == "1"
-            && plan.metadata?["globalAction"] == "repair-snapshot"
+            && ["deploy", "repair-snapshot"].contains(plan.metadata?["globalAction"] ?? "")
         guard root.resolvingSymlinksInPath().standardizedFileURL.path == root.path else {
             throw DeploymentError.symlinkDetected(root.path)
         }

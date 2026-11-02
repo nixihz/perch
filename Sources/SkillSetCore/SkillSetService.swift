@@ -257,12 +257,16 @@ public struct SkillSetService {
         guard allSkillIDs.count <= 200 else {
             throw SkillSetServiceError.tooManySelections(allSkillIDs.count)
         }
-        let knownInstructions = Set(snapshot.templates.map(\.id))
+        // 窗口与 MCP 会话可能长期存活，生成计划时不能沿用启动时的来源指纹。
+        let library = try libraryStore().loadLibrary()
+        let catalog = library.catalog(merging: snapshot.catalog)
+        let templates = try TemplateStore(rootURL: paths.applicationSupportRoot).list(merging: snapshot.templates)
+        let knownInstructions = Set(templates.map(\.id))
         if let unknown = allInstructionIDs.first(where: { !knownInstructions.contains($0) }) {
             throw SkillSetServiceError.unknownInstruction(unknown)
         }
         let project = try projectStore.project(id: projectID)
-        let fragments = Dictionary(uniqueKeysWithValues: snapshot.templates.map { ($0.id, $0.body) })
+        let fragments = Dictionary(uniqueKeysWithValues: templates.map { ($0.id, $0.body) })
         let resolvedAgents = agents ?? {
             let draft = try? draftStore.load(projectID: projectID)
             let manifest = try? ProjectLockStore(
@@ -290,11 +294,11 @@ public struct SkillSetService {
         let finalSkills = resolvedSelections.map { Set($0.values.flatMap(\.skillIDs)) } ?? Set(skillIDs)
         guard finalSkills.count <= 200 else { throw SkillSetServiceError.tooManySelections(finalSkills.count) }
         let planner = DeploymentPlanner(
-            catalog: snapshot.catalog,
+            catalog: catalog,
             repositoryRoot: repositoryRoot,
             stagingRoot: paths.stagingRoot,
             operationsRoot: executor.operationsRoot,
-            skillSourceURLs: try resolvedSkillSources(),
+            skillSourceURLs: library.packageURLs.merging(injectedSkillSourceURLs) { local, _ in local },
             versionsRoot: paths.versionsRoot,
             libraryRoot: paths.libraryDirectoryURL,
             sourcesRoot: paths.sourcesRoot
@@ -503,6 +507,14 @@ public struct SkillSetService {
                     throw ProjectLockError.corruptLock(lockURL.path)
                 }
                 _ = try SkillObjectStore(repositoryRoot: repositoryRoot).verify(lock: lock)
+                let library = try libraryStore().loadLibrary()
+                let entries = Dictionary(uniqueKeysWithValues: library.catalog(merging: snapshot.catalog).entries.map { ($0.id, $0) })
+                for skill in lock.skills {
+                    if let entry = entries[skill.id], !entry.isBlocked, let source = library.packageURLs[skill.id],
+                       entry.contentHash != skill.contentHash {
+                        throw FileTransactionError.staleFile(source.path)
+                    }
+                }
             }
             let result = try executor.apply(plan: record.plan, from: staging, operationID: operationID)
             let receipt = ApplyReceipt(

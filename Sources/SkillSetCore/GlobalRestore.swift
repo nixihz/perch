@@ -2,7 +2,7 @@ import Foundation
 
 extension GlobalConfigurationManager {
     public func makeUndoPlan(host: SkillConfigurationTarget, operationID: UUID) throws -> StoredDeploymentPlan {
-        _ = try loadState(host)
+        let current = try loadState(host)
         guard let operation = try history(host: host).first(where: { $0.id == operationID }), operation.canUndo else {
             throw GlobalConfigurationError.staleOperation
         }
@@ -13,7 +13,7 @@ extension GlobalConfigurationManager {
             throw GlobalConfigurationError.verificationFailed(.missingStateStep, path: paths.operationsRoot.appendingPathComponent(operationID.uuidString + "/journal.json").path)
         }
         let operationRoot = paths.operationsRoot.appendingPathComponent(operationID.uuidString)
-        let previous: GlobalConfigurationState
+        var previous: GlobalConfigurationState
         if let beforeHash = stateStep.beforeHash {
             let backup = operationRoot.appendingPathComponent("backup/\(statePath)")
             guard try hash(backup) == beforeHash else { throw GlobalConfigurationError.baselineMissing }
@@ -67,7 +67,15 @@ extension GlobalConfigurationManager {
                       try ruleBody(data, path: target.path).map({ SkillAssetCopier.sha256(Data($0.utf8)) }) == resource.hash else {
                     throw DeploymentError.managedRuleDrift(path)
                 }
-            } else if actual != resource.hash { throw DeploymentError.managedSkillDrift(path) }
+            } else if actual != resource.hash {
+                // 软链跟随库更新，撤销管理记录不能把库内容退回旧版本。
+                guard let actual, linksToLibrary(target), current?.managed[path]?.hash == actual else {
+                    throw DeploymentError.managedSkillDrift(path)
+                }
+                previous.managed[path] = GlobalManagedResource(hash: actual, baselineID: resource.baselineID,
+                    baselineHash: resource.baselineHash, originalRules: resource.originalRules, writtenRules: resource.writtenRules,
+                    preservesLocalChanges: resource.preservesLocalChanges)
+            }
         }
         return try builder.finish(state: previous)
     }
