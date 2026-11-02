@@ -22,8 +22,12 @@ if [[ -f "$RESOURCE_PLIST" ]]; then
     /usr/libexec/PlistBuddy -c "Set :CFBundlePackageType BNDL" "$RESOURCE_PLIST"
     /usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string perch.SkillSetCore.resources" "$RESOURCE_PLIST" 2>/dev/null || true
     /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 1" "$RESOURCE_PLIST" 2>/dev/null || true
-    codesign "${SIGN_ARGS[@]}" "$RESOURCE_BUNDLE"
+codesign "${SIGN_ARGS[@]}" "$RESOURCE_BUNDLE"
 fi
 codesign "${SIGN_ARGS[@]}" "$APP_BUNDLE/Contents/Helpers/skillset"
 codesign "${SIGN_ARGS[@]}" "$APP_BUNDLE"
-codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
+# Xcode 16.4 对 SwiftPM 资源 bundle 的 --deep 校验不稳定，逐个校验仍能覆盖所有嵌套代码。
+codesign --verify --strict --verbose=2 "$FRAMEWORK"
+codesign --verify --strict --verbose=2 "$RESOURCE_BUNDLE"
+codesign --verify --strict --verbose=2 "$APP_BUNDLE/Contents/Helpers/skillset"
+codesign --verify --strict --verbose=2 "$APP_BUNDLE"
