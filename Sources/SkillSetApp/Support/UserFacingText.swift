@@ -202,8 +202,10 @@ enum UserFacingText {
                 return "暂不支持这个 AI 工具，请重新选择 Codex 或 Claude Code。"
             case "REPOSITORY_NOT_FOUND":
                 return "找不到技能库目录，请检查技能库位置后重新打开应用。"
-            case "SKILL_SOURCE_CHANGED", "SKILL_SOURCE_MISSING", "SKILL_NOT_FOUND":
-                return "技能来源已改变或无法读取，请检查来源后重新选择技能。"
+            case "SKILL_SOURCE_CHANGED":
+                return "技能文件仍在变化，本次未写入，原有配置已保留。稍后可再次保存。"
+            case "SKILL_SOURCE_MISSING", "SKILL_NOT_FOUND":
+                return "技能来源不可用，且没有可恢复的本机副本。本次未写入，原有配置已保留。"
             case "SKILL_BLOCKED", "SKILL_ASSET_UNSAFE":
                 return "技能未通过完整性检查，请先修复来源，再重新生成快照。"
             case "SKILL_TARGET_CONFLICT":
@@ -410,6 +412,9 @@ enum UserFacingText {
                 return "来源包含无法识别的提示，请先核对仓库内容。"
             }
         case .plan:
+            if text.hasSuffix("来源暂不可用，已从本机离线对象恢复技能内容。") {
+                return "技能来源暂不可用，将使用本机保存的完整副本。原有技能选择已保留。"
+            }
             if isInformationalPlanNote(text) {
                 return "部署内容已保存到本机版本库，项目版本记录将随计划更新。"
             }

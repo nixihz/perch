@@ -82,7 +82,7 @@ final class GlobalSkillImmediateSaveTests: XCTestCase {
         XCTAssertTrue(try fixture.manager.inspect(host: .agents).resources.contains { $0.path == target.path && $0.managed })
     }
 
-    func testModifiedInstalledFileBlocksRemovalAndKeepsSelectedState() async throws {
+    func testRemovingModifiedInstalledSkillKeepsLocalFileAndClearsSelection() async throws {
         let fixture = try Fixture()
         defer { fixture.remove() }
         fixture.model.setInstallMethod(.copy, host: .codex)
@@ -91,11 +91,67 @@ final class GlobalSkillImmediateSaveTests: XCTestCase {
         let target = fixture.locations.skillsRoot(.codex).appendingPathComponent("click-save/SKILL.md")
         try "用户编辑内容".write(to: target, atomically: true, encoding: .utf8)
         let removed = await fixture.model.saveSkill(fixture.skill, enabled: false, host: .codex, catalog: fixture.entries)
-        XCTAssertFalse(removed)
-        XCTAssertNotNil(fixture.model.error)
-        XCTAssertTrue(fixture.model.isSkillSelected(fixture.skill.id, host: .codex))
+        XCTAssertTrue(removed, fixture.model.error ?? "")
+        XCTAssertNil(fixture.model.error)
+        XCTAssertFalse(fixture.model.isSkillSelected(fixture.skill.id, host: .codex))
         XCTAssertEqual(try String(contentsOf: target, encoding: .utf8), "用户编辑内容")
-        XCTAssertEqual(try fixture.manager.history(host: .codex).count, 1)
+        XCTAssertEqual(try fixture.manager.history(host: .codex).count, 2)
+        XCTAssertTrue(try fixture.manager.inspect(host: .codex).selection.skillIDs.isEmpty)
+    }
+
+    func testSavingAnotherSkillAutomaticallyRepairsLegacySnapshotForEveryTarget() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        for host in SkillConfigurationTarget.allCases {
+            let installed = await fixture.model.saveSkill(fixture.skill, enabled: true, host: host, catalog: fixture.entries)
+            XCTAssertTrue(installed, fixture.model.error ?? "")
+            let target = fixture.locations.skillsRoot(host).appendingPathComponent("click-save")
+            let legacy = fixture.paths.versionsRoot.appendingPathComponent(String(repeating: "b", count: 64))
+            if !FileManager.default.fileExists(atPath: legacy.path) {
+                try FileManager.default.createDirectory(at: legacy, withIntermediateDirectories: true)
+                try "本机修改必须保留".write(to: legacy.appendingPathComponent("SKILL.md"), atomically: true, encoding: .utf8)
+            }
+            try FileManager.default.removeItem(at: target)
+            try FileManager.default.createSymbolicLink(at: target, withDestinationURL: legacy)
+            fixture.model.refresh()
+
+            let saved = await fixture.model.saveSkill(fixture.pending, enabled: true, host: host, catalog: fixture.entries)
+
+            XCTAssertTrue(saved, fixture.model.error ?? "")
+            XCTAssertEqual(try String(contentsOf: target.appendingPathComponent("SKILL.md"), encoding: .utf8), "本机修改必须保留")
+            XCTAssertFalse(try fixture.manager.inspect(host: host).resources.contains { $0.snapshotCorrupt })
+            XCTAssertTrue(try String(contentsOf: fixture.locations.skillsRoot(host).appendingPathComponent("pending/SKILL.md"), encoding: .utf8).contains("待保存正文"))
+        }
+    }
+
+    func testSavingInstructionRepairsOtherSkillAndPreservesEditedRulesAcrossLaterSaves() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let first = TemplateRecord(title: "第一条", body: "第一条正文", purpose: "保存测试")
+        let second = TemplateRecord(title: "第二条", body: "第二条正文", purpose: "保存测试")
+        let templates = TemplateStore(rootURL: fixture.paths.applicationSupportRoot)
+        _ = try templates.save(first, initial: [])
+        _ = try templates.save(second, initial: [])
+        let skillSaved = await fixture.model.saveSkill(fixture.skill, enabled: true, host: .codex, catalog: fixture.entries)
+        XCTAssertTrue(skillSaved, fixture.model.error ?? "")
+        let target = fixture.locations.skillsRoot(.codex).appendingPathComponent("click-save")
+        let legacy = fixture.paths.versionsRoot.appendingPathComponent(String(repeating: "a", count: 64))
+        try FileManager.default.createDirectory(at: legacy, withIntermediateDirectories: true)
+        try "本机技能正文".write(to: legacy.appendingPathComponent("SKILL.md"), atomically: true, encoding: .utf8)
+        try FileManager.default.removeItem(at: target)
+        try FileManager.default.createSymbolicLink(at: target, withDestinationURL: legacy)
+
+        let saved = await fixture.model.saveInstruction(first, enabled: true, host: .codex)
+        XCTAssertTrue(saved, fixture.model.error ?? "")
+        XCTAssertEqual(try String(contentsOf: target.appendingPathComponent("SKILL.md"), encoding: .utf8), "本机技能正文")
+        let rules = fixture.locations.rulesURL(.codex)
+        let edited = try String(contentsOf: rules, encoding: .utf8).replacingOccurrences(of: first.body, with: "用户自己改的规则")
+        try edited.write(to: rules, atomically: true, encoding: .utf8)
+        let secondSaved = await fixture.model.saveInstruction(second, enabled: true, host: .codex)
+        XCTAssertTrue(secondSaved, fixture.model.error ?? "")
+        let skillRemoved = await fixture.model.saveSkill(fixture.pending, enabled: false, host: .codex, catalog: fixture.entries)
+        XCTAssertTrue(skillRemoved, fixture.model.error ?? "")
+        XCTAssertEqual(try String(contentsOf: rules, encoding: .utf8), edited)
     }
 
     func testInstructionImmediateSaveWritesRulesFileDirectly() async throws {

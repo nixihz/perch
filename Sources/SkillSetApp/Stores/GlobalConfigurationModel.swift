@@ -281,27 +281,13 @@ final class GlobalConfigurationModel {
             let manager = GlobalConfigurationManager(paths: paths, locations: locations)
             var failure: String?
             do {
-                // 单次点击只改变该技能，不能顺带部署其他技能或规则的待保存草稿。
-                let observed = try manager.inspect(host: host)
-                let skillPath = locations.skillsRoot(host).appendingPathComponent(name).path
-                if observed.resources.contains(where: { $0.path == skillPath && $0.managed && $0.modified }) {
-                    // 无预览的取消操作不能静默保留修改后的文件并解除管理。
-                    throw DeploymentError.managedSkillDrift(skillPath)
-                }
-                var selection = observed.selection
-                selection.installMethod = previous.installMethod
-                selection.skillIDs.removeAll { $0 == id }
-                if enabled { selection.skillIDs.append(id) }
-                selection.skillIDs.sort()
-                let service = try SkillSetService(paths: paths, globalLocations: locations)
-                let plan: StoredDeploymentPlan?
-                do { plan = try service.makeGlobalPlan(host: host, selection: selection, takeOverExisting: takeOver) }
-                catch DeploymentError.noChanges { plan = nil }
                 try manager.saveDraft(updatedDraft, host: host)
                 do {
-                    if let plan {
-                        try service.approve(planID: plan.id, digest: plan.plan.digest)
-                        _ = try service.apply(planID: plan.id, digest: plan.plan.digest)
+                    try Self.applyLatestSelection(paths: paths, locations: locations, host: host, takeOver: takeOver) { selection in
+                        selection.installMethod = previous.installMethod
+                        selection.skillIDs.removeAll { $0 == id }
+                        if enabled { selection.skillIDs.append(id) }
+                        selection.skillIDs.sort()
                     }
                 } catch {
                     let applyFailure = UserFacingText.error(error)
@@ -370,23 +356,11 @@ final class GlobalConfigurationModel {
             let manager = GlobalConfigurationManager(paths: paths, locations: locations)
             var failure: String?
             do {
-                let observed = try manager.inspect(host: host)
-                if let rulesPath = locations.rulesURL(for: host)?.path,
-                   observed.resources.contains(where: { $0.path == rulesPath && $0.managed && $0.modified }) {
-                    throw DeploymentError.managedRuleDrift(rulesPath)
-                }
-                var selection = observed.selection
-                selection.instructionIDs.removeAll { $0 == id }
-                if enabled { selection.instructionIDs.append(id) }
-                let service = try SkillSetService(paths: paths, globalLocations: locations)
-                let plan: StoredDeploymentPlan?
-                do { plan = try service.makeGlobalPlan(host: host, selection: selection, takeOverExisting: takeOver) }
-                catch DeploymentError.noChanges { plan = nil }
                 try manager.saveDraft(updatedDraft, host: host)
                 do {
-                    if let plan {
-                        try service.approve(planID: plan.id, digest: plan.plan.digest)
-                        _ = try service.apply(planID: plan.id, digest: plan.plan.digest)
+                    try Self.applyLatestSelection(paths: paths, locations: locations, host: host, takeOver: takeOver) { selection in
+                        selection.instructionIDs.removeAll { $0 == id }
+                        if enabled { selection.instructionIDs.append(id) }
                     }
                 } catch {
                     let applyFailure = UserFacingText.error(error)
@@ -403,6 +377,33 @@ final class GlobalConfigurationModel {
         if let failure = result.1 { error = failure; return false }
         skillSaveMessage = L10n.tr("已保存：\(host.displayName) · \(title)")
         return true
+    }
+
+    nonisolated private static func applyLatestSelection(
+        paths: SkillSetRuntimePaths, locations: GlobalConfigurationLocations, host: SkillConfigurationTarget,
+        takeOver: Bool, update: (inout GlobalConfigurationDraft) -> Void
+    ) throws {
+        for attempt in 0..<3 {
+            do {
+                // 每次重试都以本机已应用选择为准，只合入这次点击，不部署其他待保存草稿。
+                let manager = GlobalConfigurationManager(paths: paths, locations: locations)
+                var selection = try manager.inspect(host: host).selection
+                update(&selection)
+                let service = try SkillSetService(paths: paths, globalLocations: locations)
+                let plan: StoredDeploymentPlan
+                do { plan = try service.makeGlobalPlan(host: host, selection: selection, takeOverExisting: takeOver) }
+                catch DeploymentError.noChanges { return }
+                try service.approve(planID: plan.id, digest: plan.plan.digest)
+                _ = try service.apply(planID: plan.id, digest: plan.plan.digest)
+                return
+            } catch FileTransactionError.staleFile where attempt < 2 {
+                continue
+            } catch FileTransactionError.snapshotCorrupt where attempt < 2 {
+                continue
+            } catch DeploymentError.skillSourceChanged where attempt < 2 {
+                continue
+            }
+        }
     }
 
     private func save(_ next: GlobalConfigurationDraft, host: SkillConfigurationTarget) {

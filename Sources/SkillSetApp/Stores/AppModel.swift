@@ -883,14 +883,6 @@ final class AppModel {
 
     @discardableResult
     func saveProjectSkill(_ skill: SkillEntry, enabled: Bool, host: MCPHost) async -> Bool {
-        guard !enabled || !skill.isBlocked else {
-            let message: LocalizedText = "\(skill.slug) 未通过文件检查，请到技能库查看原因。"
-            if let project = selectedProject {
-                setProjectPlanNotice(ProjectPlanNotice(message: host.displayName + " · " + L10n.tr(message), tone: .error), for: project.id)
-            }
-            report(message)
-            return false
-        }
         if enabled, let project = selectedProject,
            let selected = project.harnessSelections[host.rawValue]?.skillIDs,
            snapshot.catalog.entries.contains(where: { $0.id != skill.id && $0.slug == skill.slug && selected.contains($0.id) }) {
@@ -917,18 +909,7 @@ final class AppModel {
         projectSaveMessage = nil
         defer { isWorking = false }
         do {
-            guard let service else { throw SkillSetServiceError.repositoryNotFound }
-            let plan: StoredDeploymentPlan?
-            do {
-                plan = try service.makeHarnessPlan(projectID: projectUUID, agent: host.rawValue, selection: updatedSelection,
-                                                   installMethod: skillInstallMethod, allowRelatedHarnessUpdates: true)
-            } catch let error as DeploymentError where error == .noChanges {
-                plan = nil
-            }
-            if let plan {
-                let approved = try planStore.approve(id: plan.id, digest: plan.plan.digest)
-                _ = try service.apply(planID: approved.id, digest: approved.plan.digest)
-            }
+            try applyLatestProjectSelection(projectID: projectUUID, host: host, selection: updatedSelection)
             try reloadProjects(preferredID: projectUUID)
             setProjectPlanNotice(nil, for: project.id)
             projectSaveMessage = L10n.tr("已保存：\(host.displayName) · \(name)")
@@ -976,18 +957,7 @@ final class AppModel {
         projectSaveMessage = nil
         defer { isWorking = false }
         do {
-            guard let service else { throw SkillSetServiceError.repositoryNotFound }
-            let plan: StoredDeploymentPlan?
-            do {
-                plan = try service.makeHarnessPlan(projectID: projectUUID, agent: host.rawValue, selection: updatedSelection,
-                                                   installMethod: skillInstallMethod, allowRelatedHarnessUpdates: true)
-            } catch let error as DeploymentError where error == .noChanges {
-                plan = nil
-            }
-            if let plan {
-                let approved = try planStore.approve(id: plan.id, digest: plan.plan.digest)
-                _ = try service.apply(planID: approved.id, digest: approved.plan.digest)
-            }
+            try applyLatestProjectSelection(projectID: projectUUID, host: host, selection: updatedSelection)
             try reloadProjects(preferredID: projectUUID)
             setProjectPlanNotice(nil, for: project.id)
             projectSaveMessage = L10n.tr("已保存：\(host.displayName) · \(title)")
@@ -1003,6 +973,34 @@ final class AppModel {
             reportKey(UserFacingText.error(error))
             return false
         }
+    }
+
+    private func applyLatestProjectSelection(projectID: UUID, host: MCPHost, selection: ProjectHarnessSelection) throws {
+        for attempt in 0..<3 {
+            do {
+                try reloadLibrary()
+                guard let service else { throw SkillSetServiceError.repositoryNotFound }
+                let plan = try service.makeHarnessPlan(projectID: projectID, agent: host.rawValue, selection: selection,
+                    installMethod: skillInstallMethod, allowRelatedHarnessUpdates: true)
+                let approved = try planStore.approve(id: plan.id, digest: plan.plan.digest)
+                _ = try service.apply(planID: approved.id, digest: approved.plan.digest)
+                return
+            } catch DeploymentError.noChanges {
+                return
+            } catch {
+                guard attempt < 2, canRefreshProjectDeployment(after: error) else { throw error }
+            }
+        }
+    }
+
+    private func canRefreshProjectDeployment(after error: Error) -> Bool {
+        if let error = error as? DeploymentError {
+            return ["SKILL_SOURCE_CHANGED", "SKILL_SOURCE_MISSING", "SKILL_NOT_FOUND"].contains(error.code)
+        }
+        if let error = error as? FileTransactionError {
+            return ["PLAN_STALE", "STAGING_INVALID"].contains(error.code)
+        }
+        return false
     }
 
     func selectProjectHost(_ host: AgentHost, projectID: String? = nil) {
@@ -1235,23 +1233,11 @@ final class AppModel {
             return
         }
         setProjectPlanNotice(nil, for: project.id)
-        guard service != nil else {
-            let message = L10n.tr("找不到技能库目录，请检查技能库位置后重新打开栖集。")
-            setProjectPlanNotice(ProjectPlanNotice(message: message, tone: .error), for: project.id)
-            reportKey("找不到技能库目录，请检查技能库位置后重新打开栖集。")
-            return
-        }
         let agent = host?.rawValue ?? project.editingAgent
-        let knownFragments = Set(snapshot.templates.map(\.id))
-        guard Set(project.harnessSelections[agent]?.instructionIDs ?? []).isSubset(of: knownFragments) else {
-            let message = L10n.tr("草稿引用了已删除的 AGENTS 片段，请移除引用后再预览。")
-            setProjectPlanNotice(ProjectPlanNotice(message: message, tone: .error), for: project.id)
-            reportKey("草稿引用了已删除的 AGENTS 片段，请移除引用后再预览。")
-            return
-        }
         isWorking = true
         defer { isWorking = false }
         do {
+            try reloadLibrary()
             _ = try draftStore.save(
                 projectID: id,
                 skillIDs: project.draftSkillIDs,
@@ -1261,8 +1247,7 @@ final class AppModel {
                 harnessSelections: project.harnessSelections
             )
             guard let service else {
-                report("应用尚未准备好，请重新打开栖集后再预览变更。")
-                return
+                throw SkillSetServiceError.repositoryNotFound
             }
             preparedPlan = try service.makeHarnessPlan(
                 projectID: id,
@@ -1346,10 +1331,68 @@ final class AppModel {
             reportKey(UserFacingText.applyResult(result.message))
             return true
         } catch {
+            if prepared.plan.metadata?["planType"] == "skill-deployment", canRefreshProjectDeployment(after: error) {
+                do {
+                    try refreshPreparedProjectPlan(prepared)
+                    return false
+                } catch DeploymentError.noChanges {
+                    preparedPlan = nil
+                    planPresented = false
+                    try? reloadProjects(preferredID: UUID(uuidString: selectedProjectID))
+                    report("草稿与项目现状一致，没有需要写入的变更。")
+                    return true
+                } catch {
+                    planError = UserFacingText.error(error)
+                    reportKey(UserFacingText.error(error))
+                    return false
+                }
+            }
+            if ["PLAN_STALE", "SNAPSHOT_CORRUPT"].contains((error as? FileTransactionError)?.code ?? ""),
+               prepared.plan.metadata?["planType"] == "global-configuration",
+               prepared.plan.metadata?["globalAction"] == "deploy",
+               let rawHost = prepared.plan.metadata?["globalHost"], let host = SkillConfigurationTarget(rawValue: rawHost) {
+                globalConfiguration.refresh()
+                if let refreshed = globalConfiguration.prepareDeployment(host: host) {
+                    preparedPlan = refreshed
+                    let message = L10n.tr("已按本机最新状态更新预览，请核对后保存。")
+                    planError = message
+                    reportKey(message)
+                    return false
+                }
+            }
             planError = UserFacingText.error(error)
             reportKey(UserFacingText.error(error))
             return false
         }
+    }
+
+    private func refreshPreparedProjectPlan(_ prepared: StoredDeploymentPlan) throws {
+        let projectRoot = URL(fileURLWithPath: prepared.plan.projectPath)
+        guard let project = try projectStore.list().first(where: { $0.canonicalPath == projectRoot.path }) else {
+            throw DeploymentError.projectNotFound(projectRoot.path)
+        }
+        let stagedManifest = URL(fileURLWithPath: prepared.stagingPath).appendingPathComponent(ProjectLockStore.manifestFileName)
+        let manifest: ProjectManifest
+        if FileManager.default.fileExists(atPath: stagedManifest.path) {
+            manifest = try JSONDecoder().decode(ProjectManifest.self, from: Data(contentsOf: stagedManifest))
+        } else if let current = try ProjectLockStore(projectRoot: projectRoot, stateRoot: runtimePaths.applicationSupportRoot).loadManifest() {
+            manifest = current
+        } else {
+            throw DeploymentError.invalidPlan
+        }
+        try reloadLibrary()
+        guard let service else { throw SkillSetServiceError.repositoryNotFound }
+        let stagedInstallMethod: SkillInstallMethod = prepared.plan.changes.contains {
+            $0.afterHash != nil && (try? FileManager.default.destinationOfSymbolicLink(
+                atPath: URL(fileURLWithPath: prepared.stagingPath).appendingPathComponent($0.relativePath).path)) != nil
+        } ? .symlink : .copy
+        let installMethod = prepared.plan.metadata?["skillInstallMethod"].flatMap(SkillInstallMethod.init(rawValue:)) ?? stagedInstallMethod
+        preparedPlan = try service.makePlan(projectID: project.id, skillIDs: manifest.skills,
+            instructionIDs: manifest.instructions, agents: manifest.agents, ruleBlockID: manifest.ruleBlockID,
+            installMethod: installMethod, harnessSelections: manifest.resolvedHarnessSelections)
+        let message = L10n.tr("已按本机最新状态更新预览，请核对后保存。")
+        planError = message
+        reportKey(message)
     }
 
     func dismissPlan() {

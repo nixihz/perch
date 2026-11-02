@@ -225,17 +225,14 @@ struct ConfigurationResourceView: View {
            let corrupted = global.inspection?.resources.filter(\.snapshotCorrupt),
            !corrupted.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
-                Text(L10n.tr("检测到技能快照内容与目录指纹不一致，当前宿主的保存已暂停。"))
+                Text(L10n.tr("保存时会自动修复旧版技能快照，并保留本机内容。"))
                 ForEach(corrupted) { resource in
                     Text(resource.path).textSelection(.enabled)
                 }
-                Button(L10n.tr("修复技能快照")) {
-                    present(global.prepareSnapshotRepair())
-                }
-                .accessibilityIdentifier("global.repairSnapshot")
             }
             .font(AppFont.secondary)
-            .foregroundStyle(.red)
+            .foregroundStyle(.secondary)
+            .accessibilityIdentifier("global.snapshotRecovery")
         }
         if !isProject, let error = global.error {
             Text(L10n.text(error)).font(AppFont.secondary).foregroundStyle(.red)

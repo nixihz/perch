@@ -60,7 +60,7 @@ final class GlobalConfigurationUITests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: locations.home.appendingPathComponent(".agents/AGENTS.md").path))
     }
 
-    func testCorruptedSnapshotShowsRepairActionInGlobalConfiguration() async throws {
+    func testCorruptedSnapshotCanBeSavedWithoutManualRepairInGlobalConfiguration() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("snapshot-repair-ui-\(UUID())")
         defer { try? FileManager.default.removeItem(at: root) }
         let paths = SkillSetRuntimePaths(applicationSupportRoot: root.appendingPathComponent("state"), repositoryRoot: nil)
@@ -89,7 +89,7 @@ final class GlobalConfigurationUITests: XCTestCase {
         let previousLanguage = AppPreferences.shared.language
         AppPreferences.shared.language = .chinese
         defer { AppPreferences.shared.language = previousLanguage }
-        let controller = NSHostingController(rootView: ConfigurationResourceView(model: model))
+        let controller = NSHostingController(rootView: ConfigurationResourceView(model: model).frame(width: 1080, height: 700))
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1080, height: 700),
                               styleMask: [.titled, .resizable], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -98,8 +98,70 @@ final class GlobalConfigurationUITests: XCTestCase {
         try await Task.sleep(for: .milliseconds(100))
         controller.view.layoutSubtreeIfNeeded()
         XCTAssertGreaterThan(controller.view.fittingSize.width, 0)
-        let repair = try XCTUnwrap(global.prepareSnapshotRepair())
-        XCTAssertEqual(repair.plan.metadata?["globalAction"], "repair-snapshot")
+        for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+            window.appearance = NSAppearance(named: appearance)
+            try await Task.sleep(for: .milliseconds(100))
+            controller.view.layoutSubtreeIfNeeded()
+            let bitmap = try XCTUnwrap(controller.view.bitmapImageRepForCachingDisplay(in: controller.view.bounds))
+            controller.view.cacheDisplay(in: controller.view.bounds, to: bitmap)
+            try bitmap.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath:
+                "/tmp/perch-global-recovery-\(appearance == .aqua ? "light" : "dark").png"))
+        }
+        XCTAssertTrue(global.canEditSkills(host: .codex))
+        model.preparedPlan = try XCTUnwrap(global.prepareDeployment(host: .codex), global.error ?? "")
+        XCTAssertEqual(model.preparedPlan?.plan.metadata?["globalAction"], "deploy")
+        XCTAssertTrue(model.approveAndApplyPreparedPlan(), model.lastAction)
+        XCTAssertEqual(try String(contentsOf: target.appendingPathComponent("SKILL.md"), encoding: .utf8), "损坏快照")
+        XCTAssertFalse(global.inspection?.resources.contains { $0.snapshotCorrupt } == true)
+        XCTAssertNil(global.error)
+    }
+
+    func testStaleGlobalPreviewRefreshesFromCurrentFilesAndCanBeSaved() throws {
+        for legacySnapshot in [false, true] {
+            try verifyStaleGlobalPreviewRecovery(legacySnapshot: legacySnapshot)
+        }
+    }
+
+    private func verifyStaleGlobalPreviewRecovery(legacySnapshot: Bool) throws {
+        let root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent("global-preview-refresh-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let paths = SkillSetRuntimePaths(applicationSupportRoot: root.appendingPathComponent("state"), repositoryRoot: nil)
+        let locations = GlobalConfigurationLocations(home: root.appendingPathComponent("home"), stateRoot: paths.applicationSupportRoot)
+        let skill = try paths.makeLibraryStore().save(SkillEditorDraft(slug: "refresh-demo",
+            document: "---\nname: refresh-demo\ndescription: 刷新测试\n---\n技能库正文\n"), repositoryRoot: nil)
+        let template = TemplateRecord(title: "待写规则", body: "本次写入的规则", purpose: "刷新预览")
+        _ = try TemplateStore(rootURL: paths.applicationSupportRoot).save(template, initial: [])
+        let model = AppModel(runtimePaths: paths, globalLocations: locations)
+        let global = model.globalConfiguration
+        global.refresh()
+        global.setInstallMethod(.copy, host: .codex)
+        global.setSkill(skill.id, enabled: true, host: .codex)
+        model.preparedPlan = try XCTUnwrap(global.prepareDeployment(host: .codex), global.error ?? "")
+        XCTAssertTrue(model.approveAndApplyPreparedPlan(), model.lastAction)
+        global.setInstruction(template.id, enabled: true, host: .codex)
+        let pending = try XCTUnwrap(global.prepareDeployment(host: .codex), global.error ?? "")
+        model.preparedPlan = pending
+        model.planPresented = true
+        let target = locations.skillsRoot(.codex).appendingPathComponent("refresh-demo/SKILL.md")
+        if legacySnapshot {
+            let snapshot = paths.versionsRoot.appendingPathComponent(String(repeating: "a", count: 64))
+            try FileManager.default.createDirectory(at: snapshot, withIntermediateDirectories: true)
+            try FileManager.default.removeItem(at: target.deletingLastPathComponent())
+            try FileManager.default.createSymbolicLink(at: target.deletingLastPathComponent(), withDestinationURL: snapshot)
+        }
+        try "预览后用户改的正文".write(to: target, atomically: true, encoding: .utf8)
+
+        XCTAssertFalse(model.approveAndApplyPreparedPlan())
+        XCTAssertNotEqual(model.preparedPlan?.id, pending.id)
+        XCTAssertNotNil(model.planError)
+        XCTAssertTrue(model.planPresented)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: locations.rulesURL(.codex).path))
+        XCTAssertEqual(try String(contentsOf: target, encoding: .utf8), "预览后用户改的正文")
+
+        XCTAssertTrue(model.approveAndApplyPreparedPlan(), model.lastAction)
+        XCTAssertEqual(try String(contentsOf: target, encoding: .utf8), "预览后用户改的正文")
+        XCTAssertTrue(try String(contentsOf: locations.rulesURL(.codex), encoding: .utf8).contains(template.body))
+        XCTAssertNil(model.planError)
     }
 
     func testCancelledRefreshKeepsDraftAndNextRefreshReadsExternalChange() async throws {
