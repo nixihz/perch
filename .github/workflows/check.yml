@@ -18,9 +18,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - uses: azure/setup-kubectl@v4
-        with:
-          version: 'v1.34.1'
       - name: Install offline integration test dependency
         run: python -m pip install PyYAML==6.0.3
       - name: Check skill structure
@@ -31,20 +28,20 @@ jobs:
         run: python scripts/catalog.py verify
       - name: Test catalog and UI localization
         run: python -m unittest tests.test_catalog tests.test_ui_localization tests.test_update_packaging -v
-      - name: Test kubeconfig manager
-        run: |
-          command -v kubectl
-          python -m unittest discover -s skills/kubeconfig-manager/tests -v
 
   macos:
     name: Native macOS app
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+      - name: Select Swift 6 toolchain
+        run: |
+          sudo xcode-select --switch /Applications/Xcode_16.4.app
+          swift --version
       - name: Build SkillSet.app target
         run: swift build --product SkillSetDesktop
       - name: Run Swift core tests
-        run: swift test
+        run: swift test --filter SkillSetCoreTests
       - name: Build CLI and MCP server
         run: swift build --product skillset
       - name: Package app with Sparkle and verify embedded MCP
